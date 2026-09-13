@@ -9,11 +9,34 @@ from .graph import DependencyGraph
 
 
 def main():
+    usage = (
+        "Usage: xray <target> "
+        "[--deps|--dependents|--tree|--impact|--chains|--cycles|--project|--depth]"
+    )
+
+    if len(sys.argv) == 2 and sys.argv[1] in ("--help", "-h"):
+        print("XRAY")
+        print("────────────────────────────")
+        print()
+        print("Usage")
+        print("────────────────────────────")
+        print(usage)
+        print()
+        print("Options")
+        print("────────────────────────────")
+        print("-h, --help      Show this help message")
+        print("--deps          Show direct dependencies")
+        print("--dependents    Show direct dependents")
+        print("--tree          Show dependency tree")
+        print("--impact        Show files affected by removal")
+        print("--chains        Show impact chains")
+        print("--cycles        Show circular dependencies")
+        print("--project       Show project statistics and graph")
+        print("--depth         Show dependency depth")
+        return
+
     if len(sys.argv) not in (2, 3):
-        print(
-            "Usage: xray <target> "
-            "[--deps|--dependents|--tree|--impact|--chains|--cycles|--project|--depth]"
-        )
+        print(usage)
         sys.exit(1)
 
     command = sys.argv[1]
@@ -33,10 +56,7 @@ def main():
 
     if query not in valid_queries:
         print(f"Unknown option: {query}")
-        print(
-            "Usage: xray <target> "
-            "[--deps|--dependents|--tree|--impact|--chains|--cycles|--project|--depth]"
-        )
+        print(usage)
         sys.exit(1)
 
     print("XRAY")
