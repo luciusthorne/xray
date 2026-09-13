@@ -17,6 +17,14 @@ def run_xray(*args):
     return result.stdout
 
 
+def run_raw(*args):
+    return subprocess.run(
+        [sys.executable, "-m", "xray.cli", *args],
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_deps():
     output = run_xray("--deps")
 
@@ -55,3 +63,33 @@ def test_project():
     assert "Leaf files:        2" in output
     assert "Cycles:            1" in output
     assert "Dependency hotspots" in output
+
+
+def test_help():
+    result = run_raw("--help")
+
+    assert result.returncode == 0
+    assert "Usage" in result.stdout
+    assert "--project" in result.stdout
+    assert "--depth" in result.stdout
+
+
+def test_short_help():
+    result = run_raw("-h")
+
+    assert result.returncode == 0
+    assert "Usage" in result.stdout
+
+
+def test_missing_target():
+    result = run_raw()
+
+    assert result.returncode != 0
+    assert "Usage:" in result.stdout
+
+
+def test_unknown_target():
+    result = run_raw("definitely-not-a-command")
+
+    assert result.returncode != 0
+    assert "Command not found: definitely-not-a-command" in result.stdout
