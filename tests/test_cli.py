@@ -65,6 +65,34 @@ def test_project():
     assert "Dependency hotspots" in output
 
 
+def test_components():
+    output = run_xray("--components")
+
+    assert "Strongly connected components" in output
+    assert "test_programs/cycle_a.py" in output
+    assert "test_programs/cycle_b.py" in output
+    assert "test_programs/cycle_c.py" in output
+
+
+def test_reachable():
+    output = run_xray("--reachable")
+
+    assert "Reachable dependencies from test_programs/cycle_a.py" in output
+    assert "test_programs/cycle_b.py" in output
+    assert "test_programs/cycle_c.py" in output
+
+
+def test_reverse_reachable():
+    output = run_xray("--reverse-reachable")
+
+    assert (
+        "Reverse-reachable dependents of "
+        "test_programs/cycle_a.py"
+    ) in output
+    assert "test_programs/cycle_b.py" in output
+    assert "test_programs/cycle_c.py" in output
+
+
 def test_help():
     result = run_raw("--help")
 
@@ -72,6 +100,9 @@ def test_help():
     assert "Usage" in result.stdout
     assert "--project" in result.stdout
     assert "--depth" in result.stdout
+    assert "--components" in result.stdout
+    assert "--reachable" in result.stdout
+    assert "--reverse-reachable" in result.stdout
 
 
 def test_short_help():
