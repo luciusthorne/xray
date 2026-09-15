@@ -206,7 +206,7 @@ class DependencyGraph:
                 continue
 
             try:
-                analysis = analyze_function(path)
+                analysis = analyze_function(path, project_root)
             except (OSError, SyntaxError):
                 continue
 

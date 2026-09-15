@@ -101,3 +101,18 @@ def test_analyze_local_absolute_import(tmp_path):
             "relative": False,
         }
     ]
+
+
+def test_analyze_local_absolute_import_from_project_root(tmp_path):
+    package = tmp_path / "package"
+    package.mkdir()
+
+    (package / "__init__.py").write_text("")
+    (package / "database.py").write_text("")
+
+    source = tmp_path / "main.py"
+    source.write_text("from package import database\n")
+
+    result = analyze_python(source)
+
+    assert result["dependencies"][0]["type"] == "local"

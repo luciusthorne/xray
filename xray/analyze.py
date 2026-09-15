@@ -3,7 +3,7 @@ import ast
 from .dependencies import classify_dependency, discover_local_modules
 
 
-def analyze_python(path):
+def analyze_python(path, project_root=None):
     with open(path, "r", encoding="utf-8") as f:
         source = f.read()
 
@@ -16,7 +16,9 @@ def analyze_python(path):
     variables = []
     calls = []
 
-    project_root = path.parent.parent if path.parent.name == "test_programs" else path.parent
+    if project_root is None:
+        project_root = path.parent
+    
     local_modules = discover_local_modules(project_root)
 
     for node in ast.walk(tree):
