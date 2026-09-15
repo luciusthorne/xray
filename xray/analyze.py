@@ -41,31 +41,30 @@ def analyze_python(path):
                 })
 
         elif isinstance(node, ast.ImportFrom):
-            if node.module:
-                module_name = node.module
+            module_name = node.module or ""
 
-                if node.level:
-                    module_name = "." * node.level + module_name
+            if node.level:
+                module_name = "." * node.level + module_name
 
-                for name in node.names:
-                    imports.append({
-                        "module": module_name,
-                        "name": name.name,
-                        "alias": name.asname,
-                        "relative": node.level > 0,
-                    })
+            for name in node.names:
+                imports.append({
+                    "module": module_name,
+                    "name": name.name,
+                    "alias": name.asname,
+                    "relative": node.level > 0,
+                })
 
-                    dependency_module = node.module
+                dependency_module = node.module or ""
 
-                    dependencies.append({
-                        "module": module_name,
-                        "name": name.name,
-                        "type": classify_dependency(
-                            dependency_module,
-                            local_modules,
-                        ),
-                        "relative": node.level > 0,
-                    })
+                dependencies.append({
+                    "module": module_name,
+                    "name": name.name,
+                    "type": classify_dependency(
+                        dependency_module,
+                        local_modules,
+                    ),
+                    "relative": node.level > 0,
+                })
 
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             functions.append({
