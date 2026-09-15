@@ -11,7 +11,7 @@ from .graph import DependencyGraph
 def main():
     usage = (
         "Usage: xray <target> "
-        "[--deps|--dependents|--tree|--impact|--chains|--cycles|--project|--depth]"
+        "[--deps|--dependents|--tree|--impact|--chains|--cycles|--components|--project|--depth]"
     )
 
     if len(sys.argv) == 2 and sys.argv[1] in ("--help", "-h"):
@@ -31,6 +31,7 @@ def main():
         print("--impact        Show files affected by removal")
         print("--chains        Show impact chains")
         print("--cycles        Show circular dependencies")
+        print("--components    Show strongly connected components")
         print("--project       Show project statistics and graph")
         print("--depth         Show dependency depth")
         return
@@ -50,6 +51,7 @@ def main():
         "--impact",
         "--chains",
         "--cycles",
+        "--components",
         "--project",
         "--depth",
     )
@@ -287,6 +289,21 @@ def main():
         if cycles:
             for cycle in cycles:
                 print(f"- {' → '.join(cycle)}")
+        else:
+            print("none")
+
+        return
+
+    if query == "--components":
+        print()
+        print("Strongly connected components")
+        print("────────────────────────────")
+
+        components = graph.strongly_connected_components()
+
+        if components:
+            for component in components:
+                print(f"- {', '.join(component)}")
         else:
             print("none")
 
