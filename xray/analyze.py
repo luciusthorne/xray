@@ -54,13 +54,11 @@ def analyze_python(path):
                     "relative": node.level > 0,
                 })
 
-                dependency_module = node.module or ""
-
                 dependencies.append({
                     "module": module_name,
                     "name": name.name,
                     "type": classify_dependency(
-                        dependency_module,
+                        module_name,
                         local_modules,
                     ),
                     "relative": node.level > 0,

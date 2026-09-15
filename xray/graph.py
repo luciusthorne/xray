@@ -132,9 +132,15 @@ class DependencyGraph:
                 if dependency["type"] != "local":
                     continue
 
+                dependency_root = (
+                    path.parent
+                    if dependency["relative"]
+                    else project_root
+                )
+
                 target = self.resolve_local_module(
                     dependency["module"],
-                    project_root,
+                    dependency_root,
                 )
 
                 if target is None:
@@ -191,9 +197,15 @@ class DependencyGraph:
                 if dependency["type"] != "local":
                     continue
 
+                dependency_root = (
+                    path.parent
+                    if dependency["relative"]
+                    else project_root
+                )
+
                 target = self.resolve_local_module(
                     dependency["module"],
-                    project_root,
+                    dependency_root,
                 )
 
                 if target is None:

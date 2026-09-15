@@ -11,13 +11,17 @@ def discover_local_modules(project_root):
         if path.name == "__init__.py":
             continue
 
-        modules.add(path.stem)
+        relative = path.relative_to(project_root)
+        parts = list(relative.with_suffix("").parts)
+        modules.add(".".join(parts))
 
     return modules
 
 
 def classify_dependency(module, local_modules=None):
-    root = module.split(".")[0]
+    if module.startswith("."):
+        return "local"
+    root = module.lstrip(".").split(".")[0]
 
     if local_modules and root in local_modules:
         return "local"
