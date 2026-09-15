@@ -80,3 +80,24 @@ def test_discover_nested_local_modules(tmp_path):
     assert "package" in modules
     assert "package.sub" in modules
     assert "package.sub.database" in modules
+
+
+def test_analyze_local_absolute_import(tmp_path):
+    package = tmp_path / "package"
+    package.mkdir()
+
+    (package / "__init__.py").write_text("")
+    (package / "database.py").write_text("")
+    source = tmp_path / "main.py"
+    source.write_text("from package import database\n")
+
+    result = analyze_python(source)
+
+    assert result["dependencies"] == [
+        {
+            "module": "package",
+            "name": "database",
+            "type": "local",
+            "relative": False,
+        }
+    ]

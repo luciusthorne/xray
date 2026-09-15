@@ -90,3 +90,39 @@ def test_impact_chains_handles_cycle():
     assert graph.impact_chains("a.py") == [
         ["a.py", "c.py", "b.py", "a.py"]
     ]
+
+
+def test_build_project_resolves_absolute_package_import(tmp_path):
+    package = tmp_path / "package"
+    package.mkdir()
+
+    (package / "__init__.py").write_text("")
+    (package / "database.py").write_text("")
+
+    source = tmp_path / "main.py"
+    source.write_text("from package import database\n")
+
+    from xray.analyze import analyze_python
+
+    graph = DependencyGraph()
+    graph.build_project(tmp_path, analyze_python, tmp_path)
+
+    assert ("main.py", "package/database.py") in graph.edges
+
+
+def test_build_project_resolves_imported_package_module(tmp_path):
+    package = tmp_path / "package"
+    package.mkdir()
+
+    (package / "__init__.py").write_text("")
+    (package / "database.py").write_text("")
+
+    source = tmp_path / "main.py"
+    source.write_text("from package import database\n")
+
+    from xray.analyze import analyze_python
+
+    graph = DependencyGraph()
+    graph.build_project(tmp_path, analyze_python, tmp_path)
+
+    assert ("main.py", "package/database.py") in graph.edges

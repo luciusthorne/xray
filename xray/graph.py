@@ -82,11 +82,31 @@ class DependencyGraph:
     def cycle_count(self):
         return len(self.find_cycles())
 
-    def resolve_local_module(self, module, project_root):
+    def resolve_local_module(
+        self,
+        module,
+        project_root,
+        name=None,
+    ):
         module = module.lstrip(".")
         parts = module.split(".")
 
         module_path = Path(project_root).joinpath(*parts)
+
+        if name:
+            imported_module = module_path / f"{name}.py"
+
+            if imported_module.exists():
+                return str(imported_module)
+
+            imported_package = (
+                module_path
+                / name
+                / "__init__.py"
+            )
+
+            if imported_package.exists():
+                return str(imported_package)
 
         file_path = module_path.with_suffix(".py")
 
@@ -141,6 +161,7 @@ class DependencyGraph:
                 target = self.resolve_local_module(
                     dependency["module"],
                     dependency_root,
+                    dependency["name"],
                 )
 
                 if target is None:
@@ -206,6 +227,7 @@ class DependencyGraph:
                 target = self.resolve_local_module(
                     dependency["module"],
                     dependency_root,
+                    dependency["name"],
                 )
 
                 if target is None:
