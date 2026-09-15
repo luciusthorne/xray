@@ -540,6 +540,40 @@ class DependencyGraph:
 
         return sorted(current_level)
 
+    def find_path(self, source, target):
+        if source not in self.nodes:
+            return []
+
+        if target not in self.nodes:
+            return []
+
+        if source == target:
+            return [source]
+
+        queue = [[source]]
+        visited = {source}
+
+        while queue:
+            path = queue.pop(0)
+            current = path[-1]
+
+            for dependency in sorted(
+                self.dependencies_of(current)
+            ):
+                if dependency in visited:
+                    continue
+
+                next_path = path + [dependency]
+
+                if dependency == target:
+                    return next_path
+
+                visited.add(dependency)
+                queue.append(next_path)
+
+        return []
+
+
     def reachable_count(self, node):
         return len(self.reachable_from(node))
 

@@ -206,3 +206,62 @@ def test_reachability_stats():
         "reachable": 1,
         "reverse_reachable": 2,
     }
+def test_find_path():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "B")
+    graph.add_edge("B", "C")
+    graph.add_edge("C", "D")
+
+    assert graph.find_path("A", "D") == [
+        "A",
+        "B",
+        "C",
+        "D",
+    ]
+
+
+def test_find_path_returns_shortest_path():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "B")
+    graph.add_edge("A", "C")
+    graph.add_edge("B", "D")
+    graph.add_edge("C", "D")
+
+    assert graph.find_path("A", "D") == [
+        "A",
+        "B",
+        "D",
+    ]
+
+
+def test_find_path_handles_missing_nodes():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "B")
+
+    assert graph.find_path("A", "X") == []
+    assert graph.find_path("X", "A") == []
+
+
+def test_find_path_handles_same_node():
+    graph = DependencyGraph()
+
+    graph.add_node("A")
+
+    assert graph.find_path("A", "A") == ["A"]
+
+
+def test_find_path_handles_cycle():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "B")
+    graph.add_edge("B", "C")
+    graph.add_edge("C", "A")
+
+    assert graph.find_path("A", "C") == [
+        "A",
+        "B",
+        "C",
+    ]
