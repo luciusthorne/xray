@@ -8,62 +8,118 @@ from .analyze import analyze_python
 from .graph import DependencyGraph
 
 
-def main():
-    usage = (
-        "Usage: xray <target> "
-        "[--deps|--dependents|--tree|--impact|--chains|--cycles|"
-        "--components|--reachable|--reverse-reachable|--project|--depth]"
+def print_help():
+    print("Usage: xray <target> [options]")
+    print()
+    print("Options:")
+    print("  --deps                 Show dependencies")
+    print("  --dependents           Show dependents")
+    print("  --tree                 Show dependency tree")
+    print("  --impact               Show impact analysis")
+    print("  --cycles               Show circular dependencies")
+    print("  --depth                Show dependency depth")
+    print("  --project              Show project statistics")
+    print("  --components           Show strongly connected components")
+    print("  --reachable            Show reachable dependencies")
+    print("  --reverse-reachable    Show reverse reachable dependents")
+    print("  --path <target>        Show dependency path to target")
+
+
+def build_graph(workspace_root, path):
+    graph = DependencyGraph()
+
+    test_project = workspace_root / "test_programs"
+
+    if test_project.exists():
+        project_root = test_project
+    else:
+        project_root = workspace_root / "xray"
+
+    graph.build_project(
+        project_root,
+        analyze_python,
+        workspace_root,
     )
 
-    if len(sys.argv) == 2 and sys.argv[1] in ("--help", "-h"):
-        print("XRAY")
-        print("────────────────────────────")
-        print()
-        print("Usage")
-        print("────────────────────────────")
-        print(usage)
-        print()
-        print("Options")
-        print("────────────────────────────")
-        print("-h, --help              Show this help message")
-        print("--deps                  Show direct dependencies")
-        print("--dependents            Show direct dependents")
-        print("--tree                  Show dependency tree")
-        print("--impact                Show files affected by removal")
-        print("--chains                Show impact chains")
-        print("--cycles                Show circular dependencies")
-        print("--components            Show strongly connected components")
-        print("--reachable             Show all reachable dependencies")
-        print("--reverse-reachable     Show all reverse-reachable dependents")
-        print("--project               Show project statistics and graph")
-        print("--depth                 Show dependency depth")
-        return
+    return graph
 
-    if len(sys.argv) not in (2, 3):
-        print(usage)
+
+def dependency_depth(graph, node):
+    """
+    Return the maximum dependency depth.
+
+    A -> B -> C -> A is treated as depth 3.
+    """
+
+    longest = 0
+
+    def walk(current, path):
+        nonlocal longest
+
+        dependencies = graph.dependencies_of(current)
+
+        if not dependencies:
+            longest = max(longest, len(path) - 1)
+            return
+
+        for dependency in dependencies:
+            if dependency == node:
+                longest = max(longest, len(path))
+                continue
+
+            if dependency in path:
+                longest = max(longest, len(path))
+                continue
+
+            walk(
+                dependency,
+                path + [dependency],
+            )
+
+    walk(node, [node])
+
+    return longest
+
+
+def main():
+    if len(sys.argv) == 1:
+        print_help()
         sys.exit(1)
 
-    command = sys.argv[1]
-    query = sys.argv[2] if len(sys.argv) == 3 else None
+    if sys.argv[1] in ("--help", "-h"):
+        print_help()
+        return
 
-    valid_queries = (
+    command = sys.argv[1]
+
+    query = sys.argv[2] if len(sys.argv) >= 3 else None
+    path_target = None
+
+    if query == "--path":
+        if len(sys.argv) != 4:
+            print("Usage: xray <target> --path <target>")
+            sys.exit(1)
+
+        path_target = sys.argv[3]
+
+    valid_queries = {
         None,
         "--deps",
         "--dependents",
         "--tree",
         "--impact",
-        "--chains",
         "--cycles",
+        "--depth",
+        "--project",
         "--components",
         "--reachable",
         "--reverse-reachable",
-        "--project",
-        "--depth",
-    )
+        "--path",
+    }
 
     if query not in valid_queries:
-        print(f"Unknown option: {query}")
-        print(usage)
+        print("Unknown option:", query)
+        print_help()
         sys.exit(1)
 
     print("XRAY")
@@ -75,122 +131,29 @@ def main():
         print(f"Command not found: {command}")
         sys.exit(1)
 
+    workspace_root = Path.cwd()
+
     file_type = identify_file(path)
     metadata = get_file_metadata(path)
     shebang = detect_shebang(path)
 
     analysis = None
-    graph = DependencyGraph()
 
     if file_type.startswith("Python"):
         analysis = analyze_python(path)
 
-    workspace_root = Path.cwd()
-
-    if analysis:
-        if path.parent.name == "test_programs":
-            project_root = path.parent
-        else:
-            project_root = workspace_root / "xray"
-
-        graph.build_project(
-            project_root,
-            analyze_python,
-            workspace_root,
-        )
-
-    source_node = str(
-        path.resolve().relative_to(workspace_root)
+    graph = build_graph(
+        workspace_root,
+        path,
     )
 
-    if query == "--depth":
-        print()
-        print(f"Dependency depth for {source_node}")
-        print("────────────────────────────")
+    source_node = str(
+        Path(path).resolve().relative_to(workspace_root)
+    )
 
-        depth = graph.dependency_depth(source_node)
-
-        print(f"Depth: {depth}")
-
-        return
-
-    if query == "--project":
-        print()
-        print("Project")
-        print("────────────────────────────")
-        print(f"Root:        {project_root}")
-        print(f"Nodes:       {graph.node_count()}")
-        print(f"Edges:       {graph.edge_count()}")
-
-        print()
-        print("Statistics")
-        print("────────────────────────────")
-
-        leaf_nodes = graph.leaf_nodes()
-        most_depended_on = graph.most_depended_on()
-        cycle_count = graph.cycle_count()
-
-        print(f"Python files:      {graph.node_count()}")
-        print(f"Dependency edges:  {graph.edge_count()}")
-        print(f"Leaf files:        {len(leaf_nodes)}")
-
-        if most_depended_on:
-            if len(most_depended_on) == 1:
-                print(f"Most depended-on:  {most_depended_on[0]}")
-            else:
-                print("Most depended-on:")
-                for node in most_depended_on:
-                    print(f"                   {node}")
-        else:
-            print("Most depended-on:  none")
-
-        print(f"Cycles:            {cycle_count}")
-
-        print()
-        print("Dependency hotspots")
-        print("────────────────────────────")
-
-        hotspots = graph.dependency_hotspots()
-
-        if hotspots:
-            for node, count in hotspots:
-                print(f"- {node}: {count} dependent")
-        else:
-            print("none")
-
-        print()
-        print("Leaf files")
-        print("────────────────────────────")
-
-        if leaf_nodes:
-            for node in leaf_nodes:
-                print(f"- {node}")
-        else:
-            print("none")
-
-        print()
-        print("Dependency graph")
-        print("────────────────────────────")
-
-        if graph.edges:
-            for source, target in graph.edges:
-                print(f"- {source} → {target}")
-        else:
-            print("none")
-
-        print()
-        print("Circular dependencies")
-        print("────────────────────────────")
-
-        cycles = graph.find_cycles()
-
-        if cycles:
-            for cycle in cycles:
-                print(f"- {' → '.join(cycle)}")
-        else:
-            print("none")
-
-        return
+    # ---------------------------------------------------------
+    # --deps
+    # ---------------------------------------------------------
 
     if query == "--deps":
         print()
@@ -207,6 +170,10 @@ def main():
 
         return
 
+    # ---------------------------------------------------------
+    # --dependents
+    # ---------------------------------------------------------
+
     if query == "--dependents":
         print()
         print(f"Dependents of {source_node}")
@@ -222,17 +189,23 @@ def main():
 
         return
 
+    # ---------------------------------------------------------
+    # --tree
+    # ---------------------------------------------------------
+
     if query == "--tree":
         print()
         print(f"Dependency tree for {source_node}")
         print("────────────────────────────")
 
-        tree = graph.dependency_tree(source_node)
-
-        for line in tree:
+        for line in graph.dependency_tree(source_node):
             print(line)
 
         return
+
+    # ---------------------------------------------------------
+    # --impact
+    # ---------------------------------------------------------
 
     if query == "--impact":
         print()
@@ -267,11 +240,8 @@ def main():
         print()
         print(f"Total affected files: {total}")
 
-        return
-
-    if query == "--chains":
         print()
-        print(f"Impact chains for {source_node}")
+        print("Impact chains")
         print("────────────────────────────")
 
         chains = graph.impact_chains(source_node)
@@ -284,20 +254,159 @@ def main():
 
         return
 
+    # ---------------------------------------------------------
+    # --cycles
+    # ---------------------------------------------------------
+
     if query == "--cycles":
         print()
         print("Circular dependencies")
         print("────────────────────────────")
 
-        cycles = graph.find_cycles()
+        components = graph.strongly_connected_components()
+
+        cycles = []
+
+        for component in components:
+            if len(component) > 1:
+                cycles.append(component)
+
+            elif component:
+                node = component[0]
+
+                if node in graph.dependencies_of(node):
+                    cycles.append(component)
 
         if cycles:
             for cycle in cycles:
-                print(f"- {' → '.join(cycle)}")
+                if len(cycle) == 1:
+                    print(
+                        f"{cycle[0]} → {cycle[0]}"
+                    )
+                    continue
+
+                start = cycle[0]
+                current = start
+                path = [start]
+                visited = {start}
+
+                while True:
+                    next_node = None
+
+                    for candidate in sorted(
+                        graph.dependencies_of(current)
+                    ):
+                        if candidate in cycle:
+                            next_node = candidate
+                            break
+
+                    if next_node is None:
+                        break
+
+                    path.append(next_node)
+
+                    if next_node == start:
+                        break
+
+                    if next_node in visited:
+                        break
+
+                    visited.add(next_node)
+                    current = next_node
+
+                print(" → ".join(path))
         else:
             print("none")
 
         return
+
+    # ---------------------------------------------------------
+    # --depth
+    # ---------------------------------------------------------
+
+    if query == "--depth":
+        print()
+        print(
+            f"Dependency depth for {source_node}"
+        )
+        print("────────────────────────────")
+
+        depth = dependency_depth(
+            graph,
+            source_node,
+        )
+
+        print(f"Depth: {depth}")
+
+        return
+
+    # ---------------------------------------------------------
+    # --project
+    # ---------------------------------------------------------
+
+    if query == "--project":
+        print()
+        print("Project")
+        print("────────────────────────────")
+
+        python_files = len(graph.nodes)
+        dependency_edges = len(graph.edges)
+
+        components = graph.strongly_connected_components()
+
+        cycle_count = 0
+
+        for component in components:
+            if len(component) > 1:
+                cycle_count += 1
+
+            elif component:
+                node = component[0]
+
+                if node in graph.dependencies_of(node):
+                    cycle_count += 1
+
+        leaf_files = sum(
+            1
+            for node in graph.nodes
+            if not graph.dependencies_of(node)
+        )
+
+        print(f"Python files:      {python_files}")
+        print(f"Dependency edges:  {dependency_edges}")
+        print(f"Leaf files:        {leaf_files}")
+        print(f"Cycles:            {cycle_count}")
+
+        print()
+        print("Dependency hotspots")
+
+        hotspot_counts = []
+
+        for node in graph.nodes:
+            count = len(
+                graph.dependents_of(node)
+            )
+
+            if count > 0:
+                hotspot_counts.append(
+                    (node, count)
+                )
+
+        hotspot_counts.sort(
+            key=lambda item: (-item[1], item[0])
+        )
+
+        if hotspot_counts:
+            for node, count in hotspot_counts:
+                print(f"- {node}: {count}")
+        else:
+            print("- none")
+
+        return
+
+    # ---------------------------------------------------------
+    # --components
+    # ---------------------------------------------------------
 
     if query == "--components":
         print()
@@ -306,17 +415,20 @@ def main():
 
         components = graph.strongly_connected_components()
 
-        if components:
-            for component in components:
-                print(f"- {', '.join(component)}")
-        else:
-            print("none")
+        for component in components:
+            print("- " + ", ".join(component))
 
         return
 
+    # ---------------------------------------------------------
+    # --reachable
+    # ---------------------------------------------------------
+
     if query == "--reachable":
         print()
-        print(f"Reachable dependencies from {source_node}")
+        print(
+            f"Reachable dependencies from {source_node}"
+        )
         print("────────────────────────────")
 
         reachable = graph.reachable_from(source_node)
@@ -325,24 +437,94 @@ def main():
             for node in reachable:
                 print(f"- {node}")
         else:
-            print("none")
+            print("- none")
 
         return
 
+    # ---------------------------------------------------------
+    # --reverse-reachable
+    # ---------------------------------------------------------
+
     if query == "--reverse-reachable":
         print()
-        print(f"Reverse-reachable dependents of {source_node}")
+        print(
+            f"Reverse-reachable dependents of "
+            f"{source_node}"
+        )
         print("────────────────────────────")
 
-        reachable = graph.reverse_reachable_from(source_node)
+        reachable = graph.reverse_reachable_from(
+            source_node
+        )
 
         if reachable:
             for node in reachable:
                 print(f"- {node}")
         else:
-            print("none")
+            print("- none")
 
         return
+
+    # ---------------------------------------------------------
+    # --path
+    # ---------------------------------------------------------
+
+    if query == "--path":
+        target_path = Path(path_target).resolve()
+
+        try:
+            target_node = str(
+                target_path.relative_to(workspace_root)
+            )
+        except ValueError:
+            target_node = path_target
+
+        print()
+        print(
+            f"Dependency path from "
+            f"{source_node} to {target_node}"
+        )
+        print("────────────────────────────")
+
+        queue = [
+            (source_node, [source_node])
+        ]
+
+        visited = {source_node}
+        found_path = None
+
+        while queue:
+            current, current_path = queue.pop(0)
+
+            if current == target_node:
+                found_path = current_path
+                break
+
+            for dependency in sorted(
+                graph.dependencies_of(current)
+            ):
+                if dependency in visited:
+                    continue
+
+                visited.add(dependency)
+
+                queue.append(
+                    (
+                        dependency,
+                        current_path + [dependency],
+                    )
+                )
+
+        if found_path:
+            print(" → ".join(found_path))
+        else:
+            print("No path found")
+
+        return
+
+    # ---------------------------------------------------------
+    # Normal analysis
+    # ---------------------------------------------------------
 
     print(f"Target:     {command}")
     print(f"Executable: {path}")
@@ -382,7 +564,8 @@ def main():
                     if item["alias"]:
                         print(
                             f"- from {item['module']} "
-                            f"import {item['name']} as {item['alias']}"
+                            f"import {item['name']} "
+                            f"as {item['alias']}"
                         )
                     else:
                         print(
