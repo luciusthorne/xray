@@ -539,3 +539,15 @@ class DependencyGraph:
                 break
 
         return sorted(current_level)
+
+    def reachable_count(self, node):
+        return len(self.reachable_from(node))
+
+    def reverse_reachable_count(self, node):
+        return len(self.reverse_reachable_from(node))
+
+    def reachability_stats(self, node):
+        return {
+            "reachable": self.reachable_count(node),
+            "reverse_reachable": self.reverse_reachable_count(node),
+        }

@@ -126,6 +126,8 @@ def test_build_project_resolves_imported_package_module(tmp_path):
     graph.build_project(tmp_path, analyze_python, tmp_path)
 
     assert ("main.py", "package/database.py") in graph.edges
+
+
 def test_reachable_from():
     graph = DependencyGraph()
 
@@ -146,6 +148,8 @@ def test_reachable_from():
     ]
 
     assert graph.reachable_from("E") == []
+
+
 def test_reverse_reachable_from():
     graph = DependencyGraph()
 
@@ -166,3 +170,39 @@ def test_reverse_reachable_from():
     ]
 
     assert graph.reverse_reachable_from("A") == []
+
+
+def test_reachability_counts():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "B")
+    graph.add_edge("B", "C")
+    graph.add_edge("B", "D")
+    graph.add_edge("C", "E")
+
+    assert graph.reachable_count("A") == 4
+    assert graph.reachable_count("B") == 3
+    assert graph.reachable_count("C") == 1
+    assert graph.reachable_count("E") == 0
+
+    assert graph.reverse_reachable_count("E") == 3
+    assert graph.reverse_reachable_count("D") == 2
+    assert graph.reverse_reachable_count("A") == 0
+
+
+def test_reachability_stats():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "B")
+    graph.add_edge("B", "C")
+    graph.add_edge("C", "D")
+
+    assert graph.reachability_stats("A") == {
+        "reachable": 3,
+        "reverse_reachable": 0,
+    }
+
+    assert graph.reachability_stats("C") == {
+        "reachable": 1,
+        "reverse_reachable": 2,
+    }
