@@ -258,7 +258,11 @@ class DependencyGraph:
             for index, dependency in enumerate(dependencies):
                 is_last = index == len(dependencies) - 1
 
-                branch = "└── " if is_last else "├── "
+                branch = (
+                    "└── "
+                    if is_last
+                    else "├── "
+                )
 
                 lines.append(
                     prefix + branch + dependency
@@ -361,25 +365,27 @@ class DependencyGraph:
 
             return min(rotations)
 
-        def visit(start, current, path):
-            for dependency in self.dependencies_of(current):
+        def walk(start, current, path):
+            for dependency in sorted(
+                self.dependencies_of(current)
+            ):
                 if dependency == start:
                     cycle = path + [start]
-                    canonical = canonical_cycle(cycle)
+                    key = canonical_cycle(cycle)
 
-                    if canonical not in seen:
-                        seen.add(canonical)
-                        cycles.append(list(canonical))
+                    if key not in seen:
+                        seen.add(key)
+                        cycles.append(list(key))
 
                 elif dependency not in path:
-                    visit(
+                    walk(
                         start,
                         dependency,
                         path + [dependency],
                     )
 
         for node in sorted(self.nodes):
-            visit(node, node, [node])
+            walk(node, node, [node])
 
         return sorted(cycles)
 
@@ -450,11 +456,11 @@ class DependencyGraph:
                 component = []
 
                 while True:
-                    dependency = stack.pop()
-                    on_stack.remove(dependency)
-                    component.append(dependency)
+                    current = stack.pop()
+                    on_stack.remove(current)
+                    component.append(current)
 
-                    if dependency == node:
+                    if current == node:
                         break
 
                 components.append(
@@ -487,3 +493,22 @@ class DependencyGraph:
         walk(node)
 
         return sorted(reachable)
+
+    def reverse_reachable_from(self, node):
+        reachable = set()
+        visited = {node}
+
+        def walk(current):
+            for dependent in self.dependents_of(current):
+                if dependent in visited:
+                    continue
+
+                visited.add(dependent)
+                reachable.add(dependent)
+
+                walk(dependent)
+
+        walk(node)
+
+        return sorted(reachable)
+

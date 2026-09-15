@@ -146,3 +146,23 @@ def test_reachable_from():
     ]
 
     assert graph.reachable_from("E") == []
+def test_reverse_reachable_from():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "B")
+    graph.add_edge("B", "C")
+    graph.add_edge("B", "D")
+    graph.add_edge("C", "E")
+
+    assert graph.reverse_reachable_from("E") == [
+        "A",
+        "B",
+        "C",
+    ]
+
+    assert graph.reverse_reachable_from("D") == [
+        "A",
+        "B",
+    ]
+
+    assert graph.reverse_reachable_from("A") == []
