@@ -8,10 +8,16 @@ def discover_local_modules(project_root):
     modules = set()
 
     for path in project_root.rglob("*.py"):
+        relative = path.relative_to(project_root)
+
         if path.name == "__init__.py":
+            parts = list(relative.parent.parts)
+
+            if parts:
+                modules.add(".".join(parts))
+
             continue
 
-        relative = path.relative_to(project_root)
         parts = list(relative.with_suffix("").parts)
         modules.add(".".join(parts))
 
