@@ -512,3 +512,30 @@ class DependencyGraph:
 
         return sorted(reachable)
 
+    def nodes_at_distance(self, node, distance):
+        if distance < 0:
+            return []
+
+        if distance == 0:
+            return [node] if node in self.nodes else []
+
+        current_level = {node}
+        visited = {node}
+
+        for _ in range(distance):
+            next_level = set()
+
+            for current in current_level:
+                for dependency in self.dependencies_of(current):
+                    if dependency in visited:
+                        continue
+
+                    visited.add(dependency)
+                    next_level.add(dependency)
+
+            current_level = next_level
+
+            if not current_level:
+                break
+
+        return sorted(current_level)
