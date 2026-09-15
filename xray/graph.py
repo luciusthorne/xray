@@ -417,3 +417,56 @@ class DependencyGraph:
             return result
 
         return depth(node)
+    def strongly_connected_components(self):
+        index = 0
+        indices = {}
+        lowlinks = {}
+        stack = []
+        on_stack = set()
+        components = []
+
+        def visit(node):
+            nonlocal index
+
+            indices[node] = index
+            lowlinks[node] = index
+            index += 1
+
+            stack.append(node)
+            on_stack.add(node)
+
+            for dependency in self.dependencies_of(node):
+                if dependency not in indices:
+                    visit(dependency)
+
+                    lowlinks[node] = min(
+                        lowlinks[node],
+                        lowlinks[dependency],
+                    )
+
+                elif dependency in on_stack:
+                    lowlinks[node] = min(
+                        lowlinks[node],
+                        indices[dependency],
+                    )
+
+            if lowlinks[node] == indices[node]:
+                component = []
+
+                while True:
+                    dependency = stack.pop()
+                    on_stack.remove(dependency)
+                    component.append(dependency)
+
+                    if dependency == node:
+                        break
+
+                components.append(
+                    sorted(component)
+                )
+
+        for node in sorted(self.nodes):
+            if node not in indices:
+                visit(node)
+
+        return sorted(components)
