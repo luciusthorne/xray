@@ -126,3 +126,23 @@ def test_build_project_resolves_imported_package_module(tmp_path):
     graph.build_project(tmp_path, analyze_python, tmp_path)
 
     assert ("main.py", "package/database.py") in graph.edges
+def test_reachable_from():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "B")
+    graph.add_edge("B", "C")
+    graph.add_edge("B", "D")
+    graph.add_edge("C", "E")
+
+    assert graph.reachable_from("A") == [
+        "B",
+        "C",
+        "D",
+        "E",
+    ]
+
+    assert graph.reachable_from("C") == [
+        "E",
+    ]
+
+    assert graph.reachable_from("E") == []

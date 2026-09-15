@@ -206,7 +206,10 @@ class DependencyGraph:
                 continue
 
             try:
-                analysis = analyze_function(path, project_root)
+                analysis = analyze_function(
+                    path,
+                    project_root,
+                )
             except (OSError, SyntaxError):
                 continue
 
@@ -358,35 +361,27 @@ class DependencyGraph:
 
             return min(rotations)
 
-        def visit(node, path):
-            if node in path:
-                cycle_start = path.index(node)
+        def visit(start, current, path):
+            for dependency in self.dependencies_of(current):
+                if dependency == start:
+                    cycle = path + [start]
+                    canonical = canonical_cycle(cycle)
 
-                cycle = (
-                    path[cycle_start:]
-                    + [node]
-                )
+                    if canonical not in seen:
+                        seen.add(canonical)
+                        cycles.append(list(canonical))
 
-                key = canonical_cycle(cycle)
-
-                if key not in seen:
-                    seen.add(key)
-                    cycles.append(cycle)
-
-                return
-
-            new_path = path + [node]
-
-            for dependency in self.dependencies_of(node):
-                visit(
-                    dependency,
-                    new_path,
-                )
+                elif dependency not in path:
+                    visit(
+                        start,
+                        dependency,
+                        path + [dependency],
+                    )
 
         for node in sorted(self.nodes):
-            visit(node, [])
+            visit(node, node, [node])
 
-        return cycles
+        return sorted(cycles)
 
     def dependency_depth(self, node):
         memo = {}
@@ -417,6 +412,7 @@ class DependencyGraph:
             return result
 
         return depth(node)
+
     def strongly_connected_components(self):
         index = 0
         indices = {}
@@ -469,4 +465,25 @@ class DependencyGraph:
             if node not in indices:
                 visit(node)
 
-        return sorted(components)
+        return sorted(
+            components,
+            key=lambda component: component[0],
+        )
+
+    def reachable_from(self, node):
+        reachable = set()
+        visited = {node}
+
+        def walk(current):
+            for dependency in self.dependencies_of(current):
+                if dependency in visited:
+                    continue
+
+                visited.add(dependency)
+                reachable.add(dependency)
+
+                walk(dependency)
+
+        walk(node)
+
+        return sorted(reachable)
