@@ -50,3 +50,43 @@ def test_dependency_hotspots():
         ("b.py", 2),
         ("a.py", 1),
     ]
+
+
+def test_dependency_tree_handles_cycle():
+    graph = DependencyGraph()
+
+    graph.add_edge("a.py", "b.py")
+    graph.add_edge("b.py", "c.py")
+    graph.add_edge("c.py", "a.py")
+
+    assert graph.dependency_tree("a.py") == [
+        "a.py",
+        "└── b.py",
+        "    └── c.py",
+        "        └── a.py",
+    ]
+
+
+def test_impact_of_cycle():
+    graph = DependencyGraph()
+
+    graph.add_edge("a.py", "b.py")
+    graph.add_edge("b.py", "c.py")
+    graph.add_edge("c.py", "a.py")
+
+    assert graph.impact_of("a.py") == {
+        "direct": ["c.py"],
+        "indirect": ["b.py"],
+    }
+
+
+def test_impact_chains_handles_cycle():
+    graph = DependencyGraph()
+
+    graph.add_edge("a.py", "b.py")
+    graph.add_edge("b.py", "c.py")
+    graph.add_edge("c.py", "a.py")
+
+    assert graph.impact_chains("a.py") == [
+        ["a.py", "c.py", "b.py", "a.py"]
+    ]
