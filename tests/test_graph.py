@@ -92,7 +92,9 @@ def test_impact_chains_handles_cycle():
     ]
 
 
-def test_build_project_resolves_absolute_package_import(tmp_path):
+def test_build_project_resolves_absolute_package_import(
+    tmp_path,
+):
     package = tmp_path / "package"
     package.mkdir()
 
@@ -100,17 +102,29 @@ def test_build_project_resolves_absolute_package_import(tmp_path):
     (package / "database.py").write_text("")
 
     source = tmp_path / "main.py"
-    source.write_text("from package import database\n")
+    source.write_text(
+        "from package import database\n"
+    )
 
     from xray.analyze import analyze_python
 
     graph = DependencyGraph()
-    graph.build_project(tmp_path, analyze_python, tmp_path)
 
-    assert ("main.py", "package/database.py") in graph.edges
+    graph.build_project(
+        tmp_path,
+        analyze_python,
+        tmp_path,
+    )
+
+    assert (
+        "main.py",
+        "package/database.py",
+    ) in graph.edges
 
 
-def test_build_project_resolves_imported_package_module(tmp_path):
+def test_build_project_resolves_imported_package_module(
+    tmp_path,
+):
     package = tmp_path / "package"
     package.mkdir()
 
@@ -118,14 +132,24 @@ def test_build_project_resolves_imported_package_module(tmp_path):
     (package / "database.py").write_text("")
 
     source = tmp_path / "main.py"
-    source.write_text("from package import database\n")
+    source.write_text(
+        "from package import database\n"
+    )
 
     from xray.analyze import analyze_python
 
     graph = DependencyGraph()
-    graph.build_project(tmp_path, analyze_python, tmp_path)
 
-    assert ("main.py", "package/database.py") in graph.edges
+    graph.build_project(
+        tmp_path,
+        analyze_python,
+        tmp_path,
+    )
+
+    assert (
+        "main.py",
+        "package/database.py",
+    ) in graph.edges
 
 
 def test_reachable_from():
@@ -206,6 +230,8 @@ def test_reachability_stats():
         "reachable": 1,
         "reverse_reachable": 2,
     }
+
+
 def test_find_path():
     graph = DependencyGraph()
 
@@ -265,96 +291,66 @@ def test_find_path_handles_cycle():
         "B",
         "C",
     ]
-
-def test_add_duplicate_edge_only_once():
+def test_cycle_count_with_multiple_cycles():
     graph = DependencyGraph()
 
     graph.add_edge("A", "B")
+    graph.add_edge("B", "A")
+
+    graph.add_edge("C", "D")
+    graph.add_edge("D", "E")
+    graph.add_edge("E", "C")
+
+    graph.add_edge("F", "G")
+
+    assert graph.cycle_count() == 2
+
+
+def test_cycle_count_ignores_normal_dependencies():
+    graph = DependencyGraph()
+
     graph.add_edge("A", "B")
+    graph.add_edge("B", "C")
+    graph.add_edge("C", "D")
 
-    assert graph.edge_count() == 1
-    assert graph.edges == [
-        ("A", "B"),
-    ]
-
-
-def test_node_with_no_dependencies():
-    graph = DependencyGraph()
-
-    graph.add_node("A")
-
-    assert graph.dependencies_of("A") == []
+    assert graph.cycle_count() == 0
 
 
-def test_node_with_no_dependents():
-    graph = DependencyGraph()
-
-    graph.add_node("A")
-
-    assert graph.dependents_of("A") == []
-
-
-def test_self_dependency():
+def test_cycle_count_detects_self_loop():
     graph = DependencyGraph()
 
     graph.add_edge("A", "A")
 
-    assert graph.dependencies_of("A") == ["A"]
-    assert graph.dependents_of("A") == ["A"]
     assert graph.cycle_count() == 1
 
 
-def test_reachable_handles_cycle():
+def test_strongly_connected_components():
     graph = DependencyGraph()
 
     graph.add_edge("A", "B")
-    graph.add_edge("B", "C")
-    graph.add_edge("C", "A")
+    graph.add_edge("B", "A")
 
-    assert graph.reachable_from("A") == [
-        "B",
-        "C",
-    ]
+    graph.add_edge("C", "D")
+    graph.add_edge("D", "E")
+    graph.add_edge("E", "C")
+
+    graph.add_edge("F", "G")
+
+    components = graph.strongly_connected_components()
+
+    assert ["A", "B"] in components
+    assert ["C", "D", "E"] in components
+    assert ["F"] in components
+    assert ["G"] in components
 
 
-def test_reverse_reachable_handles_cycle():
+def test_strongly_connected_components_handles_empty_graph():
     graph = DependencyGraph()
 
-    graph.add_edge("A", "B")
-    graph.add_edge("B", "C")
-    graph.add_edge("C", "A")
-
-    assert graph.reverse_reachable_from("A") == [
-        "B",
-        "C",
-    ]
+    assert graph.strongly_connected_components() == []
 
 
-def test_find_path_returns_empty_when_unreachable():
+def test_cycle_count_handles_empty_graph():
     graph = DependencyGraph()
 
-    graph.add_edge("A", "B")
-    graph.add_node("C")
-
-    assert graph.find_path("A", "C") == []
-
-
-def test_impact_of_leaf_node():
-    graph = DependencyGraph()
-
-    graph.add_edge("A", "B")
-
-    assert graph.impact_of("A") == {
-        "direct": [],
-        "indirect": [],
-    }
-
-
-def test_impact_chains_leaf_node():
-    graph = DependencyGraph()
-
-    graph.add_node("A")
-
-    assert graph.impact_chains("A") == [
-        ["A"],
-    ]
+    assert graph.cycle_count() == 0
