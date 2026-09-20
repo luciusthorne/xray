@@ -123,30 +123,51 @@ class DependencyGraph:
 
         return None
 
-    def resolve_import(self, module, project_root):
+    def resolve_import(
+        self,
+        module,
+        name,
+        project_root,
+    ):
         """
-        Resolve an import while preferring an actual module over
-        a package __init__.py when both are possible.
+        Resolve an import.
+
+        For imports such as:
+
+            from package import database
+
+        prefer:
+
+            package/database.py
+
+        over:
+
+            package/__init__.py
         """
+
         module = module.strip()
+
+        if module.startswith("."):
+            module = module.lstrip(".")
 
         if not module:
             return None
 
-        parts = module.split(".")
-        module_path = Path(project_root).joinpath(*parts)
+        if name:
+            candidate_module = f"{module}.{name}"
 
-        file_path = module_path.with_suffix(".py")
+            resolved = self.resolve_local_module(
+                candidate_module,
+                project_root,
+            )
 
-        if file_path.exists():
-            return str(file_path)
+            if resolved is not None:
+                return resolved
 
-        package_init = module_path / "__init__.py"
-
-        if package_init.exists():
-            return str(package_init)
-
-        return None
+        return self.resolve_local_module(
+            module,
+            project_root,
+        )
 
     def build_from(
         self,
@@ -166,10 +187,7 @@ class DependencyGraph:
             visited.add(path)
 
             try:
-                analysis = analyze_function(
-                    path,
-                    project_root=project_root,
-                )
+                analysis = analyze_function(path)
             except (OSError, SyntaxError):
                 return
 
@@ -183,8 +201,9 @@ class DependencyGraph:
                 if dependency["type"] != "local":
                     continue
 
-                target = self.resolve_dependency(
-                    dependency,
+                target = self.resolve_import(
+                    dependency["module"],
+                    dependency["name"],
                     project_root,
                 )
 
@@ -193,12 +212,9 @@ class DependencyGraph:
 
                 target_path = Path(target).resolve()
 
-                try:
-                    target_node = str(
-                        target_path.relative_to(workspace_root)
-                    )
-                except ValueError:
-                    continue
+                target_node = str(
+                    target_path.relative_to(workspace_root)
+                )
 
                 self.add_edge(
                     source_node,
@@ -209,30 +225,6 @@ class DependencyGraph:
 
         visit(source)
 
-    def resolve_dependency(self, dependency, project_root):
-        module = dependency["module"].strip()
-
-        if not module:
-            return None
-
-        imported = dependency.get("name")
-
-        if imported:
-            candidate = f"{module}.{imported}"
-
-            resolved = self.resolve_import(
-                candidate,
-                project_root,
-            )
-
-            if resolved is not None:
-                return resolved
-
-        return self.resolve_import(
-            module,
-            project_root,
-        )
-
     def build_project(
         self,
         project_root,
@@ -240,6 +232,7 @@ class DependencyGraph:
         workspace_root,
     ):
         project_root = Path(project_root).resolve()
+        workspace_root = Path(workspace_root).resolve()
 
         for path in project_root.rglob("*.py"):
             if "__pycache__" in path.parts:
@@ -256,10 +249,7 @@ class DependencyGraph:
                 continue
 
             try:
-                analysis = analyze_function(
-                    path,
-                    project_root=project_root,
-                )
+                analysis = analyze_function(path)
             except (OSError, SyntaxError):
                 continue
 
@@ -271,22 +261,20 @@ class DependencyGraph:
                 if dependency["type"] != "local":
                     continue
 
-                target = self.resolve_dependency(
-                    dependency,
+                target = self.resolve_import(
+                    dependency["module"],
+                    dependency["name"],
                     project_root,
                 )
 
                 if target is None:
                     continue
 
-                target_path = Path(target).resolve()
-
-                try:
-                    target_node = str(
-                        target_path.relative_to(workspace_root)
-                    )
-                except ValueError:
-                    continue
+                target_node = str(
+                    Path(target)
+                    .resolve()
+                    .relative_to(workspace_root)
+                )
 
                 self.add_edge(
                     source_node,
@@ -304,11 +292,7 @@ class DependencyGraph:
             for index, dependency in enumerate(dependencies):
                 is_last = index == len(dependencies) - 1
 
-                branch = (
-                    "└── "
-                    if is_last
-                    else "├── "
-                )
+                branch = "└── " if is_last else "├── "
 
                 lines.append(
                     prefix + branch + dependency
@@ -344,9 +328,7 @@ class DependencyGraph:
         visited = {node}
 
         def walk(current):
-            for dependent in sorted(
-                self.dependents_of(current)
-            ):
+            for dependent in self.dependents_of(current):
                 if dependent in visited:
                     continue
 
@@ -441,7 +423,9 @@ class DependencyGraph:
         return sorted(reachable)
 
     def reachable_count(self, node):
-        return len(self.reachable_from(node))
+        return len(
+            self.reachable_from(node)
+        )
 
     def reverse_reachable_count(self, node):
         return len(
@@ -451,7 +435,9 @@ class DependencyGraph:
     def reachability_stats(self, node):
         return {
             "reachable": self.reachable_count(node),
-            "reverse_reachable": self.reverse_reachable_count(node),
+            "reverse_reachable": (
+                self.reverse_reachable_count(node)
+            ),
         }
 
     def find_path(self, source, target):
@@ -495,10 +481,8 @@ class DependencyGraph:
 
     def strongly_connected_components(self):
         """
-        Find strongly connected components using Tarjan's algorithm.
-
-        A component containing multiple nodes represents a cycle
-        when every node can reach every other node.
+        Find strongly connected components using
+        Tarjan's algorithm.
         """
 
         index = 0
@@ -513,7 +497,6 @@ class DependencyGraph:
 
             indices[node] = index
             lowlinks[node] = index
-
             index += 1
 
             stack.append(node)
@@ -540,12 +523,11 @@ class DependencyGraph:
                 component = []
 
                 while True:
-                    member = stack.pop()
-                    on_stack.remove(member)
+                    neighbor = stack.pop()
+                    on_stack.remove(neighbor)
+                    component.append(neighbor)
 
-                    component.append(member)
-
-                    if member == node:
+                    if neighbor == node:
                         break
 
                 components.append(
@@ -556,12 +538,7 @@ class DependencyGraph:
             if node not in indices:
                 strong_connect(node)
 
-        components.sort(
-            key=lambda component: (
-                component[0]
-                if component
-                else ""
-            )
+        return sorted(
+            components,
+            key=lambda component: component[0],
         )
-
-        return components
