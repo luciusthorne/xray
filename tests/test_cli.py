@@ -124,3 +124,42 @@ def test_unknown_target():
 
     assert result.returncode != 0
     assert "Command not found: definitely-not-a-command" in result.stdout
+
+def test_path():
+    output = run_xray(
+        "--path",
+        "test_programs/cycle_c.py",
+    )
+
+    assert (
+        "Dependency path from "
+        "test_programs/cycle_a.py to "
+        "test_programs/cycle_c.py"
+    ) in output
+
+    assert (
+        "test_programs/cycle_a.py → "
+        "test_programs/cycle_b.py → "
+        "test_programs/cycle_c.py"
+    ) in output
+
+
+def test_path_same_node():
+    output = run_xray(
+        "--path",
+        "test_programs/cycle_a.py",
+    )
+
+    assert (
+        "test_programs/cycle_a.py"
+        in output
+    )
+
+
+def test_path_missing_target():
+    output = run_xray(
+        "--path",
+        "definitely-not-real.py",
+    )
+
+    assert "No path found" in output
