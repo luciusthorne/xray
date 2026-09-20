@@ -265,3 +265,96 @@ def test_find_path_handles_cycle():
         "B",
         "C",
     ]
+
+def test_add_duplicate_edge_only_once():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "B")
+    graph.add_edge("A", "B")
+
+    assert graph.edge_count() == 1
+    assert graph.edges == [
+        ("A", "B"),
+    ]
+
+
+def test_node_with_no_dependencies():
+    graph = DependencyGraph()
+
+    graph.add_node("A")
+
+    assert graph.dependencies_of("A") == []
+
+
+def test_node_with_no_dependents():
+    graph = DependencyGraph()
+
+    graph.add_node("A")
+
+    assert graph.dependents_of("A") == []
+
+
+def test_self_dependency():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "A")
+
+    assert graph.dependencies_of("A") == ["A"]
+    assert graph.dependents_of("A") == ["A"]
+    assert graph.cycle_count() == 1
+
+
+def test_reachable_handles_cycle():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "B")
+    graph.add_edge("B", "C")
+    graph.add_edge("C", "A")
+
+    assert graph.reachable_from("A") == [
+        "B",
+        "C",
+    ]
+
+
+def test_reverse_reachable_handles_cycle():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "B")
+    graph.add_edge("B", "C")
+    graph.add_edge("C", "A")
+
+    assert graph.reverse_reachable_from("A") == [
+        "B",
+        "C",
+    ]
+
+
+def test_find_path_returns_empty_when_unreachable():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "B")
+    graph.add_node("C")
+
+    assert graph.find_path("A", "C") == []
+
+
+def test_impact_of_leaf_node():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "B")
+
+    assert graph.impact_of("A") == {
+        "direct": [],
+        "indirect": [],
+    }
+
+
+def test_impact_chains_leaf_node():
+    graph = DependencyGraph()
+
+    graph.add_node("A")
+
+    assert graph.impact_chains("A") == [
+        ["A"],
+    ]
