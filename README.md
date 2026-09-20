@@ -273,7 +273,7 @@ The current test suite covers Python analysis, dependency graph behavior, graph 
 
 The release baseline currently passes:
 
-57 passed
+64 passed
 
 
 You can also check Python syntax with:

@@ -236,3 +236,12 @@ def test_help_lists_all_queries():
         "--path",
     ):
         assert option in result.stdout
+def test_module_help():
+    result = subprocess.run(
+        [sys.executable, "-m", "xray", "--help"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "Usage: xray <target> [options]" in result.stdout
