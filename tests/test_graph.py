@@ -354,3 +354,117 @@ def test_cycle_count_handles_empty_graph():
     graph = DependencyGraph()
 
     assert graph.cycle_count() == 0
+def test_dependencies_of_unknown_node():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "B")
+
+    assert graph.dependencies_of("X") == []
+
+
+def test_dependents_of_unknown_node():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "B")
+
+    assert graph.dependents_of("X") == []
+
+
+def test_dependency_depth_handles_cycle():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "B")
+    graph.add_edge("B", "C")
+    graph.add_edge("C", "A")
+
+    assert graph.dependency_depth("A") == 2
+
+
+def test_dependency_depth_handles_missing_node():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "B")
+
+    assert graph.dependency_depth("X") == 0
+
+
+def test_reachable_from_handles_cycle():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "B")
+    graph.add_edge("B", "C")
+    graph.add_edge("C", "A")
+    graph.add_edge("C", "D")
+
+    assert graph.reachable_from("A") == [
+        "B",
+        "C",
+        "D",
+    ]
+
+
+def test_reverse_reachable_from_handles_cycle():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "B")
+    graph.add_edge("B", "C")
+    graph.add_edge("C", "A")
+    graph.add_edge("C", "D")
+
+    assert graph.reverse_reachable_from("D") == [
+        "A",
+        "B",
+        "C",
+    ]
+
+
+def test_find_path_prefers_deterministic_shortest_path():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "C")
+    graph.add_edge("A", "B")
+    graph.add_edge("B", "D")
+    graph.add_edge("C", "D")
+
+    assert graph.find_path("A", "D") == [
+        "A",
+        "B",
+        "D",
+    ]
+
+
+def test_find_path_returns_empty_when_unreachable():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "B")
+    graph.add_edge("C", "D")
+
+    assert graph.find_path("A", "D") == []
+
+
+def test_leaf_nodes_with_multiple_branches():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "B")
+    graph.add_edge("A", "C")
+    graph.add_edge("B", "D")
+    graph.add_edge("C", "E")
+
+    assert graph.leaf_nodes() == [
+        "D",
+        "E",
+    ]
+
+
+def test_dependency_hotspots_are_deterministic():
+    graph = DependencyGraph()
+
+    graph.add_edge("A", "C")
+    graph.add_edge("B", "C")
+    graph.add_edge("D", "B")
+    graph.add_edge("E", "B")
+
+    assert graph.dependency_hotspots() == [
+        ("B", 2),
+        ("C", 2),
+    ]
