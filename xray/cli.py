@@ -28,12 +28,18 @@ def print_help():
 def build_graph(workspace_root, path):
     graph = DependencyGraph()
 
-    test_project = workspace_root / "test_programs"
+    path = Path(path).resolve()
 
-    if test_project.exists():
-        project_root = test_project
-    else:
-        project_root = workspace_root / "xray"
+    # Build the graph from the directory containing the target.
+    #
+    # Examples:
+    #
+    # test_programs/cycle_a.py
+    # -> test_programs/
+    #
+    # xray/dependencies.py
+    # -> xray/
+    project_root = path.parent
 
     graph.build_project(
         project_root,
@@ -48,37 +54,32 @@ def dependency_depth(graph, node):
     """
     Return the maximum dependency depth.
 
-    A -> B -> C -> A is treated as depth 3.
+    Cycles are handled without infinite recursion.
     """
 
-    longest = 0
-
     def walk(current, path):
-        nonlocal longest
-
         dependencies = graph.dependencies_of(current)
 
         if not dependencies:
-            longest = max(longest, len(path) - 1)
-            return
+            return len(path) - 1
+
+        longest = len(path) - 1
 
         for dependency in dependencies:
-            if dependency == node:
-                longest = max(longest, len(path))
-                continue
-
             if dependency in path:
                 longest = max(longest, len(path))
                 continue
 
-            walk(
+            depth = walk(
                 dependency,
                 path + [dependency],
             )
 
-    walk(node, [node])
+            longest = max(longest, depth)
 
-    return longest
+        return longest
+
+    return walk(node, [node])
 
 
 def main():

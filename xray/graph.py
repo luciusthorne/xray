@@ -1,3 +1,4 @@
+from collections import deque
 from pathlib import Path
 
 
@@ -18,6 +19,12 @@ class DependencyGraph:
         if edge not in self.edges:
             self.edges.append(edge)
 
+    def node_count(self):
+        return len(self.nodes)
+
+    def edge_count(self):
+        return len(self.edges)
+
     def dependencies_of(self, node):
         return [
             target
@@ -32,12 +39,6 @@ class DependencyGraph:
             if target == node
         ]
 
-    def node_count(self):
-        return len(self.nodes)
-
-    def edge_count(self):
-        return len(self.edges)
-
     def leaf_nodes(self):
         return sorted(
             node
@@ -45,68 +46,95 @@ class DependencyGraph:
             if not self.dependencies_of(node)
         )
 
-    def most_depended_on(self):
-        if not self.nodes:
-            return None
+    def dependency_depth(self, node):
+        def depth(current, visited):
+            dependencies = self.dependencies_of(current)
 
-        counts = {
-            node: len(self.dependents_of(node))
-            for node in self.nodes
-        }
+            if not dependencies:
+                return 0
 
-        max_count = max(counts.values())
+            maximum = 0
 
-        if max_count == 0:
-            return None
+            for dependency in dependencies:
+                if dependency in visited:
+                    continue
 
-        return sorted(
-            node
-            for node, count in counts.items()
-            if count == max_count
+                maximum = max(
+                    maximum,
+                    1 + depth(
+                        dependency,
+                        visited | {dependency},
+                    ),
+                )
+
+            return maximum
+
+        if node not in self.nodes:
+            return 0
+
+        return depth(node, {node})
+
+    def cycle_count(self):
+        return sum(
+            1
+            for component in self.strongly_connected_components()
+            if len(component) > 1
+            or (
+                len(component) == 1
+                and (
+                    component[0],
+                    component[0],
+                ) in self.edges
+            )
         )
 
     def dependency_hotspots(self):
-        hotspots = []
+        counts = {}
 
-        for node in self.nodes:
-            count = len(self.dependents_of(node))
-
-            if count > 0:
-                hotspots.append((node, count))
+        for source, target in self.edges:
+            counts[target] = counts.get(target, 0) + 1
 
         return sorted(
-            hotspots,
+            counts.items(),
             key=lambda item: (-item[1], item[0]),
         )
 
-    def cycle_count(self):
-        return len(self.find_cycles())
+    def resolve_local_module(self, module, project_root):
+        module = module.strip()
 
-    def resolve_local_module(
-        self,
-        module,
-        project_root,
-        name=None,
-    ):
-        module = module.lstrip(".")
+        if module.startswith("."):
+            module = module.lstrip(".")
+
+        if not module:
+            return None
+
         parts = module.split(".")
-
         module_path = Path(project_root).joinpath(*parts)
 
-        if name:
-            imported_module = module_path / f"{name}.py"
+        file_path = module_path.with_suffix(".py")
 
-            if imported_module.exists():
-                return str(imported_module)
+        if file_path.exists():
+            return str(file_path)
 
-            imported_package = (
-                module_path
-                / name
-                / "__init__.py"
-            )
+        package_init = module_path / "__init__.py"
 
-            if imported_package.exists():
-                return str(imported_package)
+        if package_init.exists():
+            return str(package_init)
+
+        return None
+
+    def resolve_import(self, module, project_root):
+        """
+        Resolve an import while preferring an actual module over
+        a package __init__.py when both are possible.
+        """
+        module = module.strip()
+
+        if not module:
+            return None
+
+        parts = module.split(".")
+        module_path = Path(project_root).joinpath(*parts)
 
         file_path = module_path.with_suffix(".py")
 
@@ -138,7 +166,10 @@ class DependencyGraph:
             visited.add(path)
 
             try:
-                analysis = analyze_function(path)
+                analysis = analyze_function(
+                    path,
+                    project_root=project_root,
+                )
             except (OSError, SyntaxError):
                 return
 
@@ -152,16 +183,9 @@ class DependencyGraph:
                 if dependency["type"] != "local":
                     continue
 
-                dependency_root = (
-                    path.parent
-                    if dependency["relative"]
-                    else project_root
-                )
-
-                target = self.resolve_local_module(
-                    dependency["module"],
-                    dependency_root,
-                    dependency["name"],
+                target = self.resolve_dependency(
+                    dependency,
+                    project_root,
                 )
 
                 if target is None:
@@ -169,9 +193,12 @@ class DependencyGraph:
 
                 target_path = Path(target).resolve()
 
-                target_node = str(
-                    target_path.relative_to(workspace_root)
-                )
+                try:
+                    target_node = str(
+                        target_path.relative_to(workspace_root)
+                    )
+                except ValueError:
+                    continue
 
                 self.add_edge(
                     source_node,
@@ -182,6 +209,30 @@ class DependencyGraph:
 
         visit(source)
 
+    def resolve_dependency(self, dependency, project_root):
+        module = dependency["module"].strip()
+
+        if not module:
+            return None
+
+        imported = dependency.get("name")
+
+        if imported:
+            candidate = f"{module}.{imported}"
+
+            resolved = self.resolve_import(
+                candidate,
+                project_root,
+            )
+
+            if resolved is not None:
+                return resolved
+
+        return self.resolve_import(
+            module,
+            project_root,
+        )
+
     def build_project(
         self,
         project_root,
@@ -189,14 +240,13 @@ class DependencyGraph:
         workspace_root,
     ):
         project_root = Path(project_root).resolve()
-        workspace_root = Path(workspace_root).resolve()
 
         for path in project_root.rglob("*.py"):
             if "__pycache__" in path.parts:
                 continue
 
             source_node = str(
-                path.resolve().relative_to(workspace_root)
+                path.relative_to(workspace_root)
             )
 
             self.add_node(source_node)
@@ -208,39 +258,35 @@ class DependencyGraph:
             try:
                 analysis = analyze_function(
                     path,
-                    project_root,
+                    project_root=project_root,
                 )
             except (OSError, SyntaxError):
                 continue
 
             source_node = str(
-                path.resolve().relative_to(workspace_root)
+                path.relative_to(workspace_root)
             )
 
             for dependency in analysis["dependencies"]:
                 if dependency["type"] != "local":
                     continue
 
-                dependency_root = (
-                    path.parent
-                    if dependency["relative"]
-                    else project_root
-                )
-
-                target = self.resolve_local_module(
-                    dependency["module"],
-                    dependency_root,
-                    dependency["name"],
+                target = self.resolve_dependency(
+                    dependency,
+                    project_root,
                 )
 
                 if target is None:
                     continue
 
-                target_node = str(
-                    Path(target)
-                    .resolve()
-                    .relative_to(workspace_root)
-                )
+                target_path = Path(target).resolve()
+
+                try:
+                    target_node = str(
+                        target_path.relative_to(workspace_root)
+                    )
+                except ValueError:
+                    continue
 
                 self.add_edge(
                     source_node,
@@ -298,7 +344,9 @@ class DependencyGraph:
         visited = {node}
 
         def walk(current):
-            for dependent in self.dependents_of(current):
+            for dependent in sorted(
+                self.dependents_of(current)
+            ):
                 if dependent in visited:
                     continue
 
@@ -346,199 +394,65 @@ class DependencyGraph:
 
         return chains
 
-    def find_cycles(self):
-        cycles = []
-        seen = set()
+    def reachable_from(self, node):
+        if node not in self.nodes:
+            return []
 
-        def canonical_cycle(cycle):
-            cycle = cycle[:-1]
+        reachable = []
+        visited = {node}
+        queue = deque([node])
 
-            rotations = []
+        while queue:
+            current = queue.popleft()
 
-            for index in range(len(cycle)):
-                rotated = (
-                    cycle[index:]
-                    + cycle[:index]
-                )
-
-                rotations.append(tuple(rotated))
-
-            return min(rotations)
-
-        def walk(start, current, path):
             for dependency in sorted(
                 self.dependencies_of(current)
             ):
-                if dependency == start:
-                    cycle = path + [start]
-                    key = canonical_cycle(cycle)
-
-                    if key not in seen:
-                        seen.add(key)
-                        cycles.append(list(key))
-
-                elif dependency not in path:
-                    walk(
-                        start,
-                        dependency,
-                        path + [dependency],
-                    )
-
-        for node in sorted(self.nodes):
-            walk(node, node, [node])
-
-        return sorted(cycles)
-
-    def dependency_depth(self, node):
-        memo = {}
-        visiting = set()
-
-        def depth(current):
-            if current in memo:
-                return memo[current]
-
-            if current in visiting:
-                return 0
-
-            visiting.add(current)
-
-            dependencies = self.dependencies_of(current)
-
-            if not dependencies:
-                result = 0
-            else:
-                result = 1 + max(
-                    depth(dependency)
-                    for dependency in dependencies
-                )
-
-            visiting.remove(current)
-            memo[current] = result
-
-            return result
-
-        return depth(node)
-
-    def strongly_connected_components(self):
-        index = 0
-        indices = {}
-        lowlinks = {}
-        stack = []
-        on_stack = set()
-        components = []
-
-        def visit(node):
-            nonlocal index
-
-            indices[node] = index
-            lowlinks[node] = index
-            index += 1
-
-            stack.append(node)
-            on_stack.add(node)
-
-            for dependency in self.dependencies_of(node):
-                if dependency not in indices:
-                    visit(dependency)
-
-                    lowlinks[node] = min(
-                        lowlinks[node],
-                        lowlinks[dependency],
-                    )
-
-                elif dependency in on_stack:
-                    lowlinks[node] = min(
-                        lowlinks[node],
-                        indices[dependency],
-                    )
-
-            if lowlinks[node] == indices[node]:
-                component = []
-
-                while True:
-                    current = stack.pop()
-                    on_stack.remove(current)
-                    component.append(current)
-
-                    if current == node:
-                        break
-
-                components.append(
-                    sorted(component)
-                )
-
-        for node in sorted(self.nodes):
-            if node not in indices:
-                visit(node)
-
-        return sorted(
-            components,
-            key=lambda component: component[0],
-        )
-
-    def reachable_from(self, node):
-        reachable = set()
-        visited = {node}
-
-        def walk(current):
-            for dependency in self.dependencies_of(current):
                 if dependency in visited:
                     continue
 
                 visited.add(dependency)
-                reachable.add(dependency)
+                reachable.append(dependency)
+                queue.append(dependency)
 
-                walk(dependency)
-
-        walk(node)
-
-        return sorted(reachable)
+        return reachable
 
     def reverse_reachable_from(self, node):
-        reachable = set()
-        visited = {node}
+        if node not in self.nodes:
+            return []
 
-        def walk(current):
-            for dependent in self.dependents_of(current):
+        reachable = []
+        visited = {node}
+        queue = deque([node])
+
+        while queue:
+            current = queue.popleft()
+
+            for dependent in sorted(
+                self.dependents_of(current)
+            ):
                 if dependent in visited:
                     continue
 
                 visited.add(dependent)
-                reachable.add(dependent)
-
-                walk(dependent)
-
-        walk(node)
+                reachable.append(dependent)
+                queue.append(dependent)
 
         return sorted(reachable)
 
-    def nodes_at_distance(self, node, distance):
-        if distance < 0:
-            return []
+    def reachable_count(self, node):
+        return len(self.reachable_from(node))
 
-        if distance == 0:
-            return [node] if node in self.nodes else []
+    def reverse_reachable_count(self, node):
+        return len(
+            self.reverse_reachable_from(node)
+        )
 
-        current_level = {node}
-        visited = {node}
-
-        for _ in range(distance):
-            next_level = set()
-
-            for current in current_level:
-                for dependency in self.dependencies_of(current):
-                    if dependency in visited:
-                        continue
-
-                    visited.add(dependency)
-                    next_level.add(dependency)
-
-            current_level = next_level
-
-            if not current_level:
-                break
-
-        return sorted(current_level)
+    def reachability_stats(self, node):
+        return {
+            "reachable": self.reachable_count(node),
+            "reverse_reachable": self.reverse_reachable_count(node),
+        }
 
     def find_path(self, source, target):
         if source not in self.nodes:
@@ -550,38 +464,104 @@ class DependencyGraph:
         if source == target:
             return [source]
 
-        queue = [[source]]
-        visited = {source}
+        queue = deque([source])
+        parents = {source: None}
 
         while queue:
-            path = queue.pop(0)
-            current = path[-1]
+            current = queue.popleft()
 
-            for dependency in sorted(
+            for neighbor in sorted(
                 self.dependencies_of(current)
             ):
-                if dependency in visited:
+                if neighbor in parents:
                     continue
 
-                next_path = path + [dependency]
+                parents[neighbor] = current
 
-                if dependency == target:
-                    return next_path
+                if neighbor == target:
+                    path = []
+                    cursor = target
 
-                visited.add(dependency)
-                queue.append(next_path)
+                    while cursor is not None:
+                        path.append(cursor)
+                        cursor = parents[cursor]
+
+                    path.reverse()
+                    return path
+
+                queue.append(neighbor)
 
         return []
 
+    def strongly_connected_components(self):
+        """
+        Find strongly connected components using Tarjan's algorithm.
 
-    def reachable_count(self, node):
-        return len(self.reachable_from(node))
+        A component containing multiple nodes represents a cycle
+        when every node can reach every other node.
+        """
 
-    def reverse_reachable_count(self, node):
-        return len(self.reverse_reachable_from(node))
+        index = 0
+        indices = {}
+        lowlinks = {}
+        stack = []
+        on_stack = set()
+        components = []
 
-    def reachability_stats(self, node):
-        return {
-            "reachable": self.reachable_count(node),
-            "reverse_reachable": self.reverse_reachable_count(node),
-        }
+        def strong_connect(node):
+            nonlocal index
+
+            indices[node] = index
+            lowlinks[node] = index
+
+            index += 1
+
+            stack.append(node)
+            on_stack.add(node)
+
+            for neighbor in sorted(
+                self.dependencies_of(node)
+            ):
+                if neighbor not in indices:
+                    strong_connect(neighbor)
+
+                    lowlinks[node] = min(
+                        lowlinks[node],
+                        lowlinks[neighbor],
+                    )
+
+                elif neighbor in on_stack:
+                    lowlinks[node] = min(
+                        lowlinks[node],
+                        indices[neighbor],
+                    )
+
+            if lowlinks[node] == indices[node]:
+                component = []
+
+                while True:
+                    member = stack.pop()
+                    on_stack.remove(member)
+
+                    component.append(member)
+
+                    if member == node:
+                        break
+
+                components.append(
+                    sorted(component)
+                )
+
+        for node in sorted(self.nodes):
+            if node not in indices:
+                strong_connect(node)
+
+        components.sort(
+            key=lambda component: (
+                component[0]
+                if component
+                else ""
+            )
+        )
+
+        return components
