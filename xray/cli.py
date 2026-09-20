@@ -270,12 +270,16 @@ def main():
 
         for component in components:
             if len(component) > 1:
-                cycles.append(component)
+                if source_node in component:
+                    cycles.append(component)
 
             elif component:
                 node = component[0]
 
-                if node in graph.dependencies_of(node):
+                if (
+                    node == source_node
+                    and node in graph.dependencies_of(node)
+                ):
                     cycles.append(component)
 
         if cycles:
@@ -286,7 +290,7 @@ def main():
                     )
                     continue
 
-                start = cycle[0]
+                start = source_node
                 current = start
                 path = [start]
                 visited = {start}
@@ -483,187 +487,57 @@ def main():
         print()
         print(
             f"Dependency path from "
-            f"{source_node} to {target_node}"
+            f"{source_node} to "
+            f"{target_node}"
         )
         print("────────────────────────────")
 
-        queue = [
-            (source_node, [source_node])
-        ]
+        path_result = graph.find_path(
+            source_node,
+            target_node,
+        )
 
-        visited = {source_node}
-        found_path = None
-
-        while queue:
-            current, current_path = queue.pop(0)
-
-            if current == target_node:
-                found_path = current_path
-                break
-
-            for dependency in sorted(
-                graph.dependencies_of(current)
-            ):
-                if dependency in visited:
-                    continue
-
-                visited.add(dependency)
-
-                queue.append(
-                    (
-                        dependency,
-                        current_path + [dependency],
-                    )
-                )
-
-        if found_path:
-            print(" → ".join(found_path))
+        if path_result:
+            print(" → ".join(path_result))
         else:
             print("No path found")
 
         return
 
     # ---------------------------------------------------------
-    # Normal analysis
+    # Default output
     # ---------------------------------------------------------
 
-    print(f"Target:     {command}")
-    print(f"Executable: {path}")
+    print()
+    print(f"File:       {path}")
     print(f"Type:       {file_type}")
 
-    print()
-    print("Metadata")
-    print("────────────────────────────")
-    print(f"Size:        {metadata['size']} bytes")
-    print(f"Permissions: {metadata['mode']}")
-    print(f"Owner UID:   {metadata['owner_uid']}")
-    print(f"Group GID:   {metadata['group_gid']}")
-    print(f"Modified:    {metadata['modified']}")
-
-    print()
-    print("Program")
-    print("────────────────────────────")
+    if metadata:
+        print(f"Size:       {metadata.get('size', 'unknown')} bytes")
 
     if shebang:
-        print(f"Interpreter: {shebang}")
-    else:
-        print("Interpreter: none detected")
+        print(f"Shebang:    {shebang}")
 
-    if analysis:
+    if analysis is not None:
         print()
-        print("Source")
-        print("────────────────────────────")
-        print(f"Language:    {analysis['language']}")
-
-        print()
-        print("Imports")
+        print("Python analysis")
         print("────────────────────────────")
 
-        if analysis["imports"]:
-            for item in analysis["imports"]:
-                if item.get("name"):
-                    if item["alias"]:
-                        print(
-                            f"- from {item['module']} "
-                            f"import {item['name']} "
-                            f"as {item['alias']}"
-                        )
-                    else:
-                        print(
-                            f"- from {item['module']} "
-                            f"import {item['name']}"
-                        )
-                else:
-                    if item["alias"]:
-                        print(
-                            f"- import {item['module']} "
-                            f"as {item['alias']}"
-                        )
-                    else:
-                        print(
-                            f"- import {item['module']}"
-                        )
-        else:
-            print("none")
+        print(
+            f"Imports:    "
+            f"{len(analysis['dependencies'])}"
+        )
 
-        print()
-        print("Dependencies")
-        print("────────────────────────────")
+        local_dependencies = [
+            dependency
+            for dependency in analysis["dependencies"]
+            if dependency["type"] == "local"
+        ]
 
-        if analysis["dependencies"]:
-            for item in analysis["dependencies"]:
-                if item["name"]:
-                    dependency = (
-                        f"{item['module']}.{item['name']}"
-                    )
-                else:
-                    dependency = item["module"]
-
-                print(
-                    f"- {command} → "
-                    f"{dependency} "
-                    f"[{item['type']}]"
-                )
-        else:
-            print("none")
-
-        print()
-        print("Graph")
-        print("────────────────────────────")
-        print(f"Nodes: {sorted(graph.nodes)}")
-        print(f"Edges: {graph.edges}")
-
-        print()
-        print("Functions")
-        print("────────────────────────────")
-
-        if analysis["functions"]:
-            for item in analysis["functions"]:
-                print(
-                    f"- {item['name']}() "
-                    f"line {item['line']}"
-                )
-        else:
-            print("none")
-
-        print()
-        print("Classes")
-        print("────────────────────────────")
-
-        if analysis["classes"]:
-            for item in analysis["classes"]:
-                print(
-                    f"- {item['name']} "
-                    f"line {item['line']}"
-                )
-        else:
-            print("none")
-
-        print()
-        print("Variables")
-        print("────────────────────────────")
-
-        if analysis["variables"]:
-            for item in analysis["variables"]:
-                print(
-                    f"- {item['name']} "
-                    f"line {item['line']}"
-                )
-        else:
-            print("none")
-
-        print()
-        print("Calls")
-        print("────────────────────────────")
-
-        if analysis["calls"]:
-            for item in analysis["calls"]:
-                print(
-                    f"- {item['name']}() "
-                    f"line {item['line']}"
-                )
-        else:
-            print("none")
+        print(
+            f"Local deps: "
+            f"{len(local_dependencies)}"
+        )
 
 
 if __name__ == "__main__":

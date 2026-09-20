@@ -2,40 +2,41 @@ xray
 
 xray is a lightweight Python project dependency analyzer.
 
-It looks at your Python project, finds how files depend on each other, and gives you a clear view of what is connected to what.
+It scans Python projects, builds a dependency graph, and lets you inspect how files are connected.
 
 Think of it as a small X-ray machine for your codebase.
-What can xray do?
+
+Features
 
 xray can:
 
-    Analyze Python files
+Analyze Python files
 
-    Detect imports and dependencies
+Detect imports and dependencies
 
-    Build dependency graphs
+Build project dependency graphs
 
-    Find dependency hotspots
+Find dependency hotspots
 
-    Detect circular dependencies
+Detect circular dependencies
 
-    Show dependency trees
+Show dependency trees
 
-    Analyze the impact of a file
+Analyze file impact
 
-    Show dependency chains
+Show impact chains
 
-    Calculate dependency depth
+Calculate dependency depth
 
-    Find reachable dependencies
+Find reachable dependencies
 
-    Find reverse-reachable dependents
+Find reverse-reachable dependents
 
-    Find paths between files
+Find paths between files
 
-    Find strongly connected components
+Find strongly connected components
 
-    Show project statistics
+Show project statistics
 
 Installation
 
@@ -47,120 +48,144 @@ Basic Usage
 
 Run xray against a Python file:
 
+xray test_programs/cycle_a.py
+
+
+You can add a query to inspect different parts of the dependency graph.
+
+You can also run the CLI as a Python module:
+
 python -m xray.cli test_programs/cycle_a.py
 
-You can then add a query to see different parts of the dependency graph.
 Commands
 --deps
 
 Show what the selected file depends on.
 
-python -m xray.cli test_programs/cycle_a.py --deps
+xray test_programs/cycle_a.py --deps
 
-Useful when you want to answer:
 
-    "What does this file use?"
+Useful for answering:
+
+What does this file use?
 
 --dependents
 
 Show which files depend on the selected file.
 
-python -m xray.cli test_programs/cycle_a.py --dependents
+xray test_programs/cycle_a.py --dependents
 
-This is useful for finding out:
 
-    "What would be affected if I changed this file?"
+Useful for understanding which files may be affected by changes to the selected file.
 
 --tree
 
 Show the dependency structure as a tree.
 
-python -m xray.cli test_programs/cycle_a.py --tree
+xray test_programs/cycle_a.py --tree
 
-This makes nested dependencies easier to understand at a glance.
+
+Example:
+
+cycle_a.py
+├── cycle_b.py
+│   └── cycle_c.py
+└── ...
+
 --impact
 
 Analyze the impact of a file.
 
-python -m xray.cli test_programs/cycle_a.py --impact
+xray test_programs/cycle_a.py --impact
 
-xray separates directly affected files from indirectly affected files and can also show the dependency chains involved.
+
+The report separates directly affected files from indirectly affected files and can also show impact chains.
+
 --cycles
 
 Find circular dependencies.
 
-python -m xray.cli test_programs/cycle_a.py --cycles
+xray test_programs/cycle_a.py --cycles
+
 
 Example:
 
 cycle_a.py → cycle_b.py → cycle_c.py → cycle_a.py
 
-Circular dependencies can be difficult to notice when looking at individual files. xray makes them visible.
 --depth
 
-Calculate how deep the dependency chain goes.
+Calculate dependency depth.
 
-python -m xray.cli test_programs/cycle_a.py --depth
+xray test_programs/cycle_a.py --depth
+
 
 The result shows the maximum dependency depth starting from the selected file.
+
 --project
 
-Show statistics about the project.
+Show project statistics.
 
-python -m xray.cli test_programs/cycle_a.py --project
+xray test_programs/cycle_a.py --project
 
-The project report includes information such as:
 
-    Python file count
+The project report includes:
 
-    Dependency edge count
+Python file count
 
-    Leaf files
+Dependency edge count
 
-    Circular dependencies
+Leaf files
 
-    Dependency hotspots
+Circular dependencies
+
+Dependency hotspots
 
 --components
 
 Show strongly connected components.
 
-python -m xray.cli test_programs/cycle_a.py --components
+xray test_programs/cycle_a.py --components
 
-This groups files that are strongly connected through the dependency graph.
 
-It is especially useful when investigating complicated dependency cycles.
+This groups files that are mutually reachable through the dependency graph.
+
+It is particularly useful when investigating circular dependencies.
+
 --reachable
 
 Show everything reachable from the selected file.
 
-python -m xray.cli test_programs/cycle_a.py --reachable
+xray test_programs/cycle_a.py --reachable
+
 
 In other words:
 
-    "Starting here, what can I eventually reach?"
+Starting here, what can I eventually reach?
 
 --reverse-reachable
 
 Show everything that can reach the selected file.
 
-python -m xray.cli test_programs/cycle_a.py --reverse-reachable
+xray test_programs/cycle_a.py --reverse-reachable
 
-This answers the opposite question:
 
-    "What can eventually depend on this?"
+This answers:
+
+What files can eventually depend on this?
 
 --path
 
-Find a dependency path between two files.
+Find a dependency path from the selected file to another file.
 
-python -m xray.cli test_programs/cycle_a.py --path test_programs/cycle_c.py
+xray test_programs/cycle_a.py --path test_programs/cycle_c.py
+
 
 Example:
 
 cycle_a.py → cycle_b.py → cycle_c.py
 
-If no path exists, xray reports:
+
+xray finds the shortest dependency path. If no path exists, it reports:
 
 No path found
 
@@ -168,25 +193,47 @@ Help
 
 To see the available commands:
 
-python -m xray.cli --help
+xray --help
+
 
 You can also use:
 
-python -m xray.cli -h
+xray -h
 
-How it works
 
-At its core, xray builds a directed graph.
+Or:
+
+python -m xray.cli --help
+
+How It Works
+
+At its core, xray builds a directed dependency graph.
 
 A dependency such as:
 
 a.py → b.py
 
+
 means that a.py depends on b.py.
 
 Once the project has been converted into a graph, xray can perform different analyses on that graph.
 
-That makes features like cycles, reachability, paths, impact analysis, and dependency depth possible.
+This makes features such as:
+
+cycle detection
+
+reachability analysis
+
+path finding
+
+impact analysis
+
+dependency depth
+
+strongly connected component analysis
+
+possible on top of the same graph representation.
+
 Project Structure
 
 The main parts of xray are separated by responsibility:
@@ -200,13 +247,16 @@ xray/
 ├── graph.py
 └── identify.py
 
+
 The graph engine lives in:
 
 xray/graph.py
 
+
 The command-line interface lives in:
 
 xray/cli.py
+
 
 Python source analysis is handled by:
 
@@ -218,32 +268,43 @@ Run the complete test suite with:
 
 pytest -q
 
-The project currently contains tests covering the analyzer, dependency graph, and CLI behavior.
 
-A passing test run looks like:
+The current test suite covers Python analysis, dependency graph behavior, graph algorithms, import resolution, cycle detection, reachability, path finding, and CLI functionality.
 
-41 passed
+The release baseline currently passes:
+
+57 passed
+
+
+You can also check Python syntax with:
+
+python3 -m py_compile xray/*.py
+
+
+And check for whitespace errors with:
+
+git diff --check
 
 Why xray?
 
 Large projects can make dependency relationships difficult to see.
 
-A file might depend on another file.
+A file might depend on another file, which depends on another, eventually producing a graph that is much harder to understand than the source code itself.
 
-That file might depend on another.
+xray makes that graph easier to inspect.
 
-Eventually, you can end up with a graph that is much harder to understand than the source code itself.
+Instead of guessing how files are connected, use xray to see those relationships directly.
 
-xray is meant to make that graph easier to inspect.
-
-Instead of guessing how your files are connected, use xray to see it.
 Status
 
 xray is an actively developed lightweight dependency-analysis tool.
 
 The project currently focuses on Python projects and graph-based dependency analysis.
 
+The 0.7.0 release focuses on expanding graph analysis and exposing those capabilities through the command-line interface.
+
 More analysis features can be built on top of the dependency graph as the project grows.
+
 License
 
 See the repository for licensing information.

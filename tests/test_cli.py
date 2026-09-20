@@ -58,9 +58,9 @@ def test_project():
     output = run_xray("--project")
 
     assert "Project" in output
-    assert "Python files:      5" in output
+    assert "Python files:      6" in output
     assert "Dependency edges:  3" in output
-    assert "Leaf files:        2" in output
+    assert "Leaf files:        3" in output
     assert "Cycles:            1" in output
     assert "Dependency hotspots" in output
 
@@ -163,3 +163,76 @@ def test_path_missing_target():
     )
 
     assert "No path found" in output
+
+
+def test_tree():
+    output = run_xray("--tree")
+
+    assert (
+        "Dependency tree for "
+        "test_programs/cycle_a.py"
+    ) in output
+    assert "test_programs/cycle_b.py" in output
+    assert "test_programs/cycle_c.py" in output
+
+
+def test_impact():
+    output = run_xray("--impact")
+
+    assert "Impact of removing test_programs/cycle_a.py" in output
+    assert "Directly affected:" in output
+    assert "Indirectly affected:" in output
+    assert "Impact chains" in output
+    assert "test_programs/cycle_c.py" in output
+
+
+def test_cycles_does_not_report_false_positive():
+    result = run_raw(
+        "test_programs/standalone.py",
+        "--cycles",
+    )
+
+    assert result.returncode == 0
+    assert "Circular dependencies" in result.stdout
+    assert "none" in result.stdout
+
+
+def test_path_missing_argument():
+    result = run_raw(
+        TARGET,
+        "--path",
+    )
+
+    assert result.returncode != 0
+    assert "Usage: xray <target> --path <target>" in result.stdout
+
+
+def test_unknown_option():
+    result = run_raw(
+        TARGET,
+        "--definitely-not-an-option",
+    )
+
+    assert result.returncode != 0
+    assert "Unknown option: --definitely-not-an-option" in result.stdout
+
+
+def test_help_lists_all_queries():
+    result = run_raw("--help")
+
+    assert result.returncode == 0
+
+    for option in (
+        "--deps",
+        "--dependents",
+        "--tree",
+        "--impact",
+        "--cycles",
+        "--depth",
+        "--project",
+        "--components",
+        "--reachable",
+        "--reverse-reachable",
+        "--path",
+    ):
+        assert option in result.stdout
