@@ -6,6 +6,15 @@ from .identify import identify_file, get_file_metadata
 from .classify import detect_shebang
 from .analyze import analyze_python
 from .graph import DependencyGraph
+from .errors import XRAYError, CLIError, TargetError
+from .errors import (
+    XRAYError,
+    CLIError,
+    TargetError,
+    FileError,
+    AnalysisError,
+)
+
 
 
 def print_help():
@@ -82,10 +91,9 @@ def dependency_depth(graph, node):
     return walk(node, [node])
 
 
-def main():
+def run():
     if len(sys.argv) == 1:
-        print_help()
-        sys.exit(1)
+        raise CLIError("missing target")
 
     if sys.argv[1] in ("--help", "-h"):
         print_help()
@@ -98,8 +106,9 @@ def main():
 
     if query == "--path":
         if len(sys.argv) != 4:
-            print("Usage: xray <target> --path <target>")
-            sys.exit(1)
+            raise CLIError(
+                "Usage: xray <target> --path <target>"
+            )
 
         path_target = sys.argv[3]
 
@@ -119,18 +128,19 @@ def main():
     }
 
     if query not in valid_queries:
-        print("Unknown option:", query)
-        print_help()
-        sys.exit(1)
-
-    print("XRAY")
-    print("────────────────────────────")
+        raise CLIError(
+            f"Unknown option: {query}"
+        )
 
     path = resolve_target(command)
 
     if path is None:
-        print(f"Command not found: {command}")
-        sys.exit(1)
+        raise TargetError(
+            f"Command not found: {command}"
+        )
+
+    print("XRAY")
+    print("────────────────────────────")
 
     workspace_root = Path.cwd()
 
@@ -540,5 +550,15 @@ def main():
         )
 
 
+def main():
+    try:
+        run()
+    except XRAYError as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return error.exit_code
+
+    return 0
+
+
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

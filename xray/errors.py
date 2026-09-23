@@ -3,6 +3,10 @@ class XRAYError(Exception):
 
     exit_code = 1
 
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
+
 
 class CLIError(XRAYError):
     """Invalid command-line usage."""

@@ -115,15 +115,21 @@ def test_short_help():
 def test_missing_target():
     result = run_raw()
 
-    assert result.returncode != 0
-    assert "Usage:" in result.stdout
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert "Error: missing target" in result.stderr
 
 
 def test_unknown_target():
     result = run_raw("definitely-not-a-command")
 
-    assert result.returncode != 0
-    assert "Command not found: definitely-not-a-command" in result.stdout
+    assert result.returncode == 3
+    assert result.stdout == ""
+    assert (
+        "Error: Command not found: definitely-not-a-command"
+        in result.stderr
+    )
+
 
 def test_path():
     output = run_xray(
@@ -150,10 +156,7 @@ def test_path_same_node():
         "test_programs/cycle_a.py",
     )
 
-    assert (
-        "test_programs/cycle_a.py"
-        in output
-    )
+    assert "test_programs/cycle_a.py" in output
 
 
 def test_path_missing_target():
@@ -203,8 +206,28 @@ def test_path_missing_argument():
         "--path",
     )
 
-    assert result.returncode != 0
-    assert "Usage: xray <target> --path <target>" in result.stdout
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert (
+        "Error: Usage: xray <target> --path <target>"
+        in result.stderr
+    )
+
+
+def test_path_extra_argument():
+    result = run_raw(
+        TARGET,
+        "--path",
+        "test_programs/cycle_c.py",
+        "extra",
+    )
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert (
+        "Error: Usage: xray <target> --path <target>"
+        in result.stderr
+    )
 
 
 def test_unknown_option():
@@ -213,8 +236,12 @@ def test_unknown_option():
         "--definitely-not-an-option",
     )
 
-    assert result.returncode != 0
-    assert "Unknown option: --definitely-not-an-option" in result.stdout
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert (
+        "Error: Unknown option: --definitely-not-an-option"
+        in result.stderr
+    )
 
 
 def test_help_lists_all_queries():
@@ -236,6 +263,8 @@ def test_help_lists_all_queries():
         "--path",
     ):
         assert option in result.stdout
+
+
 def test_module_help():
     result = subprocess.run(
         [sys.executable, "-m", "xray", "--help"],
