@@ -116,3 +116,44 @@ def test_analyze_local_absolute_import_from_project_root(tmp_path):
     result = analyze_python(source)
 
     assert result["dependencies"][0]["type"] == "local"
+
+def test_analyze_invalid_python_raises_analysis_error(tmp_path):
+    from xray.analyze import analyze_python
+    from xray.errors import AnalysisError
+
+    source = tmp_path / "broken.py"
+    source.write_text("def broken(:\n", encoding="utf-8")
+
+    try:
+        analyze_python(source)
+    except AnalysisError as error:
+        assert str(error) == f"Invalid Python syntax: {source}"
+    else:
+        raise AssertionError("Expected AnalysisError")
+
+
+def test_analyze_missing_file_raises_file_error(tmp_path):
+    from xray.errors import FileError
+
+    source = tmp_path / "missing.py"
+
+    try:
+        analyze_python(source)
+    except FileError as error:
+        assert str(error) == f"Unable to read file: {source}"
+    else:
+        raise AssertionError("Expected FileError")
+
+
+def test_analyze_invalid_encoding_raises_file_error(tmp_path):
+    from xray.errors import FileError
+
+    source = tmp_path / "invalid.py"
+    source.write_bytes(b"print('hello')\n\xff")
+
+    try:
+        analyze_python(source)
+    except FileError as error:
+        assert str(error) == f"Unable to decode file: {source}"
+    else:
+        raise AssertionError("Expected FileError")
