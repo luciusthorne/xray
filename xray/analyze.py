@@ -1,13 +1,28 @@
 import ast
 
 from .dependencies import classify_dependency, discover_local_modules
+from .errors import FileError, AnalysisError
 
 
 def analyze_python(path, project_root=None):
-    with open(path, "r", encoding="utf-8") as f:
-        source = f.read()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            source = f.read()
+    except OSError as error:
+        raise FileError(
+            f"Unable to read file: {path}"
+        ) from error
+    except UnicodeError as error:
+        raise FileError(
+            f"Unable to decode file: {path}"
+        ) from error
 
-    tree = ast.parse(source, filename=path)
+    try:
+        tree = ast.parse(source, filename=path)
+    except SyntaxError as error:
+        raise AnalysisError(
+            f"Invalid Python syntax: {path}"
+        ) from error
 
     imports = []
     dependencies = []

@@ -7,13 +7,6 @@ from .classify import detect_shebang
 from .analyze import analyze_python
 from .graph import DependencyGraph
 from .errors import XRAYError, CLIError, TargetError
-from .errors import (
-    XRAYError,
-    CLIError,
-    TargetError,
-    FileError,
-    AnalysisError,
-)
 
 
 
@@ -139,13 +132,19 @@ def run():
             f"Command not found: {command}"
         )
 
-    print("XRAY")
-    print("────────────────────────────")
+    if path.is_dir():
+        raise TargetError(
+            f"Target is a directory: {path}"
+        )
 
     workspace_root = Path.cwd()
 
+    if not path.is_relative_to(workspace_root):
+        workspace_root = path.parent
+
     file_type = identify_file(path)
     metadata = get_file_metadata(path)
+
     shebang = detect_shebang(path)
 
     analysis = None
@@ -161,6 +160,9 @@ def run():
     source_node = str(
         Path(path).resolve().relative_to(workspace_root)
     )
+
+    print("XRAY")
+    print("────────────────────────────")
 
     # ---------------------------------------------------------
     # --deps
