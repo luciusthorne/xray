@@ -424,3 +424,20 @@ def test_empty_graph_queries_do_not_crash(tmp_path):
 
     assert "Python files:      0" in project.stdout
     assert "Dependency edges:  0" in project.stdout
+
+
+def test_broken_sibling_does_not_break_analysis(tmp_path):
+    good = tmp_path / "a.py"
+    good.write_text("import b\n", encoding="utf-8")
+
+    broken = tmp_path / "b.py"
+    broken.write_text("def broken(:\n", encoding="utf-8")
+
+    for query in ("--deps", "--project", "--cycles"):
+        result = run_raw(str(good), query)
+
+        assert result.returncode == 0, (query, result.stderr)
+
+    deps = run_raw(str(good), "--deps")
+
+    assert "b.py" in deps.stdout

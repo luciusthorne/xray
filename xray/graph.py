@@ -1,6 +1,8 @@
 from collections import deque
 from pathlib import Path
 
+from .errors import XRAYError
+
 
 class DependencyGraph:
     def __init__(self):
@@ -643,7 +645,7 @@ class DependencyGraph:
 
             try:
                 analysis = analyze_function(path)
-            except (OSError, SyntaxError):
+            except (OSError, SyntaxError, XRAYError):
                 continue
 
             try:
