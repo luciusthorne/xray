@@ -333,3 +333,27 @@ def test_unreadable_python_reports_file_error(tmp_path):
         assert "Error: Unable to read file:" in result.stderr
     finally:
         unreadable.chmod(0o644)
+
+
+def test_extra_argument_after_query():
+    result = run_raw(
+        TARGET,
+        "--deps",
+        "extra",
+    )
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert "Error:" in result.stderr
+
+
+def test_two_queries_are_rejected():
+    result = run_raw(
+        TARGET,
+        "--deps",
+        "--depth",
+    )
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert "Error:" in result.stderr

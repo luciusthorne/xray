@@ -97,14 +97,6 @@ def run():
     query = sys.argv[2] if len(sys.argv) >= 3 else None
     path_target = None
 
-    if query == "--path":
-        if len(sys.argv) != 4:
-            raise CLIError(
-                "Usage: xray <target> --path <target>"
-            )
-
-        path_target = sys.argv[3]
-
     valid_queries = {
         None,
         "--deps",
@@ -123,6 +115,19 @@ def run():
     if query not in valid_queries:
         raise CLIError(
             f"Unknown option: {query}"
+        )
+
+    if query == "--path":
+        if len(sys.argv) != 4:
+            raise CLIError(
+                "Usage: xray <target> --path <target>"
+            )
+
+        path_target = sys.argv[3]
+
+    elif len(sys.argv) > 3:
+        raise CLIError(
+            f"Unexpected argument: {sys.argv[3]}"
         )
 
     path = resolve_target(command)
