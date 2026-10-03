@@ -441,3 +441,14 @@ def test_broken_sibling_does_not_break_analysis(tmp_path):
     deps = run_raw(str(good), "--deps")
 
     assert "b.py" in deps.stdout
+
+
+def test_broken_target_with_query_still_reports_error(tmp_path):
+    broken = tmp_path / "broken.py"
+    broken.write_text("def broken(:\n", encoding="utf-8")
+
+    result = run_raw(str(broken), "--deps")
+
+    assert result.returncode == 4
+    assert result.stdout == ""
+    assert "Invalid Python syntax" in result.stderr

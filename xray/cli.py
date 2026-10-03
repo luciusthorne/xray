@@ -159,7 +159,7 @@ def run():
 
     analysis = None
 
-    if file_type.startswith("Python"):
+    if file_type.startswith("Python") or path.suffix == ".py":
         analysis = analyze_python(path)
 
     graph = build_graph(
