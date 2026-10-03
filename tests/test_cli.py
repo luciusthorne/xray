@@ -357,3 +357,11 @@ def test_two_queries_are_rejected():
     assert result.returncode == 2
     assert result.stdout == ""
     assert "Error:" in result.stderr
+
+
+def test_unknown_leading_option():
+    result = run_raw("--bad-option")
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert "Error: Unknown option: --bad-option" in result.stderr

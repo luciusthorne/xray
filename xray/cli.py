@@ -92,6 +92,11 @@ def run():
         print_help()
         return
 
+    if sys.argv[1].startswith("-"):
+        raise CLIError(
+            f"Unknown option: {sys.argv[1]}"
+        )
+
     command = sys.argv[1]
 
     query = sys.argv[2] if len(sys.argv) >= 3 else None
