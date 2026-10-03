@@ -365,3 +365,62 @@ def test_unknown_leading_option():
     assert result.returncode == 2
     assert result.stdout == ""
     assert "Error: Unknown option: --bad-option" in result.stderr
+
+
+ALL_QUERIES = (
+    "--deps",
+    "--dependents",
+    "--tree",
+    "--impact",
+    "--cycles",
+    "--depth",
+    "--project",
+    "--components",
+    "--reachable",
+    "--reverse-reachable",
+)
+
+
+def test_non_python_target_queries_do_not_crash(tmp_path):
+    notes = tmp_path / "notes.txt"
+    notes.write_text("hello\n", encoding="utf-8")
+
+    solo = tmp_path / "solo.py"
+    solo.write_text("print('hi')\n", encoding="utf-8")
+
+    for query in ALL_QUERIES:
+        result = run_raw(str(notes), query)
+
+        assert result.returncode == 0, (query, result.stderr)
+        assert result.stderr == ""
+        assert "Traceback" not in result.stdout
+
+
+def test_path_to_unknown_node_reports_no_path(tmp_path):
+    notes = tmp_path / "notes.txt"
+    notes.write_text("hello\n", encoding="utf-8")
+
+    solo = tmp_path / "solo.py"
+    solo.write_text("print('hi')\n", encoding="utf-8")
+
+    result = run_raw(str(solo), "--path", str(notes))
+
+    assert result.returncode == 0
+    assert result.stderr == ""
+    assert "No path found" in result.stdout
+
+
+def test_empty_graph_queries_do_not_crash(tmp_path):
+    notes = tmp_path / "notes.txt"
+    notes.write_text("hello\n", encoding="utf-8")
+
+    for query in ALL_QUERIES:
+        result = run_raw(str(notes), query)
+
+        assert result.returncode == 0, (query, result.stderr)
+        assert result.stderr == ""
+
+    project = run_raw(str(notes), "--project")
+
+    assert "Python files:      0" in project.stdout
+    assert "Dependency edges:  0" in project.stdout
