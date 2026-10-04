@@ -1,5 +1,7 @@
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from .discover import resolve_target
 from .identify import identify_file, get_file_metadata
@@ -87,6 +89,40 @@ def dependency_depth(graph, node):
         return longest
 
     return walk(node, [node])
+
+
+@dataclass
+class QueryContext:
+    command: str
+    query: str | None
+    path: Path
+    path_target: str | None
+    workspace_root: Path
+    file_type: str
+    metadata: Any
+    shebang: Any
+    analysis: Any
+    graph: Any
+    source_node: str
+
+
+QUERIES = {}
+
+
+def query_components(context):
+    graph = context.graph
+
+    print()
+    print("Strongly connected components")
+    print("────────────────────────────")
+
+    components = graph.strongly_connected_components()
+
+    for component in components:
+        print("- " + ", ".join(component))
+
+
+QUERIES["--components"] = query_components
 
 
 def run():
@@ -194,6 +230,26 @@ def run():
 
     print("XRAY")
     print("────────────────────────────")
+
+    context = QueryContext(
+        command=command,
+        query=query,
+        path=path,
+        path_target=path_target,
+        workspace_root=workspace_root,
+        file_type=file_type,
+        metadata=metadata,
+        shebang=shebang,
+        analysis=analysis,
+        graph=graph,
+        source_node=source_node,
+    )
+
+    handler = QUERIES.get(query)
+
+    if handler is not None:
+        handler(context)
+        return
 
     # ---------------------------------------------------------
     # --deps
@@ -502,18 +558,6 @@ def run():
     # ---------------------------------------------------------
     # --components
     # ---------------------------------------------------------
-
-    if query == "--components":
-        print()
-        print("Strongly connected components")
-        print("────────────────────────────")
-
-        components = graph.strongly_connected_components()
-
-        for component in components:
-            print("- " + ", ".join(component))
-
-        return
 
     # ---------------------------------------------------------
     # --reachable
