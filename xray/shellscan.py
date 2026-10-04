@@ -52,18 +52,18 @@ class ShellScan:
     commands: tuple = ()
 
 
-def _strip_heredocs(text):
+def _numbered_lines(text):
     kept = []
     delimiter = None
 
-    for line in text.splitlines():
+    for number, line in enumerate(text.splitlines(), 1):
         if delimiter is not None:
             if line.strip() == delimiter:
                 delimiter = None
 
             continue
 
-        kept.append(line)
+        kept.append((number, line))
 
         if "((" in line:
             continue
@@ -74,6 +74,43 @@ def _strip_heredocs(text):
             delimiter = match.group(2)
 
     return kept
+
+
+def _strip_heredocs(text):
+    return [line for _, line in _numbered_lines(text)]
+
+
+def function_lines(path):
+    """Return {function name: line number} in the original file.
+
+    Uses the same heredoc and continuation handling as scan_shell,
+    but reports the line where each definition starts. A file that
+    cannot be read gives an empty dict.
+    """
+
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return {}
+
+    logical = []
+
+    for number, line in _numbered_lines(text):
+        if logical and logical[-1][1].endswith("\\"):
+            start, joined = logical[-1]
+            logical[-1] = (start, joined[:-1] + " " + line)
+        else:
+            logical.append((number, line))
+
+    found = {}
+
+    for number, line in logical:
+        match = _FUNCTION.search(line)
+
+        if match:
+            found.setdefault(match.group(1) or match.group(2), number)
+
+    return found
 
 
 def _matching(text, start):

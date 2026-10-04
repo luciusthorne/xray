@@ -5,7 +5,8 @@ from .elfscan import scan_elf
 from .libresolve import find_library, ldconfig_cache
 from .locate import locate
 from .model import Edge
-from .shellscan import scan_shell
+from .shellscan import function_lines, scan_shell
+from .symbols import Symbol
 
 
 class ShellAnalyzer(Analyzer):
@@ -19,6 +20,15 @@ class ShellAnalyzer(Analyzer):
 
     name = "shell"
     kinds = ("shell",)
+
+    def symbols(self, path):
+        path = Path(path).resolve()
+        lines = function_lines(path)
+
+        return [
+            Symbol(name, "function", str(path), lines.get(name, 1))
+            for name in scan_shell(path).functions
+        ]
 
     def edges(self, path):
         path = Path(path).resolve()
