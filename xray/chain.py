@@ -44,7 +44,9 @@ def _children(path, kind):
     return result
 
 
-def chain_lines(path, max_depth=3, max_files=50):
+def chain_lines(
+    path, max_depth=3, max_files=50, include_libraries=True
+):
     """Return a tree of what a command runs and links to.
 
     Shell scripts expand into the commands they run, and ELF binaries
@@ -62,6 +64,9 @@ def chain_lines(path, max_depth=3, max_files=50):
     state = {"count": 1, "truncated": False, "depth_truncated": False}
 
     def walk(node, kind, depth, prefix):
+        if kind == "elf" and not include_libraries:
+            return
+
         children = _children(node, kind)
 
         if depth >= max_depth:

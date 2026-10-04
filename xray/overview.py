@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from .calls import calls_lines
+from .chain import chain_lines
 from .entrypoints import command_kind
 from .launchgraph import launch_lines
 from .shellscan import scan_shell
@@ -29,6 +30,13 @@ def overview_lines(path):
 
         if not scan_shell(path).commands:
             lines = [*lines, NO_COMMANDS_NOTE]
+
+        chain = chain_lines(
+            path, max_depth=2, max_files=15, include_libraries=False
+        )
+
+        if len(chain) > 1:
+            lines = [*lines, "Chain:", *chain]
 
         return lines
 
