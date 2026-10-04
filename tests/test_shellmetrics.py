@@ -122,3 +122,28 @@ def test_cli_rejects_non_shell_file(tmp_path):
 
     assert result.returncode == 3
     assert "Not a shell script" in result.stderr
+
+
+def test_subshell_function_body_is_measured(tmp_path):
+    script = write(
+        tmp_path / "t.sh",
+        "#!/bin/sh\n"
+        "tr() (\n"
+        "  if true; then\n"
+        "    echo a\n"
+        "  fi\n"
+        ")\n"
+        "echo done\n",
+    )
+
+    metrics = analyze_shell_metrics(script)
+
+    assert metrics.functions[0].line == 2
+    assert metrics.functions[0].lines == 5
+    assert metrics.functions[0].complexity == 2
+
+
+def test_one_line_function_is_one_line(tmp_path):
+    script = write(tmp_path / "t.sh", "#!/bin/sh\nf() { echo hi; }\necho x\n")
+
+    assert analyze_shell_metrics(script).functions[0].lines == 1

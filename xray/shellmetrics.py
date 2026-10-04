@@ -124,21 +124,37 @@ def _measure(lines):
 
 
 def _function_end(cleaned, start):
+    """Return the last line of a function body.
+
+    The body is a { } group or, for subshell functions, a ( ) group.
+    The first one opened after the "()" of the definition decides.
+    """
+
+    header = re.sub(r"\(\s*\)", "", cleaned[start], count=1)
+    pair = None
     depth = 0
-    opened = False
 
     for i in range(start, len(cleaned)):
-        for ch in cleaned[i]:
-            if ch == "{":
+        line = header if i == start else cleaned[i]
+
+        for ch in line:
+            if pair is None:
+                if ch == "{":
+                    pair = ("{", "}")
+                elif ch == "(":
+                    pair = ("(", ")")
+                else:
+                    continue
+
+            if ch == pair[0]:
                 depth += 1
-                opened = True
-            elif ch == "}":
+            elif ch == pair[1]:
                 depth -= 1
 
-        if opened and depth <= 0:
+        if pair is not None and depth <= 0:
             return i
 
-        if not opened and i > start:
+        if pair is None and i > start:
             return start
 
     return len(cleaned) - 1
