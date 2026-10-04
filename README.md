@@ -12,6 +12,9 @@ Think of it as a small X-ray machine for your codebase.
 - **Commands:** follow a launcher into the installed code it runs, and show the tree of what a script or binary runs.
 - **Static analysis of Python:** symbols, references, relationships, unused imports, unused symbols and complexity.
 - **Architecture metrics:** a static call graph, module coupling and call coupling.
+- **Command overview:** `xray <command>` shows what a shell script runs, what an ELF binary links to, and the installed code behind a Python launcher.
+- **Shell scripts:** approximate complexity metrics with `--shell-metrics`.
+- **JSON export:** `--json` prints the symbols and edges of a file as data.
 
 ## Installation
 
@@ -27,7 +30,13 @@ pip install -e .
 xray <target> [option]
 ```
 
-The target is a file path or the name of a command found on your `PATH`. Without an option, xray prints the file type and a short summary of a Python file.
+The target is a file path or the name of a command found on your `PATH`. Without an option, xray prints the file type and size. Python files get a short summary. Shell scripts, ELF binaries and Python launchers get an **Overview** section:
+
+- a shell script lists its functions, the files it sources and the external commands it runs, with where each resolves to
+- an ELF binary lists its interpreter, the shared libraries it links to and the symbols it imports
+- a Python launcher (a Python command without a `.py` suffix, such as `pytest`) lists the installed file it runs
+
+If a shell script has no external commands that static reading can see, the overview says so, because commands run through variables or `eval` are not visible.
 
 You can also run it as a module:
 
@@ -97,6 +106,25 @@ These analyze Python code. On a target that is not a Python file they exit with 
 | `--shell-metrics` | a shell script | functions, approximate complexity and nesting |
 | `--json` | the file | symbols and edges as JSON (Python, shell, ELF), with no banner |
 
+## JSON export
+
+`xray <target> --json` prints one JSON object and nothing else (no banner), so it can be piped into tools such as `jq`:
+
+```
+xray ldd --json
+```
+
+| Field | Meaning |
+|---|---|
+| `file` | the resolved path |
+| `kind` | `python`, `shell`, `elf`, `perl`, `script` or `unknown` |
+| `analyzer` | the analyzer that read the file, or `null` |
+| `symbols` | name, kind, line and parent (Python only) |
+| `edges` | source, target, kind and status |
+| `notes` | caveats, such as no visible shell commands |
+
+Edge kinds include `imports`, `calls`, `inherits`, `references`, `runs`, `sources` and `links`. The status is `resolved`, `unresolved` or `external`.
+
 ## Output and exit codes
 
 Normal results go to stdout. Errors are written to stderr as `Error: ...`.
@@ -118,6 +146,8 @@ Python is dynamic, so xray reports what static analysis can see and does not cla
 - The call graph is conservative: only calls that resolve to a definition become `->` edges, and calls it recorded but could not resolve are marked `?`.
 - Calls through a project module (`utils.calculate()` after `import utils`, `import utils as u`, `import pkg.sub` or `from pkg import sub`) are resolved. Calls into external modules, such as `os.getcwd()`, are not recorded.
 - For ELF binaries, xray lists the libraries and symbols they use. It does not read the machine code.
+- Shell metrics are approximate. Keywords are counted after removing comments, quoted text and heredocs.
+- Perl and other scripts are recognized but not read yet.
 
 ## How it works
 
@@ -152,7 +182,14 @@ xray/
 ├── elfscan.py          ELF binary reader
 ├── libresolve.py       shared library resolution
 ├── calls.py            what a script or binary runs
-└── chain.py            tree of what a command runs
+├── chain.py            tree of what a command runs
+├── model.py            common types: FileInfo and Edge
+├── analyzers.py        analyzer base class and registry
+├── python_analyzer.py  Python files as symbols and edges
+├── command_analyzers.py  shell scripts and ELF binaries as edges
+├── overview.py         the Overview section of the default view
+├── shellmetrics.py     approximate shell script metrics
+└── export.py           the data behind --json
 ```
 
 ## Testing
@@ -167,7 +204,7 @@ You can also check Python syntax with `python3 -m py_compile xray/*.py` and whit
 
 ## Status
 
-xray is under active development. The 0.8 series adds error handling, exit codes and static analysis of Python. The next planned step is a language-independent analysis model, then support for more languages and visualization.
+xray is under active development. The 0.8 series added error handling, exit codes and static analysis of Python. The 0.9 series adds a common model and analyzer registry, a command overview for shell scripts, ELF binaries and Python launchers, shell metrics and JSON export. Next planned: reading Perl and other scripts, more languages, and a visual graph viewer.
 
 ## License
 
