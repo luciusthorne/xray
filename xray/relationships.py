@@ -2,7 +2,8 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
-from .references import find_references
+from .dependencies import discover_local_modules
+from .references import _resolve, find_references
 from .symbols import extract_symbols_from_source
 
 
@@ -43,8 +44,11 @@ def find_relationships(path, project_root=None):
         same file or imported with "from X import name"
       - self.method() calls to a method of the same class
 
+      - module.function() calls after "import module", "import module as alias"
+        or "import pkg.sub", when the module is part of the project
+
     Not recorded: module-level calls, attribute calls such as
-    obj.method() or module.function(), calls to builtins or to
+    obj.method(), calls to external modules, calls to builtins or to
     local variables, and inherited methods.
     """
 
@@ -86,6 +90,34 @@ def find_relationships(path, project_root=None):
             methods.setdefault(symbol.parent, set()).add(
                 symbol.name
             )
+
+    module_aliases = {}
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.asname:
+                    module_aliases[alias.asname] = alias.name
+                else:
+                    module_aliases[alias.name] = alias.name
+                    first = alias.name.split(".")[0]
+                    module_aliases.setdefault(first, first)
+
+    local_modules = discover_local_modules(project_root)
+
+    def dotted(node):
+        parts = []
+
+        while isinstance(node, ast.Attribute):
+            parts.append(node.attr)
+            node = node.value
+
+        if isinstance(node, ast.Name):
+            parts.append(node.id)
+
+            return ".".join(reversed(parts))
+
+        return None
 
     found = []
 
@@ -155,6 +187,28 @@ def find_relationships(path, project_root=None):
                             f"{location}:{owner}.{callee.attr}",
                         ),
                     )
+
+                elif isinstance(callee, ast.Attribute):
+                    base = dotted(callee.value)
+
+                    if base in module_aliases:
+                        status, target = _resolve(
+                            path,
+                            project_root,
+                            local_modules,
+                            module_aliases[base],
+                            0,
+                            callee.attr,
+                        )
+
+                        if status != "external":
+                            add(
+                                "calls",
+                                qualified,
+                                f"{base}.{callee.attr}",
+                                node,
+                                (status, target),
+                            )
 
     def scan(body, parent):
         for node in body:
