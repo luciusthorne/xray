@@ -74,7 +74,8 @@ def test_calls_lines_for_python_script(tmp_path):
     script = write(tmp_path / "tool", "#!/usr/bin/env python3\n")
 
     assert calls_lines(script) == [
-        "Not a shell script (python): --calls reads shell scripts only"
+        "Not a shell script or binary (python): "
+        "--calls reads shell scripts and ELF binaries only"
     ]
 
 
@@ -82,7 +83,7 @@ def test_calls_lines_for_elf(tmp_path):
     binary = write(tmp_path / "tool", b"\x7fELF" + bytes(60))
 
     assert calls_lines(binary) == [
-        "Not a shell script (elf): --calls reads shell scripts only"
+        "No ELF information found (is readelf installed?)"
     ]
 
 
@@ -120,7 +121,7 @@ def test_cli_calls_on_a_python_script(tmp_path):
     result = run_xray(tmp_path, bindir, str(script), "--calls")
 
     assert result.returncode == 0
-    assert "Not a shell script (python)" in result.stdout
+    assert "Not a shell script or binary (python)" in result.stdout
 
 
 def test_help_mentions_calls(tmp_path):

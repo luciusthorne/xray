@@ -28,7 +28,7 @@ def print_help():
     print("  --launch               Show installed code a launcher runs")
     print("  --launch-depth <n>     Same, following imports n levels deep")
     print("  --launch-limit <n>     Same, 3 levels deep, at most n files")
-    print("  --calls                Show what a shell script runs")
+    print("  --calls                Show what a script or binary runs")
 
 
 def build_graph(workspace_root, path):
