@@ -401,6 +401,77 @@ def query_project(context):
 QUERIES["--project"] = query_project
 
 
+def query_cycles(context):
+    graph = context.graph
+    source_node = context.source_node
+
+    print()
+    print("Circular dependencies")
+    print("────────────────────────────")
+
+    components = graph.strongly_connected_components()
+
+    cycles = []
+
+    for component in components:
+        if len(component) > 1:
+            if source_node in component:
+                cycles.append(component)
+
+        elif component:
+            node = component[0]
+
+            if (
+                node == source_node
+                and node in graph.dependencies_of(node)
+            ):
+                cycles.append(component)
+
+    if cycles:
+        for cycle in cycles:
+            if len(cycle) == 1:
+                print(
+                    f"{cycle[0]} → {cycle[0]}"
+                )
+                continue
+
+            start = source_node
+            current = start
+            path = [start]
+            visited = {start}
+
+            while True:
+                next_node = None
+
+                for candidate in sorted(
+                    graph.dependencies_of(current)
+                ):
+                    if candidate in cycle:
+                        next_node = candidate
+                        break
+
+                if next_node is None:
+                    break
+
+                path.append(next_node)
+
+                if next_node == start:
+                    break
+
+                if next_node in visited:
+                    break
+
+                visited.add(next_node)
+                current = next_node
+
+            print(" → ".join(path))
+    else:
+        print("none")
+
+
+QUERIES["--cycles"] = query_cycles
+
+
 def run():
     if len(sys.argv) == 1:
         raise CLIError("missing target")
@@ -593,72 +664,6 @@ def run():
     # ---------------------------------------------------------
     # --cycles
     # ---------------------------------------------------------
-
-    if query == "--cycles":
-        print()
-        print("Circular dependencies")
-        print("────────────────────────────")
-
-        components = graph.strongly_connected_components()
-
-        cycles = []
-
-        for component in components:
-            if len(component) > 1:
-                if source_node in component:
-                    cycles.append(component)
-
-            elif component:
-                node = component[0]
-
-                if (
-                    node == source_node
-                    and node in graph.dependencies_of(node)
-                ):
-                    cycles.append(component)
-
-        if cycles:
-            for cycle in cycles:
-                if len(cycle) == 1:
-                    print(
-                        f"{cycle[0]} → {cycle[0]}"
-                    )
-                    continue
-
-                start = source_node
-                current = start
-                path = [start]
-                visited = {start}
-
-                while True:
-                    next_node = None
-
-                    for candidate in sorted(
-                        graph.dependencies_of(current)
-                    ):
-                        if candidate in cycle:
-                            next_node = candidate
-                            break
-
-                    if next_node is None:
-                        break
-
-                    path.append(next_node)
-
-                    if next_node == start:
-                        break
-
-                    if next_node in visited:
-                        break
-
-                    visited.add(next_node)
-                    current = next_node
-
-                print(" → ".join(path))
-        else:
-            print("none")
-
-        return
 
     # ---------------------------------------------------------
     # --depth
