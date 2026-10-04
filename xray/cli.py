@@ -472,6 +472,23 @@ def query_cycles(context):
 QUERIES["--cycles"] = query_cycles
 
 
+def query_calls(context):
+    path = context.path
+    source_node = context.source_node
+
+    from xray.calls import calls_lines
+
+    print()
+    print(f"Calls of {source_node}")
+    print("────────────────────────────")
+
+    for line in calls_lines(path):
+        print(line)
+
+
+QUERIES["--calls"] = query_calls
+
+
 def run():
     if len(sys.argv) == 1:
         raise CLIError("missing target")
@@ -621,18 +638,6 @@ def run():
         for line in launch_lines(
             path, max_depth=depth, max_files=limit
         ):
-            print(line)
-
-        return
-
-    if query == "--calls":
-        from xray.calls import calls_lines
-
-        print()
-        print(f"Calls of {source_node}")
-        print("────────────────────────────")
-
-        for line in calls_lines(path):
             print(line)
 
         return
