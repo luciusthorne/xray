@@ -27,6 +27,7 @@ def print_help():
     print("  --path <target>        Show dependency path to target")
     print("  --launch               Show installed code a launcher runs")
     print("  --launch-depth <n>     Same, following imports n levels deep")
+    print("  --launch-limit <n>     Same, 3 levels deep, at most n files")
 
 
 def build_graph(workspace_root, path):
@@ -119,6 +120,7 @@ def run():
         "--path",
         "--launch",
         "--launch-depth",
+        "--launch-limit",
     }
 
     if query not in valid_queries:
@@ -134,7 +136,7 @@ def run():
 
         path_target = sys.argv[3]
 
-    elif query == "--launch-depth":
+    elif query in ("--launch-depth", "--launch-limit"):
         if (
             len(sys.argv) != 4
             or not sys.argv[3].isascii()
@@ -142,7 +144,7 @@ def run():
             or int(sys.argv[3]) < 1
         ):
             raise CLIError(
-                "Usage: xray <target> --launch-depth <number>"
+                f"Usage: xray <target> {query} <number>"
             )
 
     elif len(sys.argv) > 3:
@@ -193,16 +195,25 @@ def run():
     # --deps
     # ---------------------------------------------------------
 
-    if query in ("--launch", "--launch-depth"):
+    if query in ("--launch", "--launch-depth", "--launch-limit"):
         from xray.launchgraph import launch_lines
 
-        depth = int(sys.argv[3]) if query == "--launch-depth" else 1
+        depth = 1
+        limit = 200
+
+        if query == "--launch-depth":
+            depth = int(sys.argv[3])
+        elif query == "--launch-limit":
+            depth = 3
+            limit = int(sys.argv[3])
 
         print()
         print(f"Launcher code of {source_node}")
         print("────────────────────────────")
 
-        for line in launch_lines(path, max_depth=depth):
+        for line in launch_lines(
+            path, max_depth=depth, max_files=limit
+        ):
             print(line)
 
         return
