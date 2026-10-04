@@ -611,6 +611,13 @@ def query_default(context):
     if shebang:
         print(f"Shebang:    {shebang}")
 
+    from xray.provenance import package_of
+
+    package = package_of(path)
+
+    if package:
+        print(f"Package:    {package}")
+
     if analysis is not None:
         print()
         print("Python analysis")
