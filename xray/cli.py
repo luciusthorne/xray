@@ -248,6 +248,43 @@ def query_depth(context):
 QUERIES["--depth"] = query_depth
 
 
+def query_path(context):
+    path_target = context.path_target
+    workspace_root = context.workspace_root
+    graph = context.graph
+    source_node = context.source_node
+
+    target_path = Path(path_target).resolve()
+
+    try:
+        target_node = str(
+            target_path.relative_to(workspace_root)
+        )
+    except ValueError:
+        target_node = path_target
+
+    print()
+    print(
+        f"Dependency path from "
+        f"{source_node} to "
+        f"{target_node}"
+    )
+    print("────────────────────────────")
+
+    path_result = graph.find_path(
+        source_node,
+        target_node,
+    )
+
+    if path_result:
+        print(" → ".join(path_result))
+    else:
+        print("No path found")
+
+
+QUERIES["--path"] = query_path
+
+
 def run():
     if len(sys.argv) == 1:
         raise CLIError("missing target")
@@ -637,36 +674,6 @@ def run():
     # ---------------------------------------------------------
     # --path
     # ---------------------------------------------------------
-
-    if query == "--path":
-        target_path = Path(path_target).resolve()
-
-        try:
-            target_node = str(
-                target_path.relative_to(workspace_root)
-            )
-        except ValueError:
-            target_node = path_target
-
-        print()
-        print(
-            f"Dependency path from "
-            f"{source_node} to "
-            f"{target_node}"
-        )
-        print("────────────────────────────")
-
-        path_result = graph.find_path(
-            source_node,
-            target_node,
-        )
-
-        if path_result:
-            print(" → ".join(path_result))
-        else:
-            print("No path found")
-
-        return
 
     # ---------------------------------------------------------
     # Default output
