@@ -25,6 +25,7 @@ def print_help():
     print("  --reachable            Show reachable dependencies")
     print("  --reverse-reachable    Show reverse reachable dependents")
     print("  --path <target>        Show dependency path to target")
+    print("  --launch               Show installed code a launcher runs")
 
 
 def build_graph(workspace_root, path):
@@ -115,6 +116,7 @@ def run():
         "--reachable",
         "--reverse-reachable",
         "--path",
+        "--launch",
     }
 
     if query not in valid_queries:
@@ -177,6 +179,18 @@ def run():
     # ---------------------------------------------------------
     # --deps
     # ---------------------------------------------------------
+
+    if query == "--launch":
+        from xray.launchgraph import launch_lines
+
+        print()
+        print(f"Launcher code of {source_node}")
+        print("────────────────────────────")
+
+        for line in launch_lines(path):
+            print(line)
+
+        return
 
     if query == "--deps":
         print()

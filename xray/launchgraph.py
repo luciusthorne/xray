@@ -68,3 +68,19 @@ def build_launcher_graph(command, max_depth=1, max_files=50):
         frontier = next_frontier
 
     return graph
+
+
+def launch_lines(command, max_depth=1):
+    """Return the lines that describe a command's launcher code.
+
+    One "source -> target" line per edge of the launcher graph, or a
+    single line saying nothing was found.
+    """
+
+    graph = build_launcher_graph(command, max_depth=max_depth)
+    edges = sorted(graph.edges)
+
+    if not edges:
+        return ["No launcher code found"]
+
+    return [f"{source} -> {target}" for source, target in edges]
