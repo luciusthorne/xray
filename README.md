@@ -85,6 +85,7 @@ These work on scripts and binaries, including commands found on `PATH`.
 | `--launch-limit` | the same, with a cap on how many files are listed |
 | `--calls` | what a script or binary runs |
 | `--chain` | the tree of what a command runs |
+| `--package` | the installed package that owns the file (uses rpm) |
 
 `--chain` expands shell scripts into the commands they run, Python launchers into the installed files they import, and ELF binaries into the libraries they need. Each line reads `name -> resolved path [kind]`. A file that appears again is marked `(seen)` and is not expanded again, and a name that cannot be found is marked `(not found)`. The tree has a depth limit and a file limit, and a final `Truncated:` line says when something was left out.
 

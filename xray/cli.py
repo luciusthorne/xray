@@ -49,6 +49,7 @@ def print_help():
     print("  --launch-limit <n>     Same, 3 levels deep, at most n files")
     print("  --calls                Show what a script or binary runs")
     print("  --chain                Show the tree of what a command runs")
+    print("  --package              Show the package that owns a command")
     print("  --symbols              Show functions, classes and methods")
     print("  --references           Show where names are used and what they resolve to")
     print("  --relationships        Show calls and other symbol relationships")
@@ -526,6 +527,23 @@ def query_calls(context):
 
 
 QUERIES["--calls"] = query_calls
+
+
+def query_package(context):
+    path = context.path
+    source_node = context.source_node
+
+    from xray.provenance import package_of
+
+    package = package_of(path)
+
+    print()
+    print(f"Package of {source_node}")
+    print("────────────────────────────")
+    print(package if package else "Not owned by any installed package")
+
+
+QUERIES["--package"] = query_package
 
 
 def query_chain(context):
