@@ -111,3 +111,19 @@ def test_cli_has_no_overview_for_python_file(tmp_path):
 
     assert result.returncode == 0
     assert "Overview" not in result.stdout
+
+
+def test_shell_script_without_visible_commands_gets_a_note(tmp_path):
+    script = write(tmp_path / "tool", "#!/bin/sh\necho hi\n")
+
+    lines = overview_lines(script)
+
+    assert lines[-1].startswith("Note: no external commands found")
+
+
+def test_shell_script_with_commands_has_no_note(tmp_path):
+    script = write(tmp_path / "tool", "#!/bin/sh\nnosuchcmd_xyz\n")
+
+    assert not any(
+        line.startswith("Note:") for line in overview_lines(script)
+    )

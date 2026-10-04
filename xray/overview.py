@@ -3,20 +3,36 @@ from pathlib import Path
 from .calls import calls_lines
 from .entrypoints import command_kind
 from .launchgraph import launch_lines
+from .shellscan import scan_shell
+
+NO_COMMANDS_NOTE = (
+    "Note: no external commands found by static reading "
+    "(commands run through variables or eval are not visible)"
+)
 
 
 def overview_lines(path):
     """Return lines that describe what a command is made of.
 
     Shell scripts and ELF binaries show what they run or link to.
-    Python commands without a .py suffix (launchers) show the
-    installed code they import. Other files give an empty list.
+    A shell script with no visible external commands gets a note, so
+    "none" is not mistaken for "runs nothing". Python commands without
+    a .py suffix (launchers) show the installed code they import.
+    Other files give an empty list.
     """
 
     path = Path(path)
     kind = command_kind(path)
 
-    if kind in ("shell", "elf"):
+    if kind == "shell":
+        lines = calls_lines(path)
+
+        if not scan_shell(path).commands:
+            lines = [*lines, NO_COMMANDS_NOTE]
+
+        return lines
+
+    if kind == "elf":
         return calls_lines(path)
 
     if kind == "python" and path.suffix != ".py":
