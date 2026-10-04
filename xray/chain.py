@@ -1,10 +1,9 @@
 from pathlib import Path
 
-from xray.calls import _locate
+from xray.command_analyzers import ShellAnalyzer
 from xray.elfscan import scan_elf
 from xray.entrypoints import command_kind, import_files
 from xray.libresolve import find_library, ldconfig_cache
-from xray.shellscan import scan_shell
 
 
 def _children(path, kind, cache):
@@ -18,10 +17,16 @@ def _children(path, kind, cache):
     result = []
 
     if kind == "shell":
-        for name in scan_shell(path).commands:
-            target = _locate(name)
-            target_kind = command_kind(target) if target else None
-            result.append((name, target, target_kind))
+        for edge in ShellAnalyzer().edges(path):
+            if edge.kind != "runs":
+                continue
+
+            if edge.status != "resolved":
+                result.append((edge.name, None, None))
+                continue
+
+            target = Path(edge.target)
+            result.append((edge.name, target, command_kind(target)))
     elif kind == "python":
         for target in import_files(path):
             name = target.name
