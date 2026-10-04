@@ -26,6 +26,7 @@ def print_help():
     print("  --reverse-reachable    Show reverse reachable dependents")
     print("  --path <target>        Show dependency path to target")
     print("  --launch               Show installed code a launcher runs")
+    print("  --launch-depth <n>     Same, following imports n levels deep")
 
 
 def build_graph(workspace_root, path):
@@ -117,6 +118,7 @@ def run():
         "--reverse-reachable",
         "--path",
         "--launch",
+        "--launch-depth",
     }
 
     if query not in valid_queries:
@@ -131,6 +133,17 @@ def run():
             )
 
         path_target = sys.argv[3]
+
+    elif query == "--launch-depth":
+        if (
+            len(sys.argv) != 4
+            or not sys.argv[3].isascii()
+            or not sys.argv[3].isdigit()
+            or int(sys.argv[3]) < 1
+        ):
+            raise CLIError(
+                "Usage: xray <target> --launch-depth <number>"
+            )
 
     elif len(sys.argv) > 3:
         raise CLIError(
@@ -180,14 +193,16 @@ def run():
     # --deps
     # ---------------------------------------------------------
 
-    if query == "--launch":
+    if query in ("--launch", "--launch-depth"):
         from xray.launchgraph import launch_lines
+
+        depth = int(sys.argv[3]) if query == "--launch-depth" else 1
 
         print()
         print(f"Launcher code of {source_node}")
         print("────────────────────────────")
 
-        for line in launch_lines(path):
+        for line in launch_lines(path, max_depth=depth):
             print(line)
 
         return
