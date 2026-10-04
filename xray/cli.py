@@ -125,6 +125,28 @@ def query_components(context):
 QUERIES["--components"] = query_components
 
 
+def query_reachable(context):
+    graph = context.graph
+    source_node = context.source_node
+
+    print()
+    print(
+        f"Reachable dependencies from {source_node}"
+    )
+    print("────────────────────────────")
+
+    reachable = graph.reachable_from(source_node)
+
+    if reachable:
+        for node in reachable:
+            print(f"- {node}")
+    else:
+        print("- none")
+
+
+QUERIES["--reachable"] = query_reachable
+
+
 def run():
     if len(sys.argv) == 1:
         raise CLIError("missing target")
@@ -562,23 +584,6 @@ def run():
     # ---------------------------------------------------------
     # --reachable
     # ---------------------------------------------------------
-
-    if query == "--reachable":
-        print()
-        print(
-            f"Reachable dependencies from {source_node}"
-        )
-        print("────────────────────────────")
-
-        reachable = graph.reachable_from(source_node)
-
-        if reachable:
-            for node in reachable:
-                print(f"- {node}")
-        else:
-            print("- none")
-
-        return
 
     # ---------------------------------------------------------
     # --reverse-reachable
