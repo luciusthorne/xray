@@ -2,7 +2,7 @@ from pathlib import Path
 
 from xray.calls import _locate
 from xray.elfscan import scan_elf
-from xray.entrypoints import command_kind
+from xray.entrypoints import command_kind, import_files
 from xray.libresolve import find_library, ldconfig_cache
 from xray.shellscan import scan_shell
 
@@ -22,6 +22,14 @@ def _children(path, kind, cache):
             target = _locate(name)
             target_kind = command_kind(target) if target else None
             result.append((name, target, target_kind))
+    elif kind == "python":
+        for target in import_files(path):
+            name = target.name
+
+            if name == "__init__.py":
+                name = f"{target.parent.name}/__init__.py"
+
+            result.append((name, target, command_kind(target)))
     elif kind == "elf":
         if cache["value"] is None:
             cache["value"] = ldconfig_cache()
@@ -79,7 +87,7 @@ def chain_lines(path, max_depth=3, max_files=50):
             state["count"] += 1
             lines.append(label)
 
-            if target_kind in ("shell", "elf"):
+            if target_kind in ("shell", "elf", "python"):
                 extra = "    " if last else "│   "
                 walk(target, target_kind, depth + 1, prefix + extra)
 
