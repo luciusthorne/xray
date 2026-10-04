@@ -24,7 +24,8 @@ SKIP_SEGMENT = frozenset(
 
 _HEREDOC = re.compile(r"(?<!<)<<(?!<)-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 _CASE_PATTERN = re.compile(
-    r"^\s*\(?[^\s()=;|&'\"]+(?:\|[^\s()=;|&'\"]+)*\)"
+    r"^\s*(?:\(?[^\s()=;|&'\"]+(?:\|[^\s()=;|&'\"]+)*"
+    r"|[^\s()=;|&'\"]+(?:\s+\|\s+[^\s()=;|&'\"]+)+)\)"
 )
 _FUNCTION = re.compile(
     r"^\s*(?:function\s+)?([A-Za-z_][A-Za-z0-9_.:-]*)\s*\(\s*\)"

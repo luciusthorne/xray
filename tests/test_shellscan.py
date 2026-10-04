@@ -195,3 +195,21 @@ def test_results_are_sorted_and_unique(tmp_path):
     path = script(tmp_path, "zeta\nalpha\nzeta\n")
 
     assert scan_shell(path).commands == ("alpha", "zeta")
+
+
+def test_case_patterns_with_spaces_around_pipes(tmp_path):
+    path = script(
+        tmp_path,
+        "case $x in\n"
+        "  / | /*/) ;;\n"
+        "  a | b) run-it ;;\n"
+        "esac\n",
+    )
+
+    assert scan_shell(path).commands == ("run-it",)
+
+
+def test_subshell_pipeline_is_still_scanned(tmp_path):
+    path = script(tmp_path, "(cat f | grep x)\nls\n")
+
+    assert scan_shell(path).commands == ("cat", "grep", "ls")
