@@ -10,11 +10,15 @@ from .analyze import analyze_python
 from .graph import DependencyGraph
 from .errors import XRAYError, CLIError, TargetError
 from .analysis_views import (
+    call_coupling_lines,
+    callgraph_lines,
     complexity_lines,
+    coupling_lines,
     references_lines,
     relationships_lines,
     symbols_lines,
     unused_lines,
+    unused_symbols_lines,
 )
 
 
@@ -44,6 +48,10 @@ def print_help():
     print("  --relationships        Show calls and other symbol relationships")
     print("  --unused               Show imports that appear unused")
     print("  --complexity           Show function complexity and nesting")
+    print("  --callgraph            Show which functions each function calls")
+    print("  --unused-symbols       Show definitions that appear unused (whole folder)")
+    print("  --coupling             Show fan-in and fan-out of modules")
+    print("  --call-coupling        Show calls in and out of each module")
 
 
 def build_graph(workspace_root, path):
@@ -647,7 +655,45 @@ PYTHON_ONLY_QUERIES = {
     "--relationships",
     "--unused",
     "--complexity",
+    "--callgraph",
+    "--unused-symbols",
+    "--coupling",
+    "--call-coupling",
 }
+
+
+def query_callgraph(context):
+    print_view(
+        f"Call graph of {context.source_node}",
+        callgraph_lines(context.path),
+    )
+
+
+def query_unused_symbols(context):
+    print_view(
+        f"Unused symbols in {context.path.parent}",
+        unused_symbols_lines(context.path),
+    )
+
+
+def query_coupling(context):
+    print_view(
+        "Module coupling",
+        coupling_lines(context.graph, context.source_node),
+    )
+
+
+def query_call_coupling(context):
+    print_view(
+        f"Call coupling in {context.path.parent}",
+        call_coupling_lines(context.path),
+    )
+
+
+QUERIES["--callgraph"] = query_callgraph
+QUERIES["--unused-symbols"] = query_unused_symbols
+QUERIES["--coupling"] = query_coupling
+QUERIES["--call-coupling"] = query_call_coupling
 
 
 def run():
