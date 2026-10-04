@@ -537,6 +537,48 @@ QUERIES["--launch-depth"] = query_launch
 QUERIES["--launch-limit"] = query_launch
 
 
+def query_default(context):
+    path = context.path
+    file_type = context.file_type
+    metadata = context.metadata
+    shebang = context.shebang
+    analysis = context.analysis
+
+    print()
+    print(f"File:       {path}")
+    print(f"Type:       {file_type}")
+
+    if metadata:
+        print(f"Size:       {metadata.get('size', 'unknown')} bytes")
+
+    if shebang:
+        print(f"Shebang:    {shebang}")
+
+    if analysis is not None:
+        print()
+        print("Python analysis")
+        print("────────────────────────────")
+
+        print(
+            f"Imports:    "
+            f"{len(analysis['dependencies'])}"
+        )
+
+        local_dependencies = [
+            dependency
+            for dependency in analysis["dependencies"]
+            if dependency["type"] == "local"
+        ]
+
+        print(
+            f"Local deps: "
+            f"{len(local_dependencies)}"
+        )
+
+
+QUERIES[None] = query_default
+
+
 def run():
     if len(sys.argv) == 1:
         raise CLIError("missing target")
@@ -555,27 +597,7 @@ def run():
     query = sys.argv[2] if len(sys.argv) >= 3 else None
     path_target = None
 
-    valid_queries = {
-        None,
-        "--deps",
-        "--dependents",
-        "--tree",
-        "--impact",
-        "--cycles",
-        "--depth",
-        "--project",
-        "--components",
-        "--reachable",
-        "--reverse-reachable",
-        "--path",
-        "--launch",
-        "--launch-depth",
-        "--launch-limit",
-        "--calls",
-        "--chain",
-    }
-
-    if query not in valid_queries:
+    if query not in QUERIES:
         raise CLIError(
             f"Unknown option: {query}"
         )
@@ -657,11 +679,7 @@ def run():
         source_node=source_node,
     )
 
-    handler = QUERIES.get(query)
-
-    if handler is not None:
-        handler(context)
-        return
+    QUERIES[query](context)
 
     # ---------------------------------------------------------
     # --deps
@@ -706,41 +724,6 @@ def run():
     # ---------------------------------------------------------
     # --path
     # ---------------------------------------------------------
-
-    # ---------------------------------------------------------
-    # Default output
-    # ---------------------------------------------------------
-
-    print()
-    print(f"File:       {path}")
-    print(f"Type:       {file_type}")
-
-    if metadata:
-        print(f"Size:       {metadata.get('size', 'unknown')} bytes")
-
-    if shebang:
-        print(f"Shebang:    {shebang}")
-
-    if analysis is not None:
-        print()
-        print("Python analysis")
-        print("────────────────────────────")
-
-        print(
-            f"Imports:    "
-            f"{len(analysis['dependencies'])}"
-        )
-
-        local_dependencies = [
-            dependency
-            for dependency in analysis["dependencies"]
-            if dependency["type"] == "local"
-        ]
-
-        print(
-            f"Local deps: "
-            f"{len(local_dependencies)}"
-        )
 
 
 def main():
