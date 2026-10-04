@@ -1,8 +1,10 @@
+from pathlib import Path
+
+from xray.command_analyzers import ShellAnalyzer
 from xray.elfscan import ElfScan, scan_elf
 from xray.entrypoints import command_kind
 from xray.libresolve import find_library, ldconfig_cache
 from xray.locate import locate as _locate
-from xray.shellscan import scan_shell
 
 
 def _section(title, items):
@@ -10,22 +12,24 @@ def _section(title, items):
 
 
 def _shell_lines(path):
-    scan = scan_shell(path)
+    analyzer = ShellAnalyzer()
+    functions = [f"- {s.name}" for s in analyzer.symbols(path)]
+    sources = []
     commands = []
 
-    for name in scan.commands:
-        target = _locate(name)
-
-        if target is None:
-            commands.append(f"- {name} -> not found")
-        else:
-            commands.append(
-                f"- {name} -> {target} [{command_kind(target)}]"
-            )
+    for edge in analyzer.edges(path):
+        if edge.kind == "sources":
+            sources.append(f"- {edge.name}")
+        elif edge.kind == "runs":
+            if edge.status != "resolved":
+                commands.append(f"- {edge.name} -> not found")
+            else:
+                kind = command_kind(Path(edge.target))
+                commands.append(f"- {edge.name} -> {edge.target} [{kind}]")
 
     return (
-        _section("Functions:", [f"- {n}" for n in scan.functions])
-        + _section("Sources:", [f"- {n}" for n in scan.sources])
+        _section("Functions:", functions)
+        + _section("Sources:", sources)
         + _section("Commands:", commands)
     )
 
