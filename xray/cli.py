@@ -285,6 +285,58 @@ def query_path(context):
 QUERIES["--path"] = query_path
 
 
+def query_impact(context):
+    graph = context.graph
+    source_node = context.source_node
+
+    print()
+    print(f"Impact of removing {source_node}")
+    print("────────────────────────────")
+
+    impact = graph.impact_of(source_node)
+
+    print()
+    print("Directly affected:")
+
+    if impact["direct"]:
+        for node in impact["direct"]:
+            print(f"- {node}")
+    else:
+        print("- none")
+
+    print()
+    print("Indirectly affected:")
+
+    if impact["indirect"]:
+        for node in impact["indirect"]:
+            print(f"- {node}")
+    else:
+        print("- none")
+
+    total = (
+        len(impact["direct"])
+        + len(impact["indirect"])
+    )
+
+    print()
+    print(f"Total affected files: {total}")
+
+    print()
+    print("Impact chains")
+    print("────────────────────────────")
+
+    chains = graph.impact_chains(source_node)
+
+    if chains:
+        for chain in chains:
+            print(" → ".join(chain))
+    else:
+        print("none")
+
+
+QUERIES["--impact"] = query_impact
+
+
 def run():
     if len(sys.argv) == 1:
         raise CLIError("missing target")
@@ -473,53 +525,6 @@ def run():
     # ---------------------------------------------------------
     # --impact
     # ---------------------------------------------------------
-
-    if query == "--impact":
-        print()
-        print(f"Impact of removing {source_node}")
-        print("────────────────────────────")
-
-        impact = graph.impact_of(source_node)
-
-        print()
-        print("Directly affected:")
-
-        if impact["direct"]:
-            for node in impact["direct"]:
-                print(f"- {node}")
-        else:
-            print("- none")
-
-        print()
-        print("Indirectly affected:")
-
-        if impact["indirect"]:
-            for node in impact["indirect"]:
-                print(f"- {node}")
-        else:
-            print("- none")
-
-        total = (
-            len(impact["direct"])
-            + len(impact["indirect"])
-        )
-
-        print()
-        print(f"Total affected files: {total}")
-
-        print()
-        print("Impact chains")
-        print("────────────────────────────")
-
-        chains = graph.impact_chains(source_node)
-
-        if chains:
-            for chain in chains:
-                print(" → ".join(chain))
-        else:
-            print("none")
-
-        return
 
     # ---------------------------------------------------------
     # --cycles
