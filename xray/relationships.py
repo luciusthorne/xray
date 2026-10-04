@@ -3,7 +3,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .dependencies import discover_local_modules
-from .references import _resolve, find_references
+from .references import (
+    _find_module_file,
+    _find_symbol,
+    _resolve,
+    find_references,
+)
 from .symbols import extract_symbols_from_source
 
 
@@ -105,6 +110,34 @@ def find_relationships(path, project_root=None):
 
     local_modules = discover_local_modules(project_root)
 
+    module_files = {}
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+
+        if node.level:
+            base_dir = path.parent
+
+            for _ in range(node.level - 1):
+                base_dir = base_dir.parent
+        else:
+            base_dir = project_root
+
+        for alias in node.names:
+            if alias.name == "*":
+                continue
+
+            dotted_name = (
+                f"{node.module}.{alias.name}"
+                if node.module
+                else alias.name
+            )
+            found_file = _find_module_file(base_dir, dotted_name)
+
+            if found_file is not None:
+                module_files[alias.asname or alias.name] = found_file
+
     def dotted(node):
         parts = []
 
@@ -191,7 +224,28 @@ def find_relationships(path, project_root=None):
                 elif isinstance(callee, ast.Attribute):
                     base = dotted(callee.value)
 
-                    if base in module_aliases:
+                    if base in module_files:
+                        module_file = module_files[base]
+                        symbol = _find_symbol(module_file, callee.attr)
+
+                        if symbol is None:
+                            outcome = ("unresolved", None)
+                        else:
+                            outcome = (
+                                "resolved",
+                                f"{_location(module_file, project_root)}"
+                                f":{symbol.name}",
+                            )
+
+                        add(
+                            "calls",
+                            qualified,
+                            f"{base}.{callee.attr}",
+                            node,
+                            outcome,
+                        )
+
+                    elif base in module_aliases:
                         status, target = _resolve(
                             path,
                             project_root,

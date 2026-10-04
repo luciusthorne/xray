@@ -114,7 +114,7 @@ Python is dynamic, so xray reports what static analysis can see and does not cla
 - Dynamic imports, `getattr` and names built from strings are not seen. The unused-import and unused-symbol results are hints, not proof.
 - `--unused-symbols` cannot see use from outside the analyzed folder, such as a public API.
 - The call graph is conservative: only calls that resolve to a definition become `->` edges, and calls it recorded but could not resolve are marked `?`.
-- Calls through a project module (`utils.calculate()` after `import utils`, `import utils as u` or `import pkg.sub`) are resolved. Calls into external modules, such as `os.getcwd()`, are not recorded.
+- Calls through a project module (`utils.calculate()` after `import utils`, `import utils as u`, `import pkg.sub` or `from pkg import sub`) are resolved. Calls into external modules, such as `os.getcwd()`, are not recorded.
 - For ELF binaries, xray lists the libraries and symbols they use. It does not read the machine code.
 
 ## How it works
