@@ -489,6 +489,23 @@ def query_calls(context):
 QUERIES["--calls"] = query_calls
 
 
+def query_chain(context):
+    path = context.path
+    source_node = context.source_node
+
+    from xray.chain import chain_lines
+
+    print()
+    print(f"Chain of {source_node}")
+    print("────────────────────────────")
+
+    for line in chain_lines(path):
+        print(line)
+
+
+QUERIES["--chain"] = query_chain
+
+
 def run():
     if len(sys.argv) == 1:
         raise CLIError("missing target")
@@ -638,18 +655,6 @@ def run():
         for line in launch_lines(
             path, max_depth=depth, max_files=limit
         ):
-            print(line)
-
-        return
-
-    if query == "--chain":
-        from xray.chain import chain_lines
-
-        print()
-        print(f"Chain of {source_node}")
-        print("────────────────────────────")
-
-        for line in chain_lines(path):
             print(line)
 
         return
