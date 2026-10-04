@@ -1,310 +1,172 @@
-xray
+# xray
 
-xray is a lightweight Python project dependency analyzer.
+xray is a lightweight static-analysis tool for Python projects and for the commands installed on your system.
 
-It scans Python projects, builds a dependency graph, and lets you inspect how files are connected.
+It builds a dependency graph of a Python project, reads the code inside it, and can follow a command such as `pytest` into the code it launches.
 
 Think of it as a small X-ray machine for your codebase.
 
-Features
+## What it can do
 
-xray can:
+- **Dependency graph:** dependencies, dependents, trees, impact analysis, cycles, depth, reachability, paths and strongly connected components.
+- **Commands:** follow a launcher into the installed code it runs, and show the tree of what a script or binary runs.
+- **Static analysis of Python:** symbols, references, relationships, unused imports, unused symbols and complexity.
+- **Architecture metrics:** a static call graph, module coupling and call coupling.
 
-Analyze Python files
-
-Detect imports and dependencies
-
-Build project dependency graphs
-
-Find dependency hotspots
-
-Detect circular dependencies
-
-Show dependency trees
-
-Analyze file impact
-
-Show impact chains
-
-Calculate dependency depth
-
-Find reachable dependencies
-
-Find reverse-reachable dependents
-
-Find paths between files
-
-Find strongly connected components
-
-Show project statistics
-
-Installation
+## Installation
 
 From the project directory:
 
+```
 pip install -e .
+```
 
-Basic Usage
+## Usage
 
-Run xray against a Python file:
+```
+xray <target> [option]
+```
 
-xray test_programs/cycle_a.py
+The target is a file path or the name of a command found on your `PATH`. Without an option, xray prints the file type and a short summary of a Python file.
 
+You can also run it as a module:
 
-You can add a query to inspect different parts of the dependency graph.
+```
+python -m xray <target> [option]
+```
 
-You can also run the CLI as a Python module:
+Other flags:
 
-python -m xray.cli test_programs/cycle_a.py
+```
+xray --help       # or -h
+xray --version    # or -V
+```
 
-Commands
---deps
+## Dependency-graph options
 
-Show what the selected file depends on.
-
-xray test_programs/cycle_a.py --deps
-
-
-Useful for answering:
-
-What does this file use?
-
---dependents
-
-Show which files depend on the selected file.
-
-xray test_programs/cycle_a.py --dependents
-
-
-Useful for understanding which files may be affected by changes to the selected file.
-
---tree
-
-Show the dependency structure as a tree.
-
-xray test_programs/cycle_a.py --tree
-
+| Option | Shows |
+|---|---|
+| `--deps` | what the file depends on |
+| `--dependents` | which files depend on it |
+| `--tree` | the dependency tree |
+| `--impact` | directly and indirectly affected files, and impact chains |
+| `--cycles` | circular dependencies involving the file |
+| `--depth` | the maximum dependency depth |
+| `--project` | file count, dependency edges, leaf files, cycles and hotspots |
+| `--components` | strongly connected components |
+| `--reachable` | everything reachable from the file |
+| `--reverse-reachable` | everything that can reach the file |
+| `--path <target>` | the shortest dependency path to another file, or `No path found` |
 
 Example:
 
-cycle_a.py
-├── cycle_b.py
-│   └── cycle_c.py
-└── ...
-
---impact
-
-Analyze the impact of a file.
-
-xray test_programs/cycle_a.py --impact
-
-
-The report separates directly affected files from indirectly affected files and can also show impact chains.
-
---cycles
-
-Find circular dependencies.
-
-xray test_programs/cycle_a.py --cycles
-
-
-Example:
-
-cycle_a.py → cycle_b.py → cycle_c.py → cycle_a.py
-
---depth
-
-Calculate dependency depth.
-
-xray test_programs/cycle_a.py --depth
-
-
-The result shows the maximum dependency depth starting from the selected file.
-
---project
-
-Show project statistics.
-
-xray test_programs/cycle_a.py --project
-
-
-The project report includes:
-
-Python file count
-
-Dependency edge count
-
-Leaf files
-
-Circular dependencies
-
-Dependency hotspots
-
---components
-
-Show strongly connected components.
-
-xray test_programs/cycle_a.py --components
-
-
-This groups files that are mutually reachable through the dependency graph.
-
-It is particularly useful when investigating circular dependencies.
-
---reachable
-
-Show everything reachable from the selected file.
-
-xray test_programs/cycle_a.py --reachable
-
-
-In other words:
-
-Starting here, what can I eventually reach?
-
---reverse-reachable
-
-Show everything that can reach the selected file.
-
-xray test_programs/cycle_a.py --reverse-reachable
-
-
-This answers:
-
-What files can eventually depend on this?
-
---path
-
-Find a dependency path from the selected file to another file.
-
+```
 xray test_programs/cycle_a.py --path test_programs/cycle_c.py
-
-
-Example:
-
 cycle_a.py → cycle_b.py → cycle_c.py
+```
 
+## Command options
 
-xray finds the shortest dependency path. If no path exists, it reports:
+These work on scripts and binaries, including commands found on `PATH`.
 
-No path found
+| Option | Shows |
+|---|---|
+| `--launch` | the installed code a Python launcher runs |
+| `--launch-depth` | the same, following imports further down |
+| `--launch-limit` | the same, with a cap on how many files are listed |
+| `--calls` | what a script or binary runs |
+| `--chain` | the tree of what a command runs |
 
-Help
+`--chain` expands shell scripts into the commands they run, Python launchers into the installed files they import, and ELF binaries into the libraries they need. Each line reads `name -> resolved path [kind]`. A file that appears again is marked `(seen)` and is not expanded again, and a name that cannot be found is marked `(not found)`. The tree has a depth limit and a file limit, and a final `Truncated:` line says when something was left out.
 
-To see the available commands:
+## Static-analysis options
 
-xray --help
+These analyze Python code. On a target that is not a Python file they exit with code 3.
 
+| Option | Scope | Shows |
+|---|---|---|
+| `--symbols` | the file | functions, classes and methods |
+| `--references` | the file | where imported names are used and what they resolve to |
+| `--relationships` | the file | calls and inheritance |
+| `--unused` | the file | imports that appear unused |
+| `--complexity` | the file | lines, functions, cyclomatic complexity and nesting |
+| `--callgraph` | the file | which functions each function calls |
+| `--unused-symbols` | the whole folder | definitions that appear to have no references |
+| `--coupling` | the whole folder | fan-in, fan-out, density and the most coupled modules |
+| `--call-coupling` | the whole folder | calls in and out of each module |
 
-You can also use:
+## Output and exit codes
 
-xray -h
+Normal results go to stdout. Errors are written to stderr as `Error: ...`.
 
+| Code | Meaning |
+|---|---|
+| 0 | success |
+| 1 | general error or unexpected crash |
+| 2 | invalid command-line usage |
+| 3 | target or file error |
+| 4 | analysis error |
 
-Or:
+## Limitations
 
-python -m xray.cli --help
+Python is dynamic, so xray reports what static analysis can see and does not claim perfect accuracy.
 
-How It Works
+- Dynamic imports, `getattr` and names built from strings are not seen. The unused-import and unused-symbol results are hints, not proof.
+- `--unused-symbols` cannot see use from outside the analyzed folder, such as a public API.
+- The call graph is conservative: only calls that resolve to a definition become `->` edges, and calls it recorded but could not resolve are marked `?`.
+- Calls through a project module (`utils.calculate()` after `import utils`, `import utils as u` or `import pkg.sub`) are resolved. Calls into external modules, such as `os.getcwd()`, are not recorded.
+- For ELF binaries, xray lists the libraries and symbols they use. It does not read the machine code.
 
-At its core, xray builds a directed dependency graph.
+## How it works
 
-A dependency such as:
+At its core, xray builds a directed dependency graph. A dependency such as `a.py → b.py` means that `a.py` depends on `b.py`. Cycle detection, reachability, path finding, impact analysis and the other graph options all run on that one representation. The static-analysis options read the Python AST and combine the results with the graph.
 
-a.py → b.py
+## Project structure
 
-
-means that a.py depends on b.py.
-
-Once the project has been converted into a graph, xray can perform different analyses on that graph.
-
-This makes features such as:
-
-cycle detection
-
-reachability analysis
-
-path finding
-
-impact analysis
-
-dependency depth
-
-strongly connected component analysis
-
-possible on top of the same graph representation.
-
-Project Structure
-
-The main parts of xray are separated by responsibility:
-
+```
 xray/
-├── analyze.py
-├── classify.py
-├── cli.py
-├── dependencies.py
-├── discover.py
-├── graph.py
-└── identify.py
+├── __init__.py         package version
+├── __main__.py         python -m xray entry point
+├── cli.py              command-line interface and query dispatch
+├── errors.py           error types and exit codes
+├── graph.py            dependency graph engine
+├── analyze.py          Python source analysis
+├── discover.py         target resolution
+├── identify.py         file identification
+├── classify.py         shebang and file classification
+├── dependencies.py     dependency extraction
+├── symbols.py          functions, classes and methods
+├── references.py       references and their targets
+├── relationships.py    calls and inheritance
+├── callgraph.py        static call graph
+├── unused.py           unused imports
+├── unused_symbols.py   unused definitions
+├── complexity.py       complexity and nesting metrics
+├── coupling.py         module and call coupling
+├── analysis_views.py   text output for the analyses above
+├── entrypoints.py      command kinds and the modules a command imports
+├── launchgraph.py      launcher to installed code
+├── shellscan.py        shell script reader
+├── elfscan.py          ELF binary reader
+├── libresolve.py       shared library resolution
+├── calls.py            what a script or binary runs
+└── chain.py            tree of what a command runs
+```
 
-
-The graph engine lives in:
-
-xray/graph.py
-
-
-The command-line interface lives in:
-
-xray/cli.py
-
-
-Python source analysis is handled by:
-
-xray/analyze.py
-
-Testing
+## Testing
 
 Run the complete test suite with:
 
+```
 pytest -q
+```
 
+You can also check Python syntax with `python3 -m py_compile xray/*.py` and whitespace errors with `git diff --check`.
 
-The current test suite covers Python analysis, dependency graph behavior, graph algorithms, import resolution, cycle detection, reachability, path finding, and CLI functionality.
+## Status
 
-The release baseline currently passes:
+xray is under active development. The 0.8 series adds error handling, exit codes and static analysis of Python. The next planned step is a language-independent analysis model, then support for more languages and visualization.
 
-64 passed
-
-
-You can also check Python syntax with:
-
-python3 -m py_compile xray/*.py
-
-
-And check for whitespace errors with:
-
-git diff --check
-
-Why xray?
-
-Large projects can make dependency relationships difficult to see.
-
-A file might depend on another file, which depends on another, eventually producing a graph that is much harder to understand than the source code itself.
-
-xray makes that graph easier to inspect.
-
-Instead of guessing how files are connected, use xray to see those relationships directly.
-
-Status
-
-xray is an actively developed lightweight dependency-analysis tool.
-
-The project currently focuses on Python projects and graph-based dependency analysis.
-
-The 0.7.0 release focuses on expanding graph analysis and exposing those capabilities through the command-line interface.
-
-More analysis features can be built on top of the dependency graph as the project grows.
-
-License
+## License
 
 See the repository for licensing information.

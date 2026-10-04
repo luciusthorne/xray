@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from . import __version__
 from .discover import resolve_target
 from .identify import identify_file, get_file_metadata
 from .classify import detect_shebang
@@ -52,6 +53,17 @@ def print_help():
     print("  --unused-symbols       Show definitions that appear unused (whole folder)")
     print("  --coupling             Show fan-in and fan-out of modules")
     print("  --call-coupling        Show calls in and out of each module")
+    print()
+    print("Other:")
+    print("  --version, -V          Show the version")
+    print("  --help, -h             Show this help")
+    print()
+    print("Exit codes:")
+    print("  0  success")
+    print("  1  general error or unexpected crash")
+    print("  2  invalid command-line usage")
+    print("  3  target or file error")
+    print("  4  analysis error")
 
 
 def build_graph(workspace_root, path):
@@ -702,6 +714,10 @@ def run():
 
     if sys.argv[1] in ("--help", "-h"):
         print_help()
+        return
+
+    if sys.argv[1] in ("--version", "-V"):
+        print(f"xray {__version__}")
         return
 
     if sys.argv[1].startswith("-"):
