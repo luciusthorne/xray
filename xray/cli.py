@@ -506,6 +506,37 @@ def query_chain(context):
 QUERIES["--chain"] = query_chain
 
 
+def query_launch(context):
+    query = context.query
+    path = context.path
+    source_node = context.source_node
+
+    from xray.launchgraph import launch_lines
+
+    depth = 1
+    limit = 200
+
+    if query == "--launch-depth":
+        depth = int(sys.argv[3])
+    elif query == "--launch-limit":
+        depth = 3
+        limit = int(sys.argv[3])
+
+    print()
+    print(f"Launcher code of {source_node}")
+    print("────────────────────────────")
+
+    for line in launch_lines(
+        path, max_depth=depth, max_files=limit
+    ):
+        print(line)
+
+
+QUERIES["--launch"] = query_launch
+QUERIES["--launch-depth"] = query_launch
+QUERIES["--launch-limit"] = query_launch
+
+
 def run():
     if len(sys.argv) == 1:
         raise CLIError("missing target")
@@ -635,29 +666,6 @@ def run():
     # ---------------------------------------------------------
     # --deps
     # ---------------------------------------------------------
-
-    if query in ("--launch", "--launch-depth", "--launch-limit"):
-        from xray.launchgraph import launch_lines
-
-        depth = 1
-        limit = 200
-
-        if query == "--launch-depth":
-            depth = int(sys.argv[3])
-        elif query == "--launch-limit":
-            depth = 3
-            limit = int(sys.argv[3])
-
-        print()
-        print(f"Launcher code of {source_node}")
-        print("────────────────────────────")
-
-        for line in launch_lines(
-            path, max_depth=depth, max_files=limit
-        ):
-            print(line)
-
-        return
 
     # ---------------------------------------------------------
     # --dependents
