@@ -3,7 +3,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-import xray.chain as chain_module
+import xray.command_analyzers as analyzers_module
 from xray.chain import chain_lines
 from xray.elfscan import ElfScan
 
@@ -100,12 +100,14 @@ def test_elf_libraries_are_leaves(tmp_path, monkeypatch):
     binary = write(tmp_path / "prog", b"\x7fELF" + bytes(60))
 
     monkeypatch.setattr(
-        chain_module,
+        analyzers_module,
         "scan_elf",
         lambda path: ElfScan(needed=("libfoo.so.1", "libgone.so.1")),
     )
     monkeypatch.setattr(
-        chain_module, "ldconfig_cache", lambda: {"libfoo.so.1": str(lib)}
+        analyzers_module,
+        "ldconfig_cache",
+        lambda: {"libfoo.so.1": str(lib)},
     )
 
     assert chain_lines(binary) == [

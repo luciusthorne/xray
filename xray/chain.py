@@ -1,12 +1,10 @@
 from pathlib import Path
 
-from xray.command_analyzers import ShellAnalyzer
-from xray.elfscan import scan_elf
+from xray.command_analyzers import ELFAnalyzer, ShellAnalyzer
 from xray.entrypoints import command_kind, import_files
-from xray.libresolve import find_library, ldconfig_cache
 
 
-def _children(path, kind, cache):
+def _children(path, kind):
     """Return (name, target, target_kind) for what a file runs or needs.
 
     Shell scripts give the commands they run. ELF binaries give the
@@ -36,12 +34,12 @@ def _children(path, kind, cache):
 
             result.append((name, target, command_kind(target)))
     elif kind == "elf":
-        if cache["value"] is None:
-            cache["value"] = ldconfig_cache()
+        for edge in ELFAnalyzer().edges(path):
+            if edge.status != "resolved":
+                result.append((edge.name, None, None))
+                continue
 
-        for name in scan_elf(path).needed:
-            target = find_library(name, cache["value"])
-            result.append((name, target, "library" if target else None))
+            result.append((edge.name, Path(edge.target), "library"))
 
     return result
 
@@ -62,10 +60,9 @@ def chain_lines(path, max_depth=3, max_files=50):
     lines = [f"{root} [{root_kind}]"]
     seen = {root}
     state = {"count": 1, "truncated": False, "depth_truncated": False}
-    cache = {"value": None}
 
     def walk(node, kind, depth, prefix):
-        children = _children(node, kind, cache)
+        children = _children(node, kind)
 
         if depth >= max_depth:
             if children:
