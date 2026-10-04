@@ -9,6 +9,13 @@ from .classify import detect_shebang
 from .analyze import analyze_python
 from .graph import DependencyGraph
 from .errors import XRAYError, CLIError, TargetError
+from .analysis_views import (
+    complexity_lines,
+    references_lines,
+    relationships_lines,
+    symbols_lines,
+    unused_lines,
+)
 
 
 
@@ -32,6 +39,11 @@ def print_help():
     print("  --launch-limit <n>     Same, 3 levels deep, at most n files")
     print("  --calls                Show what a script or binary runs")
     print("  --chain                Show the tree of what a command runs")
+    print("  --symbols              Show functions, classes and methods")
+    print("  --references           Show where names are used and what they resolve to")
+    print("  --relationships        Show calls and other symbol relationships")
+    print("  --unused               Show imports that appear unused")
+    print("  --complexity           Show function complexity and nesting")
 
 
 def build_graph(workspace_root, path):
@@ -579,6 +591,65 @@ def query_default(context):
 QUERIES[None] = query_default
 
 
+def print_view(title, lines):
+    print()
+    print(title)
+    print("────────────────────────────")
+
+    for line in lines:
+        print(line)
+
+
+def query_symbols(context):
+    print_view(
+        f"Symbols in {context.source_node}",
+        symbols_lines(context.path),
+    )
+
+
+def query_references(context):
+    print_view(
+        f"References in {context.source_node}",
+        references_lines(context.path),
+    )
+
+
+def query_relationships(context):
+    print_view(
+        f"Relationships in {context.source_node}",
+        relationships_lines(context.path),
+    )
+
+
+def query_unused(context):
+    print_view(
+        f"Unused imports in {context.source_node}",
+        unused_lines(context.path),
+    )
+
+
+def query_complexity(context):
+    print_view(
+        f"Complexity of {context.source_node}",
+        complexity_lines(context.path),
+    )
+
+
+QUERIES["--symbols"] = query_symbols
+QUERIES["--references"] = query_references
+QUERIES["--relationships"] = query_relationships
+QUERIES["--unused"] = query_unused
+QUERIES["--complexity"] = query_complexity
+
+PYTHON_ONLY_QUERIES = {
+    "--symbols",
+    "--references",
+    "--relationships",
+    "--unused",
+    "--complexity",
+}
+
+
 def run():
     if len(sys.argv) == 1:
         raise CLIError("missing target")
@@ -661,6 +732,9 @@ def run():
     source_node = str(
         Path(path).resolve().relative_to(workspace_root)
     )
+
+    if query in PYTHON_ONLY_QUERIES and analysis is None:
+        raise TargetError(f"Not a Python file: {path}")
 
     print("XRAY")
     print("────────────────────────────")
