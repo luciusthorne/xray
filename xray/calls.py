@@ -1,29 +1,8 @@
-import shutil
-from pathlib import Path
-
 from xray.elfscan import ElfScan, scan_elf
 from xray.entrypoints import command_kind
 from xray.libresolve import find_library, ldconfig_cache
+from xray.locate import locate as _locate
 from xray.shellscan import scan_shell
-
-
-def _locate(name):
-    """Return the resolved file a command name refers to, or None.
-
-    Names without a slash are looked up on PATH only, never in the
-    current directory.
-    """
-
-    if "/" in name:
-        path = Path(name).expanduser()
-        found = path if path.is_file() else None
-    else:
-        found = shutil.which(name)
-
-    if found is None:
-        return None
-
-    return Path(found).resolve()
 
 
 def _section(title, items):

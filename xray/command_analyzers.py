@@ -1,9 +1,9 @@
 from pathlib import Path
 
 from .analyzers import Analyzer, registry
-from .calls import _locate
 from .elfscan import scan_elf
 from .libresolve import find_library, ldconfig_cache
+from .locate import locate
 from .model import Edge
 from .shellscan import scan_shell
 
@@ -26,7 +26,7 @@ class ShellAnalyzer(Analyzer):
         found = []
 
         for command in scan.commands:
-            target = _locate(command)
+            target = locate(command)
 
             if target is None:
                 found.append(
