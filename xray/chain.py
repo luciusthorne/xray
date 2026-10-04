@@ -56,14 +56,16 @@ def chain_lines(path, max_depth=3, max_files=50):
     root_kind = command_kind(root)
     lines = [f"{root} [{root_kind}]"]
     seen = {root}
-    state = {"count": 1, "truncated": False}
+    state = {"count": 1, "truncated": False, "depth_truncated": False}
     cache = {"value": None}
 
     def walk(node, kind, depth, prefix):
-        if depth >= max_depth:
-            return
-
         children = _children(node, kind, cache)
+
+        if depth >= max_depth:
+            if children:
+                state["depth_truncated"] = True
+            return
 
         for index, (name, target, target_kind) in enumerate(children):
             last = index == len(children) - 1
@@ -95,5 +97,8 @@ def chain_lines(path, max_depth=3, max_files=50):
 
     if state["truncated"]:
         lines.append(f"Truncated: file limit ({max_files}) reached")
+
+    if state["depth_truncated"]:
+        lines.append(f"Truncated: depth limit ({max_depth}) reached")
 
     return lines

@@ -61,6 +61,7 @@ def test_depth_limit(tmp_path, monkeypatch):
     assert chain_lines(tool, max_depth=1) == [
         f"{tool.resolve()} [shell]",
         f"└── chainb -> {b.resolve()} [shell]",
+        "Truncated: depth limit (1) reached",
     ]
 
 
