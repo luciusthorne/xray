@@ -28,6 +28,7 @@ def print_help():
     print("  --launch               Show installed code a launcher runs")
     print("  --launch-depth <n>     Same, following imports n levels deep")
     print("  --launch-limit <n>     Same, 3 levels deep, at most n files")
+    print("  --calls                Show what a shell script runs")
 
 
 def build_graph(workspace_root, path):
@@ -121,6 +122,7 @@ def run():
         "--launch",
         "--launch-depth",
         "--launch-limit",
+        "--calls",
     }
 
     if query not in valid_queries:
@@ -214,6 +216,18 @@ def run():
         for line in launch_lines(
             path, max_depth=depth, max_files=limit
         ):
+            print(line)
+
+        return
+
+    if query == "--calls":
+        from xray.calls import calls_lines
+
+        print()
+        print(f"Calls of {source_node}")
+        print("────────────────────────────")
+
+        for line in calls_lines(path):
             print(line)
 
         return
