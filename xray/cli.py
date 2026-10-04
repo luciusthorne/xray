@@ -212,6 +212,21 @@ def query_deps(context):
 QUERIES["--deps"] = query_deps
 
 
+def query_tree(context):
+    graph = context.graph
+    source_node = context.source_node
+
+    print()
+    print(f"Dependency tree for {source_node}")
+    print("────────────────────────────")
+
+    for line in graph.dependency_tree(source_node):
+        print(line)
+
+
+QUERIES["--tree"] = query_tree
+
+
 def run():
     if len(sys.argv) == 1:
         raise CLIError("missing target")
@@ -396,16 +411,6 @@ def run():
     # ---------------------------------------------------------
     # --tree
     # ---------------------------------------------------------
-
-    if query == "--tree":
-        print()
-        print(f"Dependency tree for {source_node}")
-        print("────────────────────────────")
-
-        for line in graph.dependency_tree(source_node):
-            print(line)
-
-        return
 
     # ---------------------------------------------------------
     # --impact
