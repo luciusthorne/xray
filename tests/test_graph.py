@@ -468,3 +468,31 @@ def test_dependency_hotspots_are_deterministic():
         ("B", 2),
         ("C", 2),
     ]
+def test_build_from_includes_extensionless_python_command(tmp_path):
+    helper = tmp_path / "helper.py"
+    helper.write_text(
+        "def greet():\n"
+        "    return 'hi'\n"
+    )
+
+    command = tmp_path / "mytool"
+    command.write_text(
+        "#!/usr/bin/env python3\n"
+        "from helper import greet\n"
+        "greet()\n"
+    )
+
+    from xray.analyze import analyze_python
+
+    graph = DependencyGraph()
+
+    graph.build_from(
+        command,
+        analyze_python,
+        tmp_path,
+        tmp_path,
+    )
+
+    assert "mytool" in graph.nodes
+    assert "helper.py" in graph.nodes
+    assert ("mytool", "helper.py") in graph.edges
