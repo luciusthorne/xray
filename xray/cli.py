@@ -192,6 +192,26 @@ def query_dependents(context):
 QUERIES["--dependents"] = query_dependents
 
 
+def query_deps(context):
+    graph = context.graph
+    source_node = context.source_node
+
+    print()
+    print(f"Dependencies of {source_node}")
+    print("────────────────────────────")
+
+    dependencies = graph.dependencies_of(source_node)
+
+    if dependencies:
+        for dependency in dependencies:
+            print(f"- {dependency}")
+    else:
+        print("none")
+
+
+QUERIES["--deps"] = query_deps
+
+
 def run():
     if len(sys.argv) == 1:
         raise CLIError("missing target")
@@ -366,21 +386,6 @@ def run():
 
         for line in chain_lines(path):
             print(line)
-
-        return
-
-    if query == "--deps":
-        print()
-        print(f"Dependencies of {source_node}")
-        print("────────────────────────────")
-
-        dependencies = graph.dependencies_of(source_node)
-
-        if dependencies:
-            for dependency in dependencies:
-                print(f"- {dependency}")
-        else:
-            print("none")
 
         return
 
