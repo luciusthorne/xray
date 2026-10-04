@@ -3,6 +3,7 @@ from pathlib import Path
 from . import command_analyzers, python_analyzer  # noqa: F401  (register analyzers)
 from .analyzers import registry
 from .entrypoints import command_kind
+from .shellscan import scan_shell
 
 
 def export_data(path):
@@ -16,6 +17,7 @@ def export_data(path):
     analyzer = registry.analyzer_for(path)
     symbols = []
     edges = []
+    notes = []
 
     if analyzer is not None:
         symbols = [
@@ -37,10 +39,18 @@ def export_data(path):
             for edge in analyzer.edges(path)
         ]
 
+    if analyzer is not None and analyzer.name == "shell":
+        if not scan_shell(path).commands:
+            notes.append(
+                "no external commands found by static reading "
+                "(commands run through variables or eval are not visible)"
+            )
+
     return {
         "file": str(path),
         "kind": command_kind(path),
         "analyzer": analyzer.name if analyzer else None,
         "symbols": symbols,
         "edges": edges,
+        "notes": notes,
     }

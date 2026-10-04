@@ -98,3 +98,25 @@ def test_cli_json_errors_go_to_stderr(tmp_path):
     assert result.returncode == 3
     assert result.stdout == ""
     assert "Error:" in result.stderr
+
+
+def test_shell_script_without_visible_commands_has_a_note(tmp_path):
+    script = write(tmp_path / "tool", "#!/bin/sh\necho hi\n")
+
+    data = export_data(script)
+
+    assert data["edges"] == []
+    assert len(data["notes"]) == 1
+    assert data["notes"][0].startswith("no external commands found")
+
+
+def test_shell_script_with_commands_has_no_notes(tmp_path):
+    script = write(tmp_path / "tool", "#!/bin/sh\nnosuchcmd_xyz\n")
+
+    assert export_data(script)["notes"] == []
+
+
+def test_python_file_has_no_notes(tmp_path):
+    source = write(tmp_path / "a.py", "x = 1\n")
+
+    assert export_data(source)["notes"] == []
