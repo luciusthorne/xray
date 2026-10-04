@@ -227,6 +227,27 @@ def query_tree(context):
 QUERIES["--tree"] = query_tree
 
 
+def query_depth(context):
+    graph = context.graph
+    source_node = context.source_node
+
+    print()
+    print(
+        f"Dependency depth for {source_node}"
+    )
+    print("────────────────────────────")
+
+    depth = dependency_depth(
+        graph,
+        source_node,
+    )
+
+    print(f"Depth: {depth}")
+
+
+QUERIES["--depth"] = query_depth
+
+
 def run():
     if len(sys.argv) == 1:
         raise CLIError("missing target")
@@ -536,22 +557,6 @@ def run():
     # ---------------------------------------------------------
     # --depth
     # ---------------------------------------------------------
-
-    if query == "--depth":
-        print()
-        print(
-            f"Dependency depth for {source_node}"
-        )
-        print("────────────────────────────")
-
-        depth = dependency_depth(
-            graph,
-            source_node,
-        )
-
-        print(f"Depth: {depth}")
-
-        return
 
     # ---------------------------------------------------------
     # --project
