@@ -147,6 +147,31 @@ def query_reachable(context):
 QUERIES["--reachable"] = query_reachable
 
 
+def query_reverse_reachable(context):
+    graph = context.graph
+    source_node = context.source_node
+
+    print()
+    print(
+        f"Reverse-reachable dependents of "
+        f"{source_node}"
+    )
+    print("────────────────────────────")
+
+    reachable = graph.reverse_reachable_from(
+        source_node
+    )
+
+    if reachable:
+        for node in reachable:
+            print(f"- {node}")
+    else:
+        print("- none")
+
+
+QUERIES["--reverse-reachable"] = query_reverse_reachable
+
+
 def run():
     if len(sys.argv) == 1:
         raise CLIError("missing target")
@@ -588,26 +613,6 @@ def run():
     # ---------------------------------------------------------
     # --reverse-reachable
     # ---------------------------------------------------------
-
-    if query == "--reverse-reachable":
-        print()
-        print(
-            f"Reverse-reachable dependents of "
-            f"{source_node}"
-        )
-        print("────────────────────────────")
-
-        reachable = graph.reverse_reachable_from(
-            source_node
-        )
-
-        if reachable:
-            for node in reachable:
-                print(f"- {node}")
-        else:
-            print("- none")
-
-        return
 
     # ---------------------------------------------------------
     # --path
