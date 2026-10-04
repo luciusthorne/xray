@@ -1,0 +1,91 @@
+from pathlib import Path
+
+from xray.calls import _locate
+from xray.elfscan import scan_elf
+from xray.entrypoints import command_kind
+from xray.libresolve import find_library, ldconfig_cache
+from xray.shellscan import scan_shell
+
+
+def _children(path, kind, cache):
+    """Return (name, target, target_kind) for what a file runs or needs.
+
+    Shell scripts give the commands they run. ELF binaries give the
+    libraries they need, as kind "library". Other files give nothing.
+    A target of None means it could not be found.
+    """
+
+    result = []
+
+    if kind == "shell":
+        for name in scan_shell(path).commands:
+            target = _locate(name)
+            target_kind = command_kind(target) if target else None
+            result.append((name, target, target_kind))
+    elif kind == "elf":
+        if cache["value"] is None:
+            cache["value"] = ldconfig_cache()
+
+        for name in scan_elf(path).needed:
+            target = find_library(name, cache["value"])
+            result.append((name, target, "library" if target else None))
+
+    return result
+
+
+def chain_lines(path, max_depth=3, max_files=50):
+    """Return a tree of what a command runs and links to.
+
+    Shell scripts expand into the commands they run, and ELF binaries
+    list the libraries they need. Libraries are leaves and are not
+    followed. A file that appears again is marked (seen) and not
+    expanded, so cycles end. Following stops after max_depth levels,
+    and no more than max_files files are listed. A last line says so
+    when the limit left something out.
+    """
+
+    root = Path(path).resolve()
+    root_kind = command_kind(root)
+    lines = [f"{root} [{root_kind}]"]
+    seen = {root}
+    state = {"count": 1, "truncated": False}
+    cache = {"value": None}
+
+    def walk(node, kind, depth, prefix):
+        if depth >= max_depth:
+            return
+
+        children = _children(node, kind, cache)
+
+        for index, (name, target, target_kind) in enumerate(children):
+            last = index == len(children) - 1
+            branch = "└── " if last else "├── "
+
+            if target is None:
+                lines.append(f"{prefix}{branch}{name} (not found)")
+                continue
+
+            label = f"{prefix}{branch}{name} -> {target} [{target_kind}]"
+
+            if target in seen:
+                lines.append(label + " (seen)")
+                continue
+
+            if state["count"] >= max_files:
+                state["truncated"] = True
+                continue
+
+            seen.add(target)
+            state["count"] += 1
+            lines.append(label)
+
+            if target_kind in ("shell", "elf"):
+                extra = "    " if last else "│   "
+                walk(target, target_kind, depth + 1, prefix + extra)
+
+    walk(root, root_kind, 0, "")
+
+    if state["truncated"]:
+        lines.append(f"Truncated: file limit ({max_files}) reached")
+
+    return lines

@@ -29,6 +29,7 @@ def print_help():
     print("  --launch-depth <n>     Same, following imports n levels deep")
     print("  --launch-limit <n>     Same, 3 levels deep, at most n files")
     print("  --calls                Show what a script or binary runs")
+    print("  --chain                Show the tree of what a command runs")
 
 
 def build_graph(workspace_root, path):
@@ -123,6 +124,7 @@ def run():
         "--launch-depth",
         "--launch-limit",
         "--calls",
+        "--chain",
     }
 
     if query not in valid_queries:
@@ -228,6 +230,18 @@ def run():
         print("────────────────────────────")
 
         for line in calls_lines(path):
+            print(line)
+
+        return
+
+    if query == "--chain":
+        from xray.chain import chain_lines
+
+        print()
+        print(f"Chain of {source_node}")
+        print("────────────────────────────")
+
+        for line in chain_lines(path):
             print(line)
 
         return
