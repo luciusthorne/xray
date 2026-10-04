@@ -94,6 +94,7 @@ These analyze Python code. On a target that is not a Python file they exit with 
 | `--unused-symbols` | the whole folder | definitions that appear to have no references |
 | `--coupling` | the whole folder | fan-in, fan-out, density and the most coupled modules |
 | `--call-coupling` | the whole folder | calls in and out of each module |
+| `--shell-metrics` | a shell script | functions, approximate complexity and nesting |
 
 ## Output and exit codes
 

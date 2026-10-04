@@ -6,6 +6,8 @@ from typing import Any
 from . import __version__
 from .discover import resolve_target
 from .overview import overview_lines
+from .entrypoints import command_kind
+from .shellmetrics import shell_metrics_lines
 from .identify import identify_file, get_file_metadata
 from .classify import detect_shebang
 from .analyze import analyze_python
@@ -54,6 +56,7 @@ def print_help():
     print("  --unused-symbols       Show definitions that appear unused (whole folder)")
     print("  --coupling             Show fan-in and fan-out of modules")
     print("  --call-coupling        Show calls in and out of each module")
+    print("  --shell-metrics        Show shell script functions and complexity")
     print()
     print("Other:")
     print("  --version, -V          Show the version")
@@ -714,6 +717,19 @@ def query_call_coupling(context):
 
 
 QUERIES["--callgraph"] = query_callgraph
+
+
+def query_shell_metrics(context):
+    if command_kind(context.path) != "shell":
+        raise TargetError(f"Not a shell script: {context.path}")
+
+    print_view(
+        f"Shell metrics of {context.source_node}",
+        shell_metrics_lines(context.path),
+    )
+
+
+QUERIES["--shell-metrics"] = query_shell_metrics
 QUERIES["--unused-symbols"] = query_unused_symbols
 QUERIES["--coupling"] = query_coupling
 QUERIES["--call-coupling"] = query_call_coupling
