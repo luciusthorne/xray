@@ -337,6 +337,70 @@ def query_impact(context):
 QUERIES["--impact"] = query_impact
 
 
+def query_project(context):
+    graph = context.graph
+
+    print()
+    print("Project")
+    print("────────────────────────────")
+
+    python_files = len(graph.nodes)
+    dependency_edges = len(graph.edges)
+
+    components = graph.strongly_connected_components()
+
+    cycle_count = 0
+
+    for component in components:
+        if len(component) > 1:
+            cycle_count += 1
+
+        elif component:
+            node = component[0]
+
+            if node in graph.dependencies_of(node):
+                cycle_count += 1
+
+    leaf_files = sum(
+        1
+        for node in graph.nodes
+        if not graph.dependencies_of(node)
+    )
+
+    print(f"Python files:      {python_files}")
+    print(f"Dependency edges:  {dependency_edges}")
+    print(f"Leaf files:        {leaf_files}")
+    print(f"Cycles:            {cycle_count}")
+
+    print()
+    print("Dependency hotspots")
+
+    hotspot_counts = []
+
+    for node in graph.nodes:
+        count = len(
+            graph.dependents_of(node)
+        )
+
+        if count > 0:
+            hotspot_counts.append(
+                (node, count)
+            )
+
+    hotspot_counts.sort(
+        key=lambda item: (-item[1], item[0])
+    )
+
+    if hotspot_counts:
+        for node, count in hotspot_counts:
+            print(f"- {node}: {count}")
+    else:
+        print("- none")
+
+
+QUERIES["--project"] = query_project
+
+
 def run():
     if len(sys.argv) == 1:
         raise CLIError("missing target")
@@ -603,66 +667,6 @@ def run():
     # ---------------------------------------------------------
     # --project
     # ---------------------------------------------------------
-
-    if query == "--project":
-        print()
-        print("Project")
-        print("────────────────────────────")
-
-        python_files = len(graph.nodes)
-        dependency_edges = len(graph.edges)
-
-        components = graph.strongly_connected_components()
-
-        cycle_count = 0
-
-        for component in components:
-            if len(component) > 1:
-                cycle_count += 1
-
-            elif component:
-                node = component[0]
-
-                if node in graph.dependencies_of(node):
-                    cycle_count += 1
-
-        leaf_files = sum(
-            1
-            for node in graph.nodes
-            if not graph.dependencies_of(node)
-        )
-
-        print(f"Python files:      {python_files}")
-        print(f"Dependency edges:  {dependency_edges}")
-        print(f"Leaf files:        {leaf_files}")
-        print(f"Cycles:            {cycle_count}")
-
-        print()
-        print("Dependency hotspots")
-
-        hotspot_counts = []
-
-        for node in graph.nodes:
-            count = len(
-                graph.dependents_of(node)
-            )
-
-            if count > 0:
-                hotspot_counts.append(
-                    (node, count)
-                )
-
-        hotspot_counts.sort(
-            key=lambda item: (-item[1], item[0])
-        )
-
-        if hotspot_counts:
-            for node, count in hotspot_counts:
-                print(f"- {node}: {count}")
-        else:
-            print("- none")
-
-        return
 
     # ---------------------------------------------------------
     # --components
