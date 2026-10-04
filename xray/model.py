@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 EDGE_KINDS = (
@@ -38,12 +38,15 @@ class Edge:
 
     source and target are file paths or "path:name" symbols. target is
     None when the relationship could not be resolved.
+    name is the target as written (a command, a sourced file or a
+    library name) when there is one. It is not part of equality.
     """
 
     source: str
     target: str | None
     kind: str
     status: str
+    name: str | None = field(default=None, compare=False)
 
     def __post_init__(self):
         if self.kind not in EDGE_KINDS:

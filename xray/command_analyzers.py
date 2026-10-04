@@ -29,9 +29,25 @@ class ShellAnalyzer(Analyzer):
             target = _locate(command)
 
             if target is None:
-                found.append(Edge(str(path), command, "runs", "unresolved"))
+                found.append(
+                    Edge(
+                        str(path),
+                        command,
+                        "runs",
+                        "unresolved",
+                        name=command,
+                    )
+                )
             else:
-                found.append(Edge(str(path), str(target), "runs", "resolved"))
+                found.append(
+                    Edge(
+                        str(path),
+                        str(target),
+                        "runs",
+                        "resolved",
+                        name=command,
+                    )
+                )
 
         for name in scan.sources:
             candidate = Path(name).expanduser()
@@ -46,10 +62,19 @@ class ShellAnalyzer(Analyzer):
                         str(candidate.resolve()),
                         "sources",
                         "resolved",
+                        name=name,
                     )
                 )
             else:
-                found.append(Edge(str(path), name, "sources", "unresolved"))
+                found.append(
+                    Edge(
+                        str(path),
+                        name,
+                        "sources",
+                        "unresolved",
+                        name=name,
+                    )
+                )
 
         return found
 
@@ -70,7 +95,15 @@ class ELFAnalyzer(Analyzer):
             target = find_library(name, cache)
 
             if target is None:
-                found.append(Edge(str(path), name, "links", "unresolved"))
+                found.append(
+                    Edge(
+                        str(path),
+                        name,
+                        "links",
+                        "unresolved",
+                        name=name,
+                    )
+                )
             else:
                 found.append(
                     Edge(
@@ -78,6 +111,7 @@ class ELFAnalyzer(Analyzer):
                         str(Path(target).resolve()),
                         "links",
                         "resolved",
+                        name=name,
                     )
                 )
 
