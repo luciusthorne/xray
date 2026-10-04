@@ -5,6 +5,7 @@ from typing import Any
 
 from . import __version__
 from .discover import resolve_target
+from .overview import overview_lines
 from .identify import identify_file, get_file_metadata
 from .classify import detect_shebang
 from .analyze import analyze_python
@@ -606,6 +607,16 @@ def query_default(context):
             f"Local deps: "
             f"{len(local_dependencies)}"
         )
+
+    lines = overview_lines(path)
+
+    if lines:
+        print()
+        print("Overview")
+        print("────────────────────────────")
+
+        for line in lines:
+            print(line)
 
 
 QUERIES[None] = query_default
