@@ -177,3 +177,104 @@ def resolve_launcher(path):
         result.append(CommandImport(module, kind, origin))
 
     return tuple(result)
+
+
+def _file_for(path):
+    """Return the module file at path (name.py or a package), or None."""
+
+    for candidate in (
+        path.parent / (path.name + ".py"),
+        path / "__init__.py",
+    ):
+        if candidate.is_file():
+            return candidate
+
+    return None
+
+
+def _is_module_named(origin, leaf):
+    return origin.name == leaf + ".py" or (
+        origin.name == "__init__.py" and origin.parent.name == leaf
+    )
+
+
+def import_files(path):
+    """Return the files a Python file's imports lead to.
+
+    Relative imports are resolved against the file's own directory.
+    Absolute imports skip the standard library and modules that cannot
+    be found. "from pkg import name" also includes pkg/name when name
+    is a module, but not when it is a function or class. Nothing is
+    imported or executed. Each file appears once, in a stable order.
+    """
+
+    path = Path(path).resolve()
+
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, ValueError):
+        return []
+
+    statements = set()
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                statements.add((0, alias.name, ()))
+        elif isinstance(node, ast.ImportFrom):
+            names = tuple(sorted(alias.name for alias in node.names))
+            statements.add((node.level, node.module or "", names))
+
+    found = {}
+
+    for level, module, names in sorted(statements):
+        if level == 0:
+            if not module:
+                continue
+
+            if module.partition(".")[0] in sys.stdlib_module_names:
+                continue
+
+            origin = find_module_file(module)
+
+            if origin is not None:
+                found[origin.resolve()] = None
+
+            for name in names:
+                if name == "*":
+                    continue
+
+                origin = find_module_file(f"{module}.{name}")
+
+                if origin is not None and _is_module_named(origin, name):
+                    found[origin.resolve()] = None
+
+            continue
+
+        base = path.parent
+
+        for _ in range(level - 1):
+            base = base.parent
+
+        if module:
+            target = base.joinpath(*module.split("."))
+            origin = _file_for(target)
+            package = target
+        else:
+            target = base
+            origin = base / "__init__.py"
+            package = base
+
+        if origin is not None and origin.is_file():
+            found[origin.resolve()] = None
+
+        for name in names:
+            if name == "*":
+                continue
+
+            origin = _file_for(package / name)
+
+            if origin is not None:
+                found[origin.resolve()] = None
+
+    return list(found)

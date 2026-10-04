@@ -1,29 +1,7 @@
-import sys
 from pathlib import Path
 
-from xray.entrypoints import command_kind, find_module_file, python_imports
+from xray.entrypoints import command_kind, import_files
 from xray.graph import DependencyGraph
-
-
-def _installed_targets(path):
-    """Return the files of non-stdlib modules a Python file imports.
-
-    Modules that cannot be located are skipped. Each file appears
-    once, in a stable order.
-    """
-
-    targets = {}
-
-    for module in python_imports(path):
-        if module.partition(".")[0] in sys.stdlib_module_names:
-            continue
-
-        origin = find_module_file(module)
-
-        if origin is not None:
-            targets[origin.resolve()] = None
-
-    return list(targets)
 
 
 def build_launcher_graph(command, max_depth=1, max_files=50):
@@ -31,9 +9,10 @@ def build_launcher_graph(command, max_depth=1, max_files=50):
 
     Nodes are absolute file paths. The command is the first node, and
     each non-stdlib module it imports that can be located on disk
-    becomes a node with an edge from the importing file. Following
-    stops after max_depth levels, and no more than max_files nodes
-    are ever added. Only Python files are followed.
+    becomes a node with an edge from the importing file. Relative
+    imports inside packages are followed too. Following stops after
+    max_depth levels, and no more than max_files nodes are ever added.
+    Only Python files are followed.
     """
 
     graph = DependencyGraph()
@@ -51,7 +30,7 @@ def build_launcher_graph(command, max_depth=1, max_files=50):
             if command_kind(path) != "python":
                 continue
 
-            for target in _installed_targets(path):
+            for target in import_files(path):
                 if target == path:
                     continue
 
