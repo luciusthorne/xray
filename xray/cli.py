@@ -31,16 +31,6 @@ def build_graph(workspace_root, path):
     graph = DependencyGraph()
 
     path = Path(path).resolve()
-
-    # Build the graph from the directory containing the target.
-    #
-    # Examples:
-    #
-    # test_programs/cycle_a.py
-    # -> test_programs/
-    #
-    # xray/dependencies.py
-    # -> xray/
     project_root = path.parent
 
     graph.build_project(
@@ -49,6 +39,16 @@ def build_graph(workspace_root, path):
         workspace_root,
     )
 
+    shebang = detect_shebang(path)
+
+    if path.suffix != ".py" and shebang:
+        if "python" in shebang.lower():
+            graph.build_from(
+                path,
+                analyze_python,
+                project_root,
+                workspace_root,
+            )
     return graph
 
 

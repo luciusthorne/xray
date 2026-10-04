@@ -452,3 +452,23 @@ def test_broken_target_with_query_still_reports_error(tmp_path):
     assert result.returncode == 4
     assert result.stdout == ""
     assert "Invalid Python syntax" in result.stderr
+
+
+def test_extensionless_python_command_dependencies(tmp_path):
+    helper = tmp_path / "helper.py"
+    helper.write_text(
+        "def greet():\n"
+        "    return 'hi'\n"
+    )
+
+    command = tmp_path / "mytool"
+    command.write_text(
+        "#!/usr/bin/env python3\n"
+        "from helper import greet\n"
+        "greet()\n"
+    )
+
+    result = run_raw(str(command), "--deps")
+
+    assert result.returncode == 0
+    assert "helper.py" in result.stdout
