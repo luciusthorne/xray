@@ -1,3 +1,4 @@
+import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -6,6 +7,7 @@ from typing import Any
 from . import __version__
 from .discover import resolve_target
 from .overview import overview_lines
+from .export import export_data
 from .entrypoints import command_kind
 from .shellmetrics import shell_metrics_lines
 from .identify import identify_file, get_file_metadata
@@ -57,6 +59,7 @@ def print_help():
     print("  --coupling             Show fan-in and fan-out of modules")
     print("  --call-coupling        Show calls in and out of each module")
     print("  --shell-metrics        Show shell script functions and complexity")
+    print("  --json                 Print symbols and edges of the file as JSON")
     print()
     print("Other:")
     print("  --version, -V          Show the version")
@@ -730,6 +733,19 @@ def query_shell_metrics(context):
 
 
 QUERIES["--shell-metrics"] = query_shell_metrics
+
+
+def query_json(context):
+    print(
+        json.dumps(
+            export_data(context.path),
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+QUERIES["--json"] = query_json
 QUERIES["--unused-symbols"] = query_unused_symbols
 QUERIES["--coupling"] = query_coupling
 QUERIES["--call-coupling"] = query_call_coupling
@@ -825,8 +841,9 @@ def run():
     if query in PYTHON_ONLY_QUERIES and analysis is None:
         raise TargetError(f"Not a Python file: {path}")
 
-    print("XRAY")
-    print("────────────────────────────")
+    if query != "--json":
+        print("XRAY")
+        print("────────────────────────────")
 
     context = QueryContext(
         command=command,

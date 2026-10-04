@@ -95,6 +95,7 @@ These analyze Python code. On a target that is not a Python file they exit with 
 | `--coupling` | the whole folder | fan-in, fan-out, density and the most coupled modules |
 | `--call-coupling` | the whole folder | calls in and out of each module |
 | `--shell-metrics` | a shell script | functions, approximate complexity and nesting |
+| `--json` | the file | symbols and edges as JSON (Python, shell, ELF), with no banner |
 
 ## Output and exit codes
 
