@@ -172,6 +172,26 @@ def query_reverse_reachable(context):
 QUERIES["--reverse-reachable"] = query_reverse_reachable
 
 
+def query_dependents(context):
+    graph = context.graph
+    source_node = context.source_node
+
+    print()
+    print(f"Dependents of {source_node}")
+    print("────────────────────────────")
+
+    dependents = graph.dependents_of(source_node)
+
+    if dependents:
+        for dependent in dependents:
+            print(f"- {dependent}")
+    else:
+        print("none")
+
+
+QUERIES["--dependents"] = query_dependents
+
+
 def run():
     if len(sys.argv) == 1:
         raise CLIError("missing target")
@@ -367,21 +387,6 @@ def run():
     # ---------------------------------------------------------
     # --dependents
     # ---------------------------------------------------------
-
-    if query == "--dependents":
-        print()
-        print(f"Dependents of {source_node}")
-        print("────────────────────────────")
-
-        dependents = graph.dependents_of(source_node)
-
-        if dependents:
-            for dependent in dependents:
-                print(f"- {dependent}")
-        else:
-            print("none")
-
-        return
 
     # ---------------------------------------------------------
     # --tree
