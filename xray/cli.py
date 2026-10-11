@@ -63,6 +63,7 @@ def print_help():
     print("  --shell-metrics        Show shell script functions and complexity")
     print("  --json                 Print symbols and edges of the file as JSON")
     print("  --graph-json           Print the whole graph of a command as JSON")
+    print("  --html                 Print an interactive graph page (save it with >)")
     print()
     print("Other:")
     print("  --version, -V          Show the version")
@@ -808,6 +809,16 @@ def query_graph_json(context):
 
 
 QUERIES["--graph-json"] = query_graph_json
+
+
+def query_html(context):
+    from xray.graphjson import graph_data
+    from xray.html import render_html
+
+    print(render_html(graph_data(context.path)), end="")
+
+
+QUERIES["--html"] = query_html
 QUERIES["--unused-symbols"] = query_unused_symbols
 QUERIES["--coupling"] = query_coupling
 QUERIES["--call-coupling"] = query_call_coupling
@@ -909,7 +920,7 @@ def run():
     if query in PYTHON_ONLY_QUERIES and analysis is None:
         raise TargetError(f"Not a Python file: {path}")
 
-    if query not in ("--json", "--graph-json"):
+    if query not in ("--json", "--graph-json", "--html"):
         print("XRAY")
         print("────────────────────────────")
 
