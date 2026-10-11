@@ -28,6 +28,14 @@ _TEMPLATE = r"""<!doctype html>
   line { stroke: #5b6783; stroke-width: 1; }
   line.dim { opacity: 0.08; }
   line.hot { stroke: #f2c14e; stroke-width: 1.6; }
+  line.cyc { stroke: #e5484d; stroke-width: 2; }
+  circle.cyc { stroke: #e5484d; stroke-width: 3.5; }
+  line.path { stroke: #4dd0e1; stroke-width: 2.6; opacity: 1; }
+  circle.path { stroke: #4dd0e1; stroke-width: 3.5; }
+  #controls button { margin-top: 6px; background: #12151c; color: #dde3ee;
+              border: 1px solid #2c3446; padding: 3px 8px; border-radius: 3px;
+              cursor: pointer; }
+  #hint { margin-top: 6px; max-width: 230px; color: #8a94a8; }
   line.open { stroke-dasharray: 3 3; }
   circle { stroke: #0c0e13; stroke-width: 1.5; cursor: pointer; }
   circle.hollow { fill: none !important; stroke: #c3cbdb; stroke-width: 2; }
@@ -55,7 +63,9 @@ _TEMPLATE = r"""<!doctype html>
     <label><input type="checkbox" data-kind="python" checked> python</label>
     <label><input type="checkbox" data-kind="shell" checked> shell</label>
     <label><input type="checkbox" data-kind="elf" checked> elf</label>
-    <label><input type="checkbox" data-kind="library" checked> library</label>
+    <label><input type="checkbox" data-kind="library" checked> library</label><br>
+    <button id="cycles" type="button">Highlight cycles</button>
+    <div id="hint">Shift-click a node to trace the shortest path from the selected one.</div>
   </div>
 </div>
 <div id="panel"><h2>__TITLE__</h2><p class="muted">Click a node to inspect it. Scroll to zoom, drag the background to pan.</p></div>
@@ -228,9 +238,12 @@ _TEMPLATE = r"""<!doctype html>
     }
   });
 
-  window.addEventListener("mouseup", function () {
+  window.addEventListener("mouseup", function (ev) {
     if (drag && drag.node) {
-      if (!drag.moved) select(drag.node);
+      if (!drag.moved) {
+        if (ev.shiftKey && selected && selected !== drag.node) showPath(selected, drag.node);
+        else select(drag.node);
+      }
       drag.node.fixed = false;
     }
     drag = null;
@@ -256,6 +269,7 @@ _TEMPLATE = r"""<!doctype html>
 
   function select(n) {
     selected = n;
+    clearPath();
     nodes.forEach(function (m) { m.el.classList.toggle("sel", m === n); });
     var near = {};
     near[n.id] = true;
@@ -329,6 +343,110 @@ _TEMPLATE = r"""<!doctype html>
   Array.prototype.forEach.call(kindBoxes, function (box) {
     box.addEventListener("change", applyControls);
   });
+
+  var cycleBtn = document.getElementById("cycles");
+  var cycleOn = false;
+
+  function clearPath() {
+    nodes.forEach(function (n) { n.el.classList.remove("path"); });
+    links.forEach(function (l) { l.el.classList.remove("path"); });
+  }
+
+  function components() {
+    var index = 0, stack = [], out = [];
+    nodes.forEach(function (n) { n.idx = -1; n.low = 0; n.onst = false; });
+    function visit(v) {
+      v.idx = index; v.low = index; index++;
+      stack.push(v); v.onst = true;
+      links.forEach(function (l) {
+        if (l.s !== v) return;
+        var w = l.t;
+        if (w.idx === -1) { visit(w); v.low = Math.min(v.low, w.low); }
+        else if (w.onst) v.low = Math.min(v.low, w.idx);
+      });
+      if (v.low === v.idx) {
+        var comp = [], w;
+        do { w = stack.pop(); w.onst = false; comp.push(w); } while (w !== v);
+        out.push(comp);
+      }
+    }
+    nodes.forEach(function (n) { if (n.idx === -1) visit(n); });
+    return out.filter(function (comp) {
+      return comp.length > 1 || links.some(function (l) { return l.s === comp[0] && l.t === comp[0]; });
+    });
+  }
+
+  function setCycles(on) {
+    cycleOn = on;
+    nodes.forEach(function (n) { n.el.classList.remove("cyc"); });
+    links.forEach(function (l) { l.el.classList.remove("cyc"); });
+    cycleBtn.textContent = on ? "Clear cycles" : "Highlight cycles";
+    if (!on) return [];
+    var groups = components();
+    var member = {};
+    groups.forEach(function (g, i) {
+      g.forEach(function (n) { member[n.id] = i; n.el.classList.add("cyc"); });
+    });
+    links.forEach(function (l) {
+      l.el.classList.remove("dim");
+      if (member[l.s.id] !== undefined && member[l.s.id] === member[l.t.id]) l.el.classList.add("cyc");
+    });
+    return groups;
+  }
+
+  cycleBtn.addEventListener("click", function () {
+    var groups = setCycles(!cycleOn);
+    if (!cycleOn) return;
+    if (!groups.length) {
+      panel.innerHTML = "<h2>Cycles</h2><p>No cycles found in this graph.</p>";
+      return;
+    }
+    panel.innerHTML = "<h2>Cycles</h2><p>" + groups.length + " cycle group(s) found:</p>" +
+      groups.map(function (g) {
+        return "<p>" + g.map(function (n) { return esc(n.label); }).join(" &harr; ") + "</p>";
+      }).join("");
+  });
+
+  function findPath(a, b, directed) {
+    var prev = {}, seen = {}, queue = [a];
+    seen[a.id] = true;
+    while (queue.length) {
+      var v = queue.shift();
+      if (v === b) break;
+      links.forEach(function (l) {
+        var w = null;
+        if (l.s === v) w = l.t;
+        else if (!directed && l.t === v) w = l.s;
+        if (w && !seen[w.id]) { seen[w.id] = true; prev[w.id] = { from: v, link: l }; queue.push(w); }
+      });
+    }
+    if (!seen[b.id]) return null;
+    var steps = [], cur = b;
+    while (cur !== a) { var p = prev[cur.id]; steps.unshift(p.link); cur = p.from; }
+    return steps;
+  }
+
+  function showPath(a, b) {
+    clearPath();
+    var directed = true;
+    var steps = findPath(a, b, true);
+    if (!steps) { directed = false; steps = findPath(a, b, false); }
+    if (!steps) {
+      panel.innerHTML = "<h2>No path</h2><p>No path between " + esc(a.label) + " and " + esc(b.label) + ".</p>";
+      return;
+    }
+    links.forEach(function (l) { l.el.classList.remove("hot", "dim"); });
+    nodes.forEach(function (m) { m.txt.classList.remove("dim"); });
+    a.el.classList.add("path"); b.el.classList.add("path");
+    steps.forEach(function (l) {
+      l.el.classList.add("path"); l.s.el.classList.add("path"); l.t.el.classList.add("path");
+    });
+    panel.innerHTML = "<h2>Path: " + esc(a.label) + " to " + esc(b.label) + "</h2><p>" +
+      steps.length + " step(s)" + (directed ? "" : ", ignoring edge direction") + "</p><ul>" +
+      steps.map(function (l) {
+        return "<li>" + esc(l.s.label) + " " + esc(l.e.kind) + " " + esc(l.t.label) + "</li>";
+      }).join("") + "</ul>";
+  }
 
   (function loop() { tick(); requestAnimationFrame(loop); })();
 })();
