@@ -86,6 +86,7 @@ These work on scripts and binaries, including commands found on `PATH`.
 | `--calls` | what a script or binary runs |
 | `--chain` | the tree of what a command runs |
 | `--package` | the installed package that owns the file (uses rpm) |
+| `--graph-json` | the whole graph of what a command runs, sources, imports or links to, as JSON: nodes (kind, package, symbol count), edges (with names) and metadata; stops at depth 5 and 100 files and says when it did |
 | `--trace` | **runs the command** under strace and shows the programs it executes and the files it opens; pass its arguments after `--`, as in `xray tool --trace -- arg` (needs strace, stops after 10 seconds) |
 
 `--chain` expands shell scripts into the commands they run, Python launchers into the installed files they import, and ELF binaries into the libraries they need. Each line reads `name -> resolved path [kind]`. A file that appears again is marked `(seen)` and is not expanded again, and a name that cannot be found is marked `(not found)`. The tree has a depth limit and a file limit, and a final `Truncated:` line says when something was left out.
