@@ -86,7 +86,7 @@ These work on scripts and binaries, including commands found on `PATH`.
 | `--calls` | what a script or binary runs |
 | `--chain` | the tree of what a command runs |
 | `--package` | the installed package that owns the file (uses rpm) |
-| `--html` | one self-contained HTML page that draws the same graph as `--graph-json`, with zoom, pan, dragging, click-to-inspect, a search box, kind filters, cycle highlighting, shift-click shortest paths and impact highlighting; save it with `xray tool --html > graph.html` and open it in a browser; works offline |
+| `--html` | one self-contained HTML page that draws the same graph as `--graph-json`, with zoom, pan, dragging, click-to-inspect, a search box, kind filters, cycle highlighting, shift-click shortest paths, impact highlighting and a per-node summary of reach, impact and cycles; save it with `xray tool --html > graph.html` and open it in a browser; works offline |
 | `--graph-json` | the whole graph of what a command runs, sources, imports or links to, as JSON: nodes (kind, package, symbol count), edges (with names) and metadata; stops at depth 5 and 100 files and says when it did |
 | `--trace` | **runs the command** under strace and shows the programs it executes and the files it opens; pass its arguments after `--`, as in `xray tool --trace -- arg` (needs strace, stops after 10 seconds) |
 

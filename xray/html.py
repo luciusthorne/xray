@@ -271,6 +271,45 @@ _TEMPLATE = r"""<!doctype html>
     }).join("") + "</ul>";
   }
 
+  function reach(n, forward) {
+    var seen = {};
+    seen[n.id] = 0;
+    var queue = [n];
+    while (queue.length) {
+      var v = queue.shift();
+      links.forEach(function (l) {
+        var w = forward ? (l.s === v ? l.t : null) : (l.t === v ? l.s : null);
+        if (w && seen[w.id] === undefined) { seen[w.id] = seen[v.id] + 1; queue.push(w); }
+      });
+    }
+    var direct = 0, total = 0;
+    Object.keys(seen).forEach(function (k) {
+      if (k === n.id) return;
+      total++;
+      if (seen[k] === 1) direct++;
+    });
+    return { direct: direct, total: total };
+  }
+
+  function cycleOf(n) {
+    var groups = components();
+    for (var i = 0; i < groups.length; i++) {
+      if (groups[i].indexOf(n) !== -1) return groups[i];
+    }
+    return null;
+  }
+
+  function summary(n) {
+    var fwd = reach(n, true), back = reach(n, false), cyc = cycleOf(n);
+    var cycleText = cyc
+      ? "in a cycle with " + cyc.filter(function (m) { return m !== n; })
+          .map(function (m) { return esc(m.label); }).join(", ")
+      : "none";
+    return "<p>Reaches: " + fwd.total + " file(s) (" + fwd.direct + " direct)<br>" +
+      "Affected if changed: " + back.total + " file(s) (" + back.direct + " direct)<br>" +
+      "Cycles: " + cycleText + "</p>";
+  }
+
   function select(n) {
     selected = n;
     clearPath();
@@ -293,6 +332,7 @@ _TEMPLATE = r"""<!doctype html>
       "<p>kind: " + esc(n.hollow ? "not found" : n.kind) + "<br>" +
       "package: " + esc(info.package || "none") + "<br>" +
       "symbols: " + esc(info.symbol_count == null ? 0 : info.symbol_count) + "</p>" +
+      summary(n) +
       "<b>Outgoing (" + out.length + ")</b>" + listEdges(out, function (l) { return l.t; }) +
       "<b>Incoming (" + inc.length + ")</b>" + listEdges(inc, function (l) { return l.s; });
   }
