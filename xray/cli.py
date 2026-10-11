@@ -50,6 +50,7 @@ def print_help():
     print("  --calls                Show what a script or binary runs")
     print("  --chain                Show the tree of what a command runs")
     print("  --package              Show the package that owns a command")
+    print("  --trace                Run the command and show what it executes and opens")
     print("  --symbols              Show functions, classes and methods")
     print("  --references           Show where names are used and what they resolve to")
     print("  --relationships        Show calls and other symbol relationships")
@@ -546,6 +547,26 @@ def query_package(context):
 QUERIES["--package"] = query_package
 
 
+def query_trace(context):
+    path = context.path
+    source_node = context.source_node
+
+    from xray.trace import trace_lines
+
+    args = sys.argv[4:] if len(sys.argv) > 3 else []
+    lines = trace_lines(path, args)
+
+    print()
+    print(f"Trace of {source_node}")
+    print("────────────────────────────")
+
+    for line in lines:
+        print(line)
+
+
+QUERIES["--trace"] = query_trace
+
+
 def query_chain(context):
     path = context.path
     source_node = context.source_node
@@ -820,6 +841,12 @@ def run():
         ):
             raise CLIError(
                 f"Usage: xray <target> {query} <number>"
+            )
+
+    elif query == "--trace":
+        if len(sys.argv) > 3 and sys.argv[3] != "--":
+            raise CLIError(
+                "Usage: xray <command> --trace [-- <args>]"
             )
 
     elif len(sys.argv) > 3:
