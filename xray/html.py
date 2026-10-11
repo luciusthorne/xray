@@ -31,6 +31,9 @@ _TEMPLATE = r"""<!doctype html>
   line.cyc { stroke: #e5484d; stroke-width: 2; }
   circle.cyc { stroke: #e5484d; stroke-width: 3.5; }
   line.path { stroke: #4dd0e1; stroke-width: 2.6; opacity: 1; }
+  circle.imp1 { stroke: #ff8c42; stroke-width: 4; }
+  circle.imp2 { stroke: #ffc999; stroke-width: 3.5; }
+  line.imp { stroke: #ff8c42; stroke-width: 1.8; opacity: 1; }
   circle.path { stroke: #4dd0e1; stroke-width: 3.5; }
   #controls button { margin-top: 6px; background: #12151c; color: #dde3ee;
               border: 1px solid #2c3446; padding: 3px 8px; border-radius: 3px;
@@ -65,6 +68,7 @@ _TEMPLATE = r"""<!doctype html>
     <label><input type="checkbox" data-kind="elf" checked> elf</label>
     <label><input type="checkbox" data-kind="library" checked> library</label><br>
     <button id="cycles" type="button">Highlight cycles</button>
+    <button id="impact" type="button">Show impact</button>
     <div id="hint">Shift-click a node to trace the shortest path from the selected one.</div>
   </div>
 </div>
@@ -270,6 +274,7 @@ _TEMPLATE = r"""<!doctype html>
   function select(n) {
     selected = n;
     clearPath();
+    if (typeof clearImpact === "function") clearImpact();
     nodes.forEach(function (m) { m.el.classList.toggle("sel", m === n); });
     var near = {};
     near[n.id] = true;
@@ -447,6 +452,56 @@ _TEMPLATE = r"""<!doctype html>
         return "<li>" + esc(l.s.label) + " " + esc(l.e.kind) + " " + esc(l.t.label) + "</li>";
       }).join("") + "</ul>";
   }
+
+  var impactBtn = document.getElementById("impact");
+  var impactOn = false;
+
+  function clearImpact() {
+    impactOn = false;
+    impactBtn.textContent = "Show impact";
+    nodes.forEach(function (n) { n.el.classList.remove("imp1", "imp2"); });
+    links.forEach(function (l) { l.el.classList.remove("imp"); });
+  }
+
+  impactBtn.addEventListener("click", function () {
+    if (impactOn) { clearImpact(); return; }
+    if (!selected) {
+      panel.innerHTML = "<h2>Impact</h2><p>Select a node first, then press Show impact.</p>";
+      return;
+    }
+    var depth = {};
+    depth[selected.id] = 0;
+    var queue = [selected];
+    while (queue.length) {
+      var v = queue.shift();
+      links.forEach(function (l) {
+        if (l.t === v && depth[l.s.id] === undefined) {
+          depth[l.s.id] = depth[v.id] + 1;
+          queue.push(l.s);
+        }
+      });
+    }
+    var direct = [], indirect = [];
+    nodes.forEach(function (n) {
+      if (n === selected || depth[n.id] === undefined) return;
+      if (depth[n.id] === 1) { direct.push(n); n.el.classList.add("imp1"); }
+      else { indirect.push(n); n.el.classList.add("imp2"); }
+    });
+    links.forEach(function (l) {
+      l.el.classList.remove("dim");
+      if (depth[l.s.id] !== undefined && depth[l.t.id] !== undefined &&
+          depth[l.s.id] === depth[l.t.id] + 1) l.el.classList.add("imp");
+    });
+    impactOn = true;
+    impactBtn.textContent = "Clear impact";
+    function names(list) {
+      return list.length ? "<ul>" + list.map(function (n) { return "<li>" + esc(n.label) + "</li>"; }).join("") + "</ul>" : '<p class="muted">none</p>';
+    }
+    panel.innerHTML = "<h2>Impact of " + esc(selected.label) + "</h2><p>" +
+      (direct.length + indirect.length) + " file(s) would be affected.</p>" +
+      "<b>Directly (" + direct.length + ")</b>" + names(direct) +
+      "<b>Indirectly (" + indirect.length + ")</b>" + names(indirect);
+  });
 
   (function loop() { tick(); requestAnimationFrame(loop); })();
 })();
