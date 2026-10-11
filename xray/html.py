@@ -30,7 +30,16 @@ _TEMPLATE = r"""<!doctype html>
   line.hot { stroke: #f2c14e; stroke-width: 1.6; }
   line.open { stroke-dasharray: 3 3; }
   circle { stroke: #0c0e13; stroke-width: 1.5; cursor: pointer; }
-  circle.hollow { fill: none !important; stroke-width: 2; }
+  circle.hollow { fill: none !important; stroke: #c3cbdb; stroke-width: 2; }
+  circle.gone, text.gone, line.gone { display: none; }
+  circle.nomatch { opacity: 0.15; }
+  text.nomatch { opacity: 0.1; }
+  #controls { position: absolute; top: 8px; right: 8px; padding: 8px;
+              background: #1a1f2bcc; border-radius: 4px; font-size: 12px; }
+  #controls input[type=text] { width: 170px; margin-bottom: 6px;
+              background: #12151c; color: #dde3ee; border: 1px solid #2c3446;
+              padding: 4px; border-radius: 3px; }
+  #controls label { margin-right: 8px; white-space: nowrap; }
   circle.sel { stroke: #fff; stroke-width: 3; }
   text { fill: #c3cbdb; font-size: 10px; pointer-events: none; }
   text.dim { opacity: 0.15; }
@@ -41,6 +50,13 @@ _TEMPLATE = r"""<!doctype html>
   <svg id="svg"><g id="view"><g id="edges"></g><g id="nodes"></g><g id="labels"></g></g></svg>
   <div id="notice" hidden>Graph truncated: some files were not followed.</div>
   <div id="legend"></div>
+  <div id="controls">
+    <input id="search" type="text" placeholder="Search names" autocomplete="off"><br>
+    <label><input type="checkbox" data-kind="python" checked> python</label>
+    <label><input type="checkbox" data-kind="shell" checked> shell</label>
+    <label><input type="checkbox" data-kind="elf" checked> elf</label>
+    <label><input type="checkbox" data-kind="library" checked> library</label>
+  </div>
 </div>
 <div id="panel"><h2>__TITLE__</h2><p class="muted">Click a node to inspect it. Scroll to zoom, drag the background to pan.</p></div>
 <script id="graph-data" type="application/json">__DATA__</script>
@@ -267,6 +283,51 @@ _TEMPLATE = r"""<!doctype html>
     selected = null;
     nodes.forEach(function (m) { m.el.classList.remove("sel"); m.txt.classList.remove("dim"); });
     links.forEach(function (l) { l.el.classList.remove("hot", "dim"); });
+  });
+
+  var searchBox = document.getElementById("search");
+  var kindBoxes = document.querySelectorAll("#controls input[data-kind]");
+
+  function visibleKinds() {
+    var on = {};
+    Array.prototype.forEach.call(kindBoxes, function (box) {
+      if (box.checked) on[box.getAttribute("data-kind")] = true;
+    });
+    return on;
+  }
+
+  function shown(n, on) { return n.hollow || on[n.kind] === true; }
+
+  function matches(n, term) {
+    return !term || (n.label + " " + n.id).toLowerCase().indexOf(term) !== -1;
+  }
+
+  function applyControls() {
+    var on = visibleKinds();
+    var term = searchBox.value.trim().toLowerCase();
+    nodes.forEach(function (n) {
+      var show = shown(n, on);
+      var hit = matches(n, term);
+      n.el.classList.toggle("gone", !show);
+      n.txt.classList.toggle("gone", !show);
+      n.el.classList.toggle("nomatch", show && !hit);
+      n.txt.classList.toggle("nomatch", show && !hit);
+    });
+    links.forEach(function (l) {
+      l.el.classList.toggle("gone", !(shown(l.s, on) && shown(l.t, on)));
+    });
+  }
+
+  searchBox.addEventListener("input", applyControls);
+  searchBox.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Enter") return;
+    var on = visibleKinds();
+    var term = searchBox.value.trim().toLowerCase();
+    var first = nodes.filter(function (n) { return shown(n, on) && matches(n, term); })[0];
+    if (term && first) select(first);
+  });
+  Array.prototype.forEach.call(kindBoxes, function (box) {
+    box.addEventListener("change", applyControls);
   });
 
   (function loop() { tick(); requestAnimationFrame(loop); })();
