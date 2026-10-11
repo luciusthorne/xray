@@ -1,18 +1,23 @@
 import subprocess
 from pathlib import Path
 
+FALLBACK = "unknown (the file command is not available)"
+
 
 def identify_file(path: Path) -> str:
     """
     Ask Linux what kind of file this is.
     """
 
-    result = subprocess.run(
-        ["file", "-b", str(path)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            ["file", "-b", str(path)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return FALLBACK
 
     return result.stdout.strip()
 
