@@ -25,5 +25,11 @@ def test_eval_still_counts(tmp_path):
     assert count(tmp_path, 'eval "ls $d"\n') == 1
 
 
-def test_special_parameters_are_not_commands(tmp_path):
-    assert count(tmp_path, "$?\n$$\n$1 x\n") == 0 or True
+def test_positional_parameter_in_command_position_counts(tmp_path):
+    assert count(tmp_path, "$1 x\n") == 1
+
+
+def test_boolean_variable_tests_are_counted(tmp_path):
+    # "if $flag" runs the variable as a command. A static reader cannot
+    # tell a boolean idiom from a hidden command, so it is counted.
+    assert count(tmp_path, "if $flag; then ls; fi\n") == 1

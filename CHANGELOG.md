@@ -4,6 +4,12 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.40
+- Document that the variable-command count includes boolean tests such as
+  `if $flag`, and replace a test that asserted nothing with tests of the
+  real behavior. No code change: on /usr/bin/zgrep all 15 counted
+  segments were checked by hand.
+
 ## 0.9.39
 - The count of shell commands run through variables or eval only counts
   real variable references and eval, not text that merely starts with a

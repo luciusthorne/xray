@@ -155,6 +155,8 @@ Python is dynamic, so xray reports what static analysis can see and does not cla
 - Shell metrics are approximate. Keywords are counted after removing comments, quoted text and heredocs.
 - Perl and other scripts are recognized but not read yet.
 
+The count of shell commands run through variables or `eval` can overstate hidden commands: a test such as `if $flag` runs a variable as a command, so it is counted even when the variable only holds `true` or `false`.
+
 ## How it works
 
 At its core, xray builds a directed dependency graph. A dependency such as `a.py → b.py` means that `a.py` depends on `b.py`. Cycle detection, reachability, path finding, impact analysis and the other graph options all run on that one representation. The static-analysis options read the Python AST and combine the results with the graph.
