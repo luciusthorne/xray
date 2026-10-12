@@ -4,6 +4,11 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.36
+- `--uses` attributes names that libc does not provide to the needed
+  library that exports them (with its package), so only names no library
+  exports stay under other. The default overview is unchanged.
+
 ## 0.9.35
 - `--uses` recognizes more names: library families by prefix (curl, acl,
   SSL, compression, xml) and the C type checks, `stdout`, `dirfd` and

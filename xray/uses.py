@@ -1,4 +1,8 @@
+from pathlib import Path
+
 from xray.elfscan import ElfScan, scan_elf
+from xray.libresolve import find_library, ldconfig_cache
+from xray.provenance import package_of
 
 GROUPS = {
     "files": (
@@ -214,11 +218,31 @@ def uses_summary(names):
     return "Uses: " + ", ".join(parts)
 
 
-def uses_lines(path, max_names=40):
-    """Return report lines listing an ELF binary's imports by purpose.
+def attribute_imports(names, exports):
+    """Return {library: sorted names} for names a library exports.
 
-    A name in a group means the binary can call it. It does not mean
-    it does at run time: --trace shows that.
+    exports maps a library name to the set of names it defines. The
+    first library that exports a name gets it.
+    """
+
+    found = {}
+
+    for name in names:
+        for library, defined in exports.items():
+            if name in defined:
+                found.setdefault(library, []).append(name)
+                break
+
+    return {library: tuple(sorted(items)) for library, items in found.items()}
+
+
+def uses_lines(path, max_names=40):
+    """Return report lines listing an ELF binary's imports.
+
+    Names the purpose table knows (libc and friends) are grouped by
+    purpose. The rest are attributed to the needed library that exports
+    them, and only names no needed library exports stay in other. A name
+    means the binary can call it, not that it does at run time.
     """
 
     scan = scan_elf(path)
@@ -227,15 +251,42 @@ def uses_lines(path, max_names=40):
         return ["No ELF information found (is readelf installed?)"]
 
     groups = group_imports(scan.imports)
+    unknown = groups.pop("other", ())
+    exports = {}
+    cache = {}
+
+    if unknown and scan.needed:
+        cache = ldconfig_cache()
+
+        for library in scan.needed:
+            found = find_library(library, cache)
+
+            if found is not None:
+                exports[library] = set(scan_elf(Path(found)).exports)
+
+    by_library = attribute_imports(unknown, exports)
+    claimed = {name for names in by_library.values() for name in names}
+    leftover = tuple(sorted(set(unknown) - claimed))
     lines = []
 
-    for group in _ordered(groups):
-        names = groups[group]
-        lines.append(f"{group} ({len(names)}):")
+    def block(title, names):
+        lines.append(f"{title} ({len(names)}):")
         lines.extend(f"- {name}" for name in names[:max_names])
 
         if len(names) > max_names:
             lines.append(f"- ... and {len(names) - max_names} more")
+
+    for group in _ordered(groups):
+        block(group, groups[group])
+
+    for library in sorted(by_library, key=lambda l: (-len(by_library[l]), l)):
+        owner = find_library(library, cache)
+        package = package_of(owner) if owner else None
+        label = f"From {library} ({package})" if package else f"From {library}"
+        block(label, by_library[library])
+
+    if leftover:
+        block("other", leftover)
 
     lines.append(
         "A name here means the binary can call it, not that it does at "
