@@ -10,6 +10,9 @@ from xray.entrypoints import command_kind
 _FUNC = re.compile(
     r"^\s*\d+:\s+[0-9a-fA-F]+\s+\S+\s+FUNC\s+\w+\s+\w+\s+(\S+)\s+(\S+)"
 )
+_ENTRY = re.compile(
+    r"^\s*\d+:\s+([0-9a-fA-F]+)\s+(\d+)\s+FUNC\s+\w+\s+\w+\s+(\S+)\s+(\S+)"
+)
 
 
 def parse_functions(text):
@@ -31,21 +34,32 @@ def parse_functions(text):
     return tuple(sorted(names))
 
 
-def read_minidebuginfo(path, timeout=10):
-    """Return the function names kept in a stripped ELF file.
+def parse_function_table(text):
+    """Return sorted, unique (address, size, name) of defined functions."""
 
-    Some distributions (Fedora among them) leave a small compressed
-    symbol table in the .gnu_debugdata section of stripped binaries.
-    It is read through objcopy and readelf, on temporary files, and
-    the binary itself is never modified. A file that is not ELF, has
-    no such section, or any failure gives an empty tuple. Only
-    function names are available: no lines, no bodies.
-    """
+    found = set()
+
+    for line in text.splitlines():
+        match = _ENTRY.match(line)
+
+        if not match or match.group(3) == "UND":
+            continue
+
+        name = match.group(4).split("@", 1)[0]
+
+        if name:
+            found.add((int(match.group(1), 16), int(match.group(2)), name))
+
+    return tuple(sorted(found))
+
+
+def _symbol_text(path, timeout):
+    """Return readelf -s text of the .gnu_debugdata table, or "" on any failure."""
 
     path = Path(path)
 
     if command_kind(path) != "elf":
-        return ()
+        return ""
 
     env = dict(os.environ)
     env["LC_ALL"] = "C"
@@ -69,12 +83,12 @@ def read_minidebuginfo(path, timeout=10):
             )
 
             if not section.is_file():
-                return ()
+                return ""
 
             try:
                 data = lzma.decompress(section.read_bytes())
             except (lzma.LZMAError, EOFError):
-                return ()
+                return ""
 
             symbols = Path(folder) / "symbols"
             symbols.write_bytes(data)
@@ -88,6 +102,29 @@ def read_minidebuginfo(path, timeout=10):
                 check=False,
             )
     except (OSError, subprocess.SubprocessError):
-        return ()
+        return ""
 
-    return parse_functions(result.stdout)
+    return result.stdout
+
+
+def read_minidebuginfo(path, timeout=10):
+    """Return the function names kept in a stripped ELF file.
+
+    Some distributions (Fedora among them) leave a small compressed
+    symbol table in the .gnu_debugdata section of stripped binaries.
+    It is read through objcopy and readelf, on temporary files, and
+    the binary itself is never modified. A file that is not ELF, has
+    no such section, or any failure gives an empty tuple.
+    """
+
+    return parse_functions(_symbol_text(path, timeout))
+
+
+def read_function_table(path, timeout=10):
+    """Return (address, size, name) of the functions in .gnu_debugdata.
+
+    Same source and failure behavior as read_minidebuginfo. The
+    addresses let calls found in disassembly be matched to functions.
+    """
+
+    return parse_function_table(_symbol_text(path, timeout))

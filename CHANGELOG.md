@@ -4,6 +4,12 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.33
+- Fix `--disasm` on stripped binaries. 0.9.32 filed calls under the nearest
+  exported symbol (for example `error@@Base`), so callers and callees were
+  wrong. Calls are now matched by address against the function table in
+  `.gnu_debugdata`; calls that cannot be matched are counted, not guessed.
+
 ## 0.9.32
 - Add `--disasm`: direct calls between the functions of an ELF binary,
   read from `objdump -d`. Indirect calls are counted, not resolved.
