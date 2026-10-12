@@ -103,7 +103,38 @@ GROUPS = {
     ).split(),
 }
 
+for _group, _names in {
+    "strings": (
+        "isalnum isblank iscntrl isgraph islower ispunct isupper isxdigit "
+        "regcomp regexec regfree re_search re_compile_pattern re_set_syntax "
+        "strverscmp rawmemchr mbrtoc32"
+    ).split(),
+    "stdio": "stdout stderr stdin __fwriting".split(),
+    "directories": "dirfd fnmatch".split(),
+    "files": "utimes futimesat mkostemp".split(),
+    "security": "getfscreatecon".split(),
+    "locale": "nl_langinfo_l".split(),
+    "environment": "__progname_full".split(),
+    "runtime": "_setjmp setjmp longjmp".split(),
+}.items():
+    GROUPS.setdefault(_group, []).extend(_names)
+
 PREFIXES = (
+    ("curl_", "network"),
+    ("nghttp2_", "network"),
+    ("libssh2_", "network"),
+    ("acl_", "security"),
+    ("SSL_", "security"),
+    ("EVP_", "security"),
+    ("OPENSSL_", "security"),
+    ("ERR_", "security"),
+    ("BZ2_", "compression"),
+    ("deflate", "compression"),
+    ("inflate", "compression"),
+    ("lzma_", "compression"),
+    ("ZSTD_", "compression"),
+    ("xml", "parsing"),
+    ("re_", "strings"),
     ("selinux_", "security"),
     ("is_selinux", "security"),
     ("security_", "security"),

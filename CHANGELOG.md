@@ -4,6 +4,11 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.35
+- `--uses` recognizes more names: library families by prefix (curl, acl,
+  SSL, compression, xml) and the C type checks, `stdout`, `dirfd` and
+  similar names. On `sed` and `curl` far fewer imports fall under "other".
+
 ## 0.9.34
 - Add `--uses`: the imports of an ELF binary grouped by purpose. The ELF
   overview gets a one-line `Uses:` summary when any name is recognized.
