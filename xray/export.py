@@ -40,11 +40,24 @@ def export_data(path):
         ]
 
     if analyzer is not None and analyzer.name == "shell":
-        if not scan_shell(path).commands:
+        scan = scan_shell(path)
+
+        if scan.dynamic:
+            dynamic_note = (
+                f"{scan.dynamic} command(s) run through variables or eval "
+                "(not resolved)"
+            )
+        else:
+            dynamic_note = None
+
+        if not scan.commands:
             notes.append(
                 "no external commands found by static reading "
                 "(commands run through variables or eval are not visible)"
             )
+
+        if dynamic_note:
+            notes.append(dynamic_note)
 
     return {
         "file": str(path),

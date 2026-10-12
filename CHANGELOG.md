@@ -4,6 +4,10 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.41
+- `--json` adds a note with the number of shell commands run through
+  variables or eval, so scripts reading the JSON can see the gap.
+
 ## 0.9.40
 - Document that the variable-command count includes boolean tests such as
   `if $flag`, and replace a test that asserted nothing with tests of the
