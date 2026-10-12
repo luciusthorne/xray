@@ -4,6 +4,7 @@ from .analyzers import Analyzer, registry
 from .elfscan import scan_elf
 from .libresolve import find_library, ldconfig_cache
 from .locate import locate
+from .minidebug import read_minidebuginfo
 from .model import Edge
 from .shellscan import function_lines, scan_shell
 from .symbols import Symbol
@@ -94,6 +95,14 @@ class ELFAnalyzer(Analyzer):
 
     name = "elf"
     kinds = ("elf",)
+
+    def symbols(self, path):
+        path = Path(path).resolve()
+
+        return [
+            Symbol(name, "function", str(path), 1)
+            for name in read_minidebuginfo(path)
+        ]
 
     def edges(self, path):
         path = Path(path).resolve()

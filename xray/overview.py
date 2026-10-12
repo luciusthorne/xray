@@ -5,6 +5,7 @@ from .chain import chain_lines
 from .elfscan import ElfScan, scan_elf
 from .entrypoints import command_kind
 from .libresolve import find_library, ldconfig_cache
+from .minidebug import read_minidebuginfo
 from .provenance import package_of
 from .launchgraph import launch_lines
 from .shellscan import scan_shell
@@ -16,6 +17,7 @@ NO_COMMANDS_NOTE = (
 
 
 MAX_LIBRARIES = 15
+MAX_FUNCTIONS = 15
 
 
 def _elf_overview(path):
@@ -46,13 +48,25 @@ def _elf_overview(path):
     interpreter = [f"- {scan.interpreter}"] if scan.interpreter else ["none"]
     libraries = libraries or ["none"]
 
-    return [
+    lines = [
         "Interpreter:",
         *interpreter,
         "Libraries:",
         *libraries,
         f"Imports: {len(scan.imports)} (use --calls to list them)",
     ]
+
+    functions = read_minidebuginfo(path)
+
+    if functions:
+        lines.append(f"Functions ({len(functions)}):")
+        lines.extend(f"- {name}" for name in functions[:MAX_FUNCTIONS])
+        hidden = len(functions) - MAX_FUNCTIONS
+
+        if hidden > 0:
+            lines.append(f"- ... and {hidden} more")
+
+    return lines
 
 
 def overview_lines(path):

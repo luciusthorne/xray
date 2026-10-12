@@ -4,6 +4,11 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.31
+- Read the function names that stripped binaries keep in
+  `.gnu_debugdata`: the ELF overview lists them, and
+  `ELFAnalyzer.symbols` returns them (line is always 1).
+
 ## 0.9.30
 - Add this changelog, and a test that requires an entry for every release.
 
