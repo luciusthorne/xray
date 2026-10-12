@@ -4,6 +4,10 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.34
+- Add `--uses`: the imports of an ELF binary grouped by purpose. The ELF
+  overview gets a one-line `Uses:` summary when any name is recognized.
+
 ## 0.9.33
 - Fix `--disasm` on stripped binaries. 0.9.32 filed calls under the nearest
   exported symbol (for example `error@@Base`), so callers and callees were

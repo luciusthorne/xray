@@ -50,6 +50,7 @@ def print_help():
     print("  --calls                Show what a script or binary runs")
     print("  --chain                Show the tree of what a command runs")
     print("  --package              Show the package that owns a command")
+    print("  --uses                 Show what an ELF binary can do, grouped by purpose")
     print("  --disasm               Show which functions an ELF binary calls (reads objdump)")
     print("  --trace                Run the command and show what it executes and opens")
     print("  --symbols              Show functions, classes and methods")
@@ -582,6 +583,20 @@ def query_disasm(context):
 
 
 QUERIES["--disasm"] = query_disasm
+
+
+def query_uses(context):
+    from xray.uses import uses_lines
+
+    print()
+    print(f"Uses of {context.source_node}")
+    print("────────────────────────────")
+
+    for line in uses_lines(context.path):
+        print(line)
+
+
+QUERIES["--uses"] = query_uses
 
 
 def query_chain(context):

@@ -7,6 +7,7 @@ from .entrypoints import command_kind
 from .libresolve import find_library, ldconfig_cache
 from .minidebug import read_minidebuginfo
 from .provenance import package_of
+from .uses import uses_summary
 from .launchgraph import launch_lines
 from .shellscan import scan_shell
 
@@ -55,6 +56,11 @@ def _elf_overview(path):
         *libraries,
         f"Imports: {len(scan.imports)} (use --calls to list them)",
     ]
+
+    summary = uses_summary(scan.imports)
+
+    if summary:
+        lines.append(summary)
 
     functions = read_minidebuginfo(path)
 
