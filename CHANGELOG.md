@@ -4,6 +4,11 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.39
+- The count of shell commands run through variables or eval only counts
+  real variable references and eval, not text that merely starts with a
+  dollar sign, such as the end of a multi-line sed script.
+
 ## 0.9.38
 - Shell scripts: `--calls` and the overview count commands run through
   variables or `eval`, which cannot be resolved statically, so the gap

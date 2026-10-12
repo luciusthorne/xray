@@ -33,6 +33,9 @@ _FUNCTION = re.compile(
     re.MULTILINE,
 )
 _ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\+?=")
+_DYNAMIC = re.compile(
+    r"^[\"']?\$(?:[A-Za-z_][A-Za-z0-9_]*|[0-9@*#?]|\{[A-Za-z_][A-Za-z0-9_]*[^}]*\})[\"']?$"
+)
 _NAME = re.compile(r"^[A-Za-z0-9_./][A-Za-z0-9_./+@:-]*$")
 
 
@@ -294,7 +297,7 @@ def _scan_words(words, commands, sources, dynamic=None):
     if first in SKIP_SEGMENT:
         return
 
-    if dynamic is not None and (first == "eval" or first.startswith("$")):
+    if dynamic is not None and (first == "eval" or _DYNAMIC.match(first)):
         dynamic.append(first)
         return
 
