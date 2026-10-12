@@ -50,6 +50,7 @@ def print_help():
     print("  --calls                Show what a script or binary runs")
     print("  --chain                Show the tree of what a command runs")
     print("  --package              Show the package that owns a command")
+    print("  --disasm               Show which functions an ELF binary calls (reads objdump)")
     print("  --trace                Run the command and show what it executes and opens")
     print("  --symbols              Show functions, classes and methods")
     print("  --references           Show where names are used and what they resolve to")
@@ -567,6 +568,20 @@ def query_trace(context):
 
 
 QUERIES["--trace"] = query_trace
+
+
+def query_disasm(context):
+    from xray.disasm import disasm_lines
+
+    print()
+    print(f"Disassembly calls of {context.source_node}")
+    print("────────────────────────────")
+
+    for line in disasm_lines(context.path):
+        print(line)
+
+
+QUERIES["--disasm"] = query_disasm
 
 
 def query_chain(context):
