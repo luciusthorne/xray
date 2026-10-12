@@ -1,6 +1,6 @@
 import re
 import shlex
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 BUILTINS = frozenset(
@@ -50,6 +50,7 @@ class ShellScan:
     functions: tuple = ()
     sources: tuple = ()
     commands: tuple = ()
+    dynamic: int = field(default=0, compare=False)
 
 
 def _numbered_lines(text):
@@ -277,7 +278,7 @@ def _words(segment):
         return segment.split()
 
 
-def _scan_words(words, commands, sources):
+def _scan_words(words, commands, sources, dynamic=None):
     index = 0
 
     while index < len(words) and (
@@ -293,6 +294,10 @@ def _scan_words(words, commands, sources):
     if first in SKIP_SEGMENT:
         return
 
+    if dynamic is not None and (first == "eval" or first.startswith("$")):
+        dynamic.append(first)
+        return
+
     if first in ("source", "."):
         if index + 1 < len(words):
             sources.add(words[index + 1])
@@ -306,17 +311,17 @@ def _scan_words(words, commands, sources):
         commands.add(first)
 
 
-def _collect(text, commands, sources):
+def _collect(text, commands, sources, dynamic=None):
     outer, inners = _extract(text)
 
     for inner in inners:
-        _collect(inner, commands, sources)
+        _collect(inner, commands, sources, dynamic)
 
     for segment in _segments(outer):
         words = _words(segment)
 
         if words:
-            _scan_words(words, commands, sources)
+            _scan_words(words, commands, sources, dynamic)
 
 
 def scan_shell(path):
@@ -344,8 +349,9 @@ def scan_shell(path):
 
     commands = set()
     sources = set()
+    dynamic = []
 
-    _collect(cleaned, commands, sources)
+    _collect(cleaned, commands, sources, dynamic)
 
     commands -= functions
 
@@ -353,4 +359,5 @@ def scan_shell(path):
         tuple(sorted(functions)),
         tuple(sorted(sources)),
         tuple(sorted(commands)),
+        len(dynamic),
     )

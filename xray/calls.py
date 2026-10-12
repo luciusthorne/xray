@@ -5,6 +5,7 @@ from xray.elfscan import ElfScan, scan_elf
 from xray.entrypoints import command_kind
 from xray.libresolve import find_library, ldconfig_cache
 from xray.locate import locate as _locate
+from xray.shellscan import scan_shell
 
 
 def _section(title, items):
@@ -27,10 +28,18 @@ def _shell_lines(path):
                 kind = command_kind(Path(edge.target))
                 commands.append(f"- {edge.name} -> {edge.target} [{kind}]")
 
+    count = scan_shell(path).dynamic
+    extra = (
+        [f"Commands run through variables or eval (not resolved): {count}"]
+        if count
+        else []
+    )
+
     return (
         _section("Functions:", functions)
         + _section("Sources:", sources)
         + _section("Commands:", commands)
+        + extra
     )
 
 
