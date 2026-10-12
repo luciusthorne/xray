@@ -210,6 +210,10 @@ You can also check Python syntax with `python3 -m py_compile xray/*.py` and whit
 
 xray is under active development. The 0.8 series added error handling, exit codes and static analysis of Python. The 0.9 series adds a common model and analyzer registry, a command overview for shell scripts, ELF binaries and Python launchers, shell metrics and JSON export. Next planned: reading Perl and other scripts, more languages, and a visual graph viewer.
 
+## Changelog
+
+See `CHANGELOG.md` for what changed in each release.
+
 ## License
 
 See the repository for licensing information.
