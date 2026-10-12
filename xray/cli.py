@@ -831,7 +831,7 @@ def query_graph_json(context):
 
     print(
         json.dumps(
-            graph_data(context.path),
+            graph_data(context.path, functions=True),
             indent=2,
             sort_keys=True,
         )
@@ -845,7 +845,7 @@ def query_html(context):
     from xray.graphjson import graph_data
     from xray.html import render_html
 
-    print(render_html(graph_data(context.path)), end="")
+    print(render_html(graph_data(context.path, functions=True)), end="")
 
 
 QUERIES["--html"] = query_html

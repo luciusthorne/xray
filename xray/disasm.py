@@ -193,3 +193,65 @@ def disasm_lines(path, timeout=30, max_callers=40, max_callees=10):
         lines.append(f"... and {len(names) - max_callers} more functions")
 
     return lines
+
+
+def disasm_result(path, timeout=30):
+    """Return the DisasmResult for an ELF binary, or None.
+
+    None when the file is not ELF, objdump is missing or too slow, or
+    anything fails. The binary is only read, never run.
+    """
+
+    path = Path(path)
+
+    if command_kind(path) != "elf":
+        return None
+
+    env = dict(os.environ)
+    env["LC_ALL"] = "C"
+
+    try:
+        result = subprocess.run(
+            ["objdump", "-d", "--no-show-raw-insn", str(path)],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            env=env,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+    return parse_calls(result.stdout, read_function_table(path))
+
+
+def disasm_result(path, timeout=30):
+    """Return the DisasmResult for an ELF binary, or None.
+
+    None when the file is not ELF, objdump is missing or too slow, or
+    anything fails. The binary is only read, never run.
+    """
+
+    path = Path(path)
+
+    if command_kind(path) != "elf":
+        return None
+
+    env = dict(os.environ)
+    env["LC_ALL"] = "C"
+
+    try:
+        result = subprocess.run(
+            ["objdump", "-d", "--no-show-raw-insn", str(path)],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            env=env,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+    return parse_calls(result.stdout, read_function_table(path))

@@ -4,6 +4,11 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.37
+- `--graph-json` and `--html` add the functions of an ELF binary and the
+  calls between them (from `--disasm`), with imports as separate nodes.
+  Up to 300 functions; `truncated` says when that limit cut the graph.
+
 ## 0.9.36
 - `--uses` attributes names that libc does not provide to the needed
   library that exports them (with its package), so only names no library

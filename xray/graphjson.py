@@ -4,6 +4,7 @@ from pathlib import Path
 from . import __version__
 from . import command_analyzers, python_analyzer  # noqa: F401  (register analyzers)
 from .analyzers import registry
+from .disasm import disasm_result
 from .entrypoints import command_kind, import_files
 from .errors import XRAYError
 from .provenance import package_of
@@ -61,7 +62,9 @@ def _children(path, kind):
     return found
 
 
-def graph_data(path, max_depth=5, max_files=100):
+def graph_data(
+    path, max_depth=5, max_files=100, functions=False, max_functions=300
+):
     """Return the graph of what a command runs, sources, imports or links to.
 
     Nodes are files, edges are relationships, and unresolved edges keep
@@ -118,6 +121,59 @@ def graph_data(path, max_depth=5, max_files=100):
                 queue.append((target, target_kind, depth + 1))
 
             edges.add((str(node), key, edge_kind, status, name))
+
+    if functions and root_kind == "elf":
+        found = disasm_result(root)
+        count = 0
+
+        def function_node(name):
+            nonlocal count, truncated
+            key = f"{root}:{name}"
+
+            if key in nodes:
+                return key
+
+            if count >= max_functions:
+                truncated = True
+                return None
+
+            count += 1
+            nodes[key] = {
+                "id": key,
+                "kind": "function",
+                "package": None,
+                "symbol_count": 0,
+            }
+
+            return key
+
+        for caller, callees in sorted((found.calls if found else {}).items()):
+            source = function_node(caller)
+
+            if source is None:
+                continue
+
+            for callee in callees:
+                if callee.endswith("@plt"):
+                    name = callee[:-4]
+                    target = f"import:{name}"
+                    nodes.setdefault(
+                        target,
+                        {
+                            "id": target,
+                            "kind": "import",
+                            "package": None,
+                            "symbol_count": 0,
+                        },
+                    )
+                else:
+                    name = callee
+                    target = function_node(callee)
+
+                    if target is None:
+                        continue
+
+                edges.add((source, target, "calls", "resolved", name))
 
     ordered = sorted(
         edges, key=lambda e: (e[0], e[2], e[1] or "", e[4] or "")

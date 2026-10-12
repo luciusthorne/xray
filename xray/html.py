@@ -66,7 +66,9 @@ _TEMPLATE = r"""<!doctype html>
     <label><input type="checkbox" data-kind="python" checked> python</label>
     <label><input type="checkbox" data-kind="shell" checked> shell</label>
     <label><input type="checkbox" data-kind="elf" checked> elf</label>
-    <label><input type="checkbox" data-kind="library" checked> library</label><br>
+    <label><input type="checkbox" data-kind="library" checked> library</label>
+    <label><input type="checkbox" data-kind="function" checked> function</label>
+    <label><input type="checkbox" data-kind="import" checked> import</label><br>
     <button id="cycles" type="button">Highlight cycles</button>
     <button id="impact" type="button">Show impact</button>
     <div id="hint">Shift-click a node to trace the shortest path from the selected one.</div>
@@ -78,7 +80,8 @@ _TEMPLATE = r"""<!doctype html>
 (function () {
   var data = JSON.parse(document.getElementById("graph-data").textContent);
   var COLORS = { python: "#4b8bbe", shell: "#6cc070", elf: "#e07a5f",
-                 library: "#a78bfa", unknown: "#8a94a8" };
+                 library: "#a78bfa", function: "#f4b942", import: "#7ad1c2",
+                 unknown: "#8a94a8" };
   var NS = "http://www.w3.org/2000/svg";
   var svg = document.getElementById("svg");
   var view = document.getElementById("view");
@@ -87,7 +90,7 @@ _TEMPLATE = r"""<!doctype html>
   if (data.metadata.truncated) document.getElementById("notice").hidden = false;
 
   var legend = document.getElementById("legend");
-  Object.keys(COLORS).slice(0, 4).forEach(function (kind) {
+  Object.keys(COLORS).slice(0, 6).forEach(function (kind) {
     var item = document.createElement("span");
     item.innerHTML = '<i class="dot" style="background:' + COLORS[kind] + '"></i>' + kind;
     legend.appendChild(item);
