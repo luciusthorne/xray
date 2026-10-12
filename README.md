@@ -197,7 +197,15 @@ xray/
 ├── command_analyzers.py  shell scripts and ELF binaries as edges
 ├── overview.py         the Overview section of the default view
 ├── shellmetrics.py     approximate shell script metrics
-└── export.py           the data behind --json
+├── export.py           the data behind --json
+├── locate.py           command name to file
+├── provenance.py       the package that owns a file (rpm)
+├── trace.py            run a command under strace
+├── minidebug.py        function names kept in stripped ELF files
+├── disasm.py           direct calls inside an ELF binary (objdump)
+├── uses.py             imports grouped by purpose and by library
+├── graphjson.py        the whole graph of a command as data
+└── html.py             the interactive graph page
 ```
 
 ## Testing
