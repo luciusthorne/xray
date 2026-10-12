@@ -51,6 +51,7 @@ def print_help():
     print("  --chain                Show the tree of what a command runs")
     print("  --package              Show the package that owns a command")
     print("  --uses                 Show what an ELF binary can do, grouped by purpose")
+    print("  --disasm-function <n>  Show one function of an ELF binary, annotated (needs rizin)")
     print("  --disasm               Show which functions an ELF binary calls (reads objdump)")
     print("  --trace                Run the command and show what it executes and opens")
     print("  --symbols              Show functions, classes and methods")
@@ -585,6 +586,22 @@ def query_disasm(context):
 QUERIES["--disasm"] = query_disasm
 
 
+def query_disasm_function(context):
+    from xray.rizinview import function_lines
+
+    name = sys.argv[3]
+
+    print()
+    print(f"Function {name} of {context.source_node}")
+    print("────────────────────────────")
+
+    for line in function_lines(context.path, name):
+        print(line)
+
+
+QUERIES["--disasm-function"] = query_disasm_function
+
+
 def query_uses(context):
     from xray.uses import uses_lines
 
@@ -898,6 +915,12 @@ def run():
         ):
             raise CLIError(
                 f"Usage: xray <target> {query} <number>"
+            )
+
+    elif query == "--disasm-function":
+        if len(sys.argv) != 4:
+            raise CLIError(
+                "Usage: xray <command> --disasm-function <name>"
             )
 
     elif query == "--trace":

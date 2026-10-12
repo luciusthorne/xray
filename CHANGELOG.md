@@ -4,6 +4,11 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.43
+- Add `--disasm-function <name>`: one function of an ELF binary as
+  annotated disassembly through rizin. Names are checked against the
+  function table first and rizin is given the address.
+
 ## 0.9.42
 - List every module in the README project structure, and test that the
   list matches the files in `xray/`.
