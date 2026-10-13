@@ -871,6 +871,21 @@ QUERIES["--coupling"] = query_coupling
 QUERIES["--call-coupling"] = query_call_coupling
 
 
+COMMAND_GRAPH_QUERIES = frozenset(
+    (
+        "--tree",
+        "--deps",
+        "--dependents",
+        "--impact",
+        "--cycles",
+        "--depth",
+        "--components",
+        "--reachable",
+        "--reverse-reachable",
+    )
+)
+
+
 def run():
     if len(sys.argv) == 1:
         raise CLIError("missing target")
@@ -961,14 +976,29 @@ def run():
     if file_type.startswith("Python") or path.suffix == ".py":
         analysis = analyze_python(path)
 
-    graph = build_graph(
-        workspace_root,
-        path,
+    from .entrypoints import command_kind as _kind
+
+    on_command = (
+        query in COMMAND_GRAPH_QUERIES
+        and _kind(path) in ("shell", "elf", "perl")
     )
+
+    if on_command:
+        from .graphjson import command_graph
+
+        graph = command_graph(path)
+    else:
+        graph = build_graph(
+            workspace_root,
+            path,
+        )
 
     source_node = str(
         Path(path).resolve().relative_to(workspace_root)
     )
+
+    if on_command:
+        source_node = str(Path(path).resolve())
 
     if query in PYTHON_ONLY_QUERIES and analysis is None:
         raise TargetError(f"Not a Python file: {path}")

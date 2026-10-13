@@ -7,9 +7,10 @@ from .analyzers import registry
 from .disasm import disasm_result
 from .entrypoints import command_kind, import_files
 from .errors import XRAYError
+from .graph import DependencyGraph
 from .provenance import package_of
 
-EXPANDABLE = ("python", "shell", "elf")
+EXPANDABLE = ("python", "shell", "elf", "perl")
 
 
 def _symbol_count(path, kind):
@@ -60,6 +61,25 @@ def _children(path, kind):
         found.append((edge.kind, target, edge.name, "resolved", target_kind))
 
     return found
+
+
+def command_graph(path):
+    """Return the file graph of a command as a DependencyGraph.
+
+    Nodes are absolute paths, edges are the resolved relationships
+    graph_data finds, and unresolved ones are left out. The graph
+    options (--tree, --deps, --impact, ...) run on it unchanged.
+    """
+
+    data = graph_data(path)
+    graph = DependencyGraph()
+    graph.add_node(data["root"])
+
+    for edge in data["edges"]:
+        if edge["target"] is not None:
+            graph.add_edge(edge["source"], edge["target"])
+
+    return graph
 
 
 def graph_data(

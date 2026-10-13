@@ -4,6 +4,13 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.45
+- `--tree`, `--deps`, `--dependents`, `--impact`, `--cycles`, `--depth`,
+  `--components`, `--reachable` and `--reverse-reachable` work on shell
+  scripts, ELF binaries and Perl scripts, using the graph of what a
+  command runs, sources, imports or links to. `--path` and `--project`
+  still need a Python project.
+
 ## 0.9.44
 - Add a Perl reader and `PerlAnalyzer`: `use` and `require` become import
   edges resolved under perl's include paths, and `sub` definitions become
