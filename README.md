@@ -207,7 +207,8 @@ xray/
 ├── uses.py             imports grouped by purpose and by library
 ├── graphjson.py        the whole graph of a command as data
 ├── html.py             the interactive graph page
-└── rizinview.py        one function as annotated disassembly (rizin)
+├── rizinview.py        one function as annotated disassembly (rizin)
+└── perlscan.py         Perl scripts: modules and subs
 ```
 
 ## Testing

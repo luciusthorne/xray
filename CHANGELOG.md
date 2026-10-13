@@ -4,6 +4,13 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.44
+- Add a Perl reader and `PerlAnalyzer`: `use` and `require` become import
+  edges resolved under perl's include paths, and `sub` definitions become
+  symbols. `--json` picks them up. POD, pragmas and version numbers are
+  skipped. Modules loaded through `use parent` or built strings, and
+  `system` or `exec` calls, are not read yet.
+
 ## 0.9.43
 - Add `--disasm-function <name>`: one function of an ELF binary as
   annotated disassembly through rizin. Names are checked against the

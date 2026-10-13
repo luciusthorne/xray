@@ -6,6 +6,7 @@ from .libresolve import find_library, ldconfig_cache
 from .locate import locate
 from .minidebug import read_minidebuginfo
 from .model import Edge
+from .perlscan import perl_inc, resolve_module, scan_perl
 from .shellscan import function_lines, scan_shell
 from .symbols import Symbol
 
@@ -137,6 +138,50 @@ class ELFAnalyzer(Analyzer):
         return found
 
 
-for _analyzer in (ShellAnalyzer(), ELFAnalyzer()):
+class PerlAnalyzer(Analyzer):
+    """Reads Perl scripts: the modules they load and the subs they define.
+
+    Modules are resolved under perl's include paths. A module that is
+    not found is an unresolved edge that keeps its name.
+    """
+
+    name = "perl"
+    kinds = ("perl",)
+
+    def symbols(self, path):
+        path = Path(path).resolve()
+
+        return [
+            Symbol(name, "function", str(path), line)
+            for name, line in scan_perl(path).subs
+        ]
+
+    def edges(self, path):
+        path = Path(path).resolve()
+        found = []
+        inc = perl_inc()
+
+        for name, _line in scan_perl(path).modules:
+            target = resolve_module(name, inc)
+
+            if target is None:
+                found.append(
+                    Edge(str(path), None, "imports", "unresolved", name=name)
+                )
+            else:
+                found.append(
+                    Edge(
+                        str(path),
+                        str(target),
+                        "imports",
+                        "resolved",
+                        name=name,
+                    )
+                )
+
+        return found
+
+
+for _analyzer in (ShellAnalyzer(), ELFAnalyzer(), PerlAnalyzer()):
     if _analyzer.name not in registry.names():
         registry.register(_analyzer)
