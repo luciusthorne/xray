@@ -4,6 +4,10 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.47
+- Add `--serve`: a local page for an ELF binary where clicking a function
+  loads its C source and annotated disassembly.
+
 ## 0.9.46
 - Add `--source <function>`: the C source of a function of an installed
   binary, from its source package (downloaded once into the cache).

@@ -347,6 +347,7 @@ _TEMPLATE = r"""<!doctype html>
     links.forEach(function (l) { l.el.classList.remove("hot", "dim"); });
   });
 
+__SERVE__
   var searchBox = document.getElementById("search");
   var kindBoxes = document.querySelectorAll("#controls input[data-kind]");
 
@@ -554,6 +555,31 @@ _TEMPLATE = r"""<!doctype html>
 """
 
 
+_SERVE_JS = r'''
+  var base_select = select;
+  select = function (n) {
+    base_select(n);
+    if (n.kind !== "function") return;
+    var name = n.id.slice(n.id.lastIndexOf(":") + 1);
+    var box = document.createElement("div");
+    box.innerHTML = '<p><button id="b-src" type="button">Show source</button> ' +
+      '<button id="b-asm" type="button">Show disassembly</button></p>' +
+      '<pre id="b-out" style="white-space:pre-wrap;font-size:11px"></pre>';
+    panel.appendChild(box);
+    function load(kind) {
+      var out = document.getElementById("b-out");
+      out.textContent = "Loading...";
+      fetch("/api/" + kind + "?name=" + encodeURIComponent(name))
+        .then(function (r) { return r.text(); })
+        .then(function (t) { out.textContent = t; })
+        .catch(function () { out.textContent = "Request failed"; });
+    }
+    document.getElementById("b-src").addEventListener("click", function () { load("source"); });
+    document.getElementById("b-asm").addEventListener("click", function () { load("disasm"); });
+  };
+'''
+
+
 def _title(data):
     return "XRAY: " + Path(data["root"]).name
 
@@ -564,7 +590,7 @@ def _escape(text):
     )
 
 
-def render_html(data):
+def render_html(data, serve=False):
     """Return one self-contained HTML page that draws a graph.
 
     data is the result of graphjson.graph_data. It is embedded as JSON
@@ -578,6 +604,8 @@ def render_html(data):
         .replace("&", "\\u0026")
     )
 
-    return _TEMPLATE.replace("__TITLE__", _escape(_title(data))).replace(
+    template = _TEMPLATE.replace("__SERVE__", _SERVE_JS if serve else "")
+
+    return template.replace("__TITLE__", _escape(_title(data))).replace(
         "__DATA__", payload
     )

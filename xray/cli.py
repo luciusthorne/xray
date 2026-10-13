@@ -53,6 +53,7 @@ def print_help():
     print("  --uses                 Show what an ELF binary can do, grouped by purpose")
     print("  --disasm-function <n>  Show one function of an ELF binary, annotated (needs rizin)")
     print("  --source <function>    Show the C source of a function (downloads the source package once)")
+    print("  --serve                Open a local page: click a function for its source and disassembly")
     print("  --disasm               Show which functions an ELF binary calls (reads objdump)")
     print("  --trace                Run the command and show what it executes and opens")
     print("  --symbols              Show functions, classes and methods")
@@ -883,6 +884,19 @@ def query_html(context):
 
 
 QUERIES["--html"] = query_html
+
+
+def query_serve(context):
+    from xray.entrypoints import command_kind
+    from xray.serve import serve
+
+    if command_kind(context.path) != "elf":
+        raise TargetError("--serve reads ELF binaries only")
+
+    serve(context.path)
+
+
+QUERIES["--serve"] = query_serve
 QUERIES["--unused-symbols"] = query_unused_symbols
 QUERIES["--coupling"] = query_coupling
 QUERIES["--call-coupling"] = query_call_coupling
@@ -1024,7 +1038,7 @@ def run():
     if query in PYTHON_ONLY_QUERIES and analysis is None:
         raise TargetError(f"Not a Python file: {path}")
 
-    if query not in ("--json", "--graph-json", "--html"):
+    if query not in ("--json", "--graph-json", "--html", "--serve"):
         print("XRAY")
         print("────────────────────────────")
 
