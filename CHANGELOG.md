@@ -4,6 +4,9 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.50
+- `--help` groups the options by topic: code, binaries, scripts, graph, Python, export.
+
 ## 0.9.49
 - Add `--code`: one option to read the code of any command, with `--asm` for
   disassembly next to a function's source.
