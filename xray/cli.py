@@ -52,6 +52,7 @@ def print_help():
     print("  --package              Show the package that owns a command")
     print("  --uses                 Show what an ELF binary can do, grouped by purpose")
     print("  --disasm-function <n>  Show one function of an ELF binary, annotated (needs rizin)")
+    print("  --code [name] [--asm]  Show the code of any command: source files, a function, or a script")
     print("  --source <function>    Show the C source of a function (downloads the source package once)")
     print("  --serve                Open a local page: click a function for its source and disassembly")
     print("  --disasm               Show which functions an ELF binary calls (reads objdump)")
@@ -588,6 +589,25 @@ def query_disasm(context):
 QUERIES["--disasm"] = query_disasm
 
 
+def query_code(context):
+    from xray.codeview import code_lines
+
+    args = sys.argv[3:]
+    asm = "--asm" in args
+    names = [a for a in args if a != "--asm"]
+    name = names[0] if names else None
+    print()
+    print(f"Code of {name or 'all files'} in {context.source_node}")
+    print("────────────────────────────")
+    for line in code_lines(
+        context.path, name, asm, say=lambda t: print(t, file=sys.stderr)
+    ):
+        print(line)
+
+
+QUERIES["--code"] = query_code
+
+
 def query_source(context):
     from xray.sourcelookup import files_lines, source_lines
 
@@ -975,6 +995,11 @@ def run():
     elif query == "--source":
         if len(sys.argv) not in (3, 4):
             raise CLIError("Usage: xray <command> --source [<function or file>]")
+
+    elif query == "--code":
+        rest = [a for a in sys.argv[3:] if a != "--asm"]
+        if len(rest) > 1 or len(sys.argv) > 5:
+            raise CLIError("Usage: xray <command> --code [<function or file>] [--asm]")
 
     elif query == "--trace":
         if len(sys.argv) > 3 and sys.argv[3] != "--":

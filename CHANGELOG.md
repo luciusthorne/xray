@@ -4,6 +4,10 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.49
+- Add `--code`: one option to read the code of any command, with `--asm` for
+  disassembly next to a function's source.
+
 ## 0.9.48
 - `--source` without a name lists the source files of a binary, and with a
   file name prints that file. In `--serve`, clicking the binary lists its files.

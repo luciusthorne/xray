@@ -90,6 +90,7 @@ These work on scripts and binaries, including commands found on `PATH`.
 | `--graph-json` | the whole graph of what a command runs, sources, imports or links to, as JSON: nodes (kind, package, symbol count), edges (with names) and metadata; stops at depth 5 and 100 files and says when it did |
 | `--uses` | the symbols an ELF binary imports, grouped by purpose (files, memory, network, ...); a name means the binary can call it, not that it does at run time; the default view shows a one-line summary |
 | `--disasm-function <name>` | one function of an ELF binary as annotated disassembly (arguments, cross-references), read through rizin; the name must be one of the function names from `.gnu_debugdata`, and the binary is never run |
+| `--code [name] [--asm]` | the code of any command: for an ELF binary the source files, or the C source of a function (with `--asm`, its disassembly too); for a shell or Perl script the text with line numbers, or one function from its line |
 | `--source <function>` | the C source of a function of an installed binary: the source package is downloaded once into `~/.cache/xray`, and the definition is found by name; it is upstream code, so Fedora patches may make it differ from what is installed |
 | `--serve` | starts a local page on 127.0.0.1 for an ELF binary: click a function node to load its C source and annotated disassembly; stop it with Ctrl+C |
 | `--disasm` | which functions an ELF binary calls directly, read from `objdump -d` without running it, with function names from `.gnu_debugdata` when the binary has them; imports are marked, and indirect calls and calls into the middle of a function are counted but not resolved |
@@ -212,7 +213,8 @@ xray/
 ├── rizinview.py        one function as annotated disassembly (rizin)
 ├── perlscan.py         Perl scripts: modules and subs
 ├── sourcelookup.py     C source of a function from the source package
-└── serve.py            local server behind --serve
+├── serve.py            local server behind --serve
+└── codeview.py         the code of any command, behind --code
 ```
 
 ## Testing
