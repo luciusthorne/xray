@@ -942,8 +942,8 @@ def query_serve(context):
     from xray.entrypoints import command_kind
     from xray.serve import serve
 
-    if command_kind(context.path) != "elf":
-        raise TargetError("--serve reads ELF binaries only")
+    if command_kind(context.path) not in ("elf", "shell", "perl", "python"):
+        raise TargetError("--serve reads ELF, shell, Perl and Python commands")
 
     serve(context.path)
 

@@ -4,6 +4,11 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.52
+- `--serve` works on scripts too: a command box with Back and Forward, Open this
+  command on any file node, and Show text for scripts. Only ELF, shell, Perl and
+  Python files are served.
+
 ## 0.9.51
 - Add `--report [--md]`: identity, package, overview and cached source files of a
   command in one report, as text or Markdown.

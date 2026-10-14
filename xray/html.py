@@ -567,7 +567,7 @@ _SERVE_JS = r'''
       document.getElementById("b-files").addEventListener("click", function () {
         var list = document.getElementById("b-list");
         list.textContent = "Loading...";
-        fetch("/api/files").then(function (r) { return r.json(); }).then(function (d) {
+        fetch("/api/files?cmd=" + encodeURIComponent(data.root)).then(function (r) { return r.json(); }).then(function (d) {
           list.textContent = "";
           if (d.error) { list.textContent = d.error; return; }
           Object.keys(d.files).forEach(function (f) {
@@ -577,7 +577,7 @@ _SERVE_JS = r'''
             b.addEventListener("click", function () {
               var out = document.getElementById("b-out");
               out.textContent = "Loading...";
-              fetch("/api/file?path=" + encodeURIComponent(f))
+              fetch("/api/file?path=" + encodeURIComponent(f) + "&cmd=" + encodeURIComponent(data.root))
                 .then(function (r) { return r.text(); })
                 .then(function (t) { out.textContent = t; });
             });
@@ -597,7 +597,7 @@ _SERVE_JS = r'''
     function load(kind) {
       var out = document.getElementById("b-out");
       out.textContent = "Loading...";
-      fetch("/api/" + kind + "?name=" + encodeURIComponent(name))
+      fetch("/api/" + kind + "?name=" + encodeURIComponent(name) + "&cmd=" + encodeURIComponent(data.root))
         .then(function (r) { return r.text(); })
         .then(function (t) { out.textContent = t; })
         .catch(function () { out.textContent = "Request failed"; });
@@ -605,6 +605,43 @@ _SERVE_JS = r'''
     document.getElementById("b-src").addEventListener("click", function () { load("source"); });
     document.getElementById("b-asm").addEventListener("click", function () { load("disasm"); });
   };
+
+  var prev_select = select;
+  select = function (n) {
+    prev_select(n);
+    if (n.hollow || n.kind === "function" || n.kind === "import" || n.id === data.root) return;
+    var isText = n.kind === "shell" || n.kind === "perl" || n.kind === "python";
+    var nb = document.createElement("div");
+    nb.innerHTML = '<p><button id="t-open" type="button">Open this command</button> ' +
+      (isText ? '<button id="t-text" type="button">Show text</button>' : "") +
+      '</p><pre id="t-out" style="white-space:pre-wrap;font-size:11px"></pre>';
+    panel.appendChild(nb);
+    document.getElementById("t-open").addEventListener("click", function () {
+      location.href = "/?cmd=" + encodeURIComponent(n.id);
+    });
+    if (isText) document.getElementById("t-text").addEventListener("click", function () {
+      var out = document.getElementById("t-out");
+      out.textContent = "Loading...";
+      fetch("/api/text?path=" + encodeURIComponent(n.id))
+        .then(function (r) { return r.text(); })
+        .then(function (t) { out.textContent = t; })
+        .catch(function () { out.textContent = "Request failed"; });
+    });
+  };
+
+  var cbox = document.createElement("div");
+  cbox.innerHTML = '<hr><input id="cmd" type="text" placeholder="Open a command (gzip)" ' +
+    'autocomplete="off" style="width:130px"> <button id="cmd-go" type="button">Go</button> ' +
+    '<button id="nav-back" type="button">Back</button> <button id="nav-fwd" type="button">Forward</button>';
+  document.getElementById("controls").appendChild(cbox);
+  function go() {
+    var v = document.getElementById("cmd").value.trim();
+    if (v) location.href = "/?cmd=" + encodeURIComponent(v);
+  }
+  document.getElementById("cmd-go").addEventListener("click", go);
+  document.getElementById("cmd").addEventListener("keydown", function (ev) { if (ev.key === "Enter") go(); });
+  document.getElementById("nav-back").addEventListener("click", function () { history.back(); });
+  document.getElementById("nav-fwd").addEventListener("click", function () { history.forward(); });
 '''
 
 
