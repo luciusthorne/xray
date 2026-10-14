@@ -29,3 +29,4 @@ def test_every_option_appears_exactly_once():
 
     assert len(options) == len(set(options))
     assert "--code" in options and "--tree" in options and "--html" in options
+    assert "--report" in options

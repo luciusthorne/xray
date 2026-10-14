@@ -34,6 +34,7 @@ def print_help():
     print()
     print("Options by topic:")
     print("Code:")
+    print("  --report [--md]        Everything useful about a command in one report")
     print("  --code [name] [--asm]  Show the code of any command: source files, a function, or a script")
     print("  --source <function>    Show the C source of a function (downloads the source package once)")
     print("  --disasm-function <n>  Show one function of an ELF binary, annotated (needs rizin)")
@@ -600,6 +601,23 @@ def query_disasm(context):
 QUERIES["--disasm"] = query_disasm
 
 
+def query_report(context):
+    from xray.report import report_lines
+
+    markdown = len(sys.argv) == 4
+    if markdown:
+        print(f"# Report: {context.source_node}")
+    else:
+        print()
+        print(f"Report of {context.source_node}")
+        print("════════════════════════════")
+    for line in report_lines(context.path, markdown):
+        print(line)
+
+
+QUERIES["--report"] = query_report
+
+
 def query_code(context):
     from xray.codeview import code_lines
 
@@ -1012,6 +1030,10 @@ def run():
         if len(rest) > 1 or len(sys.argv) > 5:
             raise CLIError("Usage: xray <command> --code [<function or file>] [--asm]")
 
+    elif query == "--report":
+        if len(sys.argv) > 4 or (len(sys.argv) == 4 and sys.argv[3] != "--md"):
+            raise CLIError("Usage: xray <command> --report [--md]")
+
     elif query == "--trace":
         if len(sys.argv) > 3 and sys.argv[3] != "--":
             raise CLIError(
@@ -1077,7 +1099,9 @@ def run():
     if query in PYTHON_ONLY_QUERIES and analysis is None:
         raise TargetError(f"Not a Python file: {path}")
 
-    if query not in ("--json", "--graph-json", "--html", "--serve"):
+    if query not in ("--json", "--graph-json", "--html", "--serve") and not (
+        query == "--report" and len(sys.argv) == 4
+    ):
         print("XRAY")
         print("────────────────────────────")
 

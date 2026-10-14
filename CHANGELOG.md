@@ -4,6 +4,10 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.51
+- Add `--report [--md]`: identity, package, overview and cached source files of a
+  command in one report, as text or Markdown.
+
 ## 0.9.50
 - `--help` groups the options by topic: code, binaries, scripts, graph, Python, export.
 
