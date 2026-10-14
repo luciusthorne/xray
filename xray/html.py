@@ -559,6 +559,34 @@ _SERVE_JS = r'''
   var base_select = select;
   select = function (n) {
     base_select(n);
+    if (n.id === data.root) {
+      var rbox = document.createElement("div");
+      rbox.innerHTML = '<p><button id="b-files" type="button">Show source files</button></p>' +
+        '<div id="b-list"></div><pre id="b-out" style="white-space:pre-wrap;font-size:11px"></pre>';
+      panel.appendChild(rbox);
+      document.getElementById("b-files").addEventListener("click", function () {
+        var list = document.getElementById("b-list");
+        list.textContent = "Loading...";
+        fetch("/api/files").then(function (r) { return r.json(); }).then(function (d) {
+          list.textContent = "";
+          if (d.error) { list.textContent = d.error; return; }
+          Object.keys(d.files).forEach(function (f) {
+            var b = document.createElement("button");
+            b.type = "button"; b.style.display = "block";
+            b.textContent = f + " (" + d.files[f] + ")";
+            b.addEventListener("click", function () {
+              var out = document.getElementById("b-out");
+              out.textContent = "Loading...";
+              fetch("/api/file?path=" + encodeURIComponent(f))
+                .then(function (r) { return r.text(); })
+                .then(function (t) { out.textContent = t; });
+            });
+            list.appendChild(b);
+          });
+        }).catch(function () { list.textContent = "Request failed"; });
+      });
+      return;
+    }
     if (n.kind !== "function") return;
     var name = n.id.slice(n.id.lastIndexOf(":") + 1);
     var box = document.createElement("div");

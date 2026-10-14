@@ -201,3 +201,129 @@ def source_lines(path, name, say=lambda text: None, max_lines=120):
         header.append(f"({others} more match(es) elsewhere; showing the first)")
 
     return header + shown
+
+
+_START = re.compile(r"^([A-Za-z_]\w*)\s*\(")
+
+
+def index_functions(root, names):
+    """Return {name: (relative file, line)} for functions defined under root.
+
+    Only definitions count (a "{" at column 0 before any ";"), files
+    under tests folders are skipped, and the first definition wins.
+    """
+
+    root = Path(root)
+    wanted = {base_name(name) for name in names}
+    found = {}
+
+    for folder, dirs, files in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if d not in ("tests", "gnulib-tests"))
+
+        for filename in sorted(files):
+            if not filename.endswith(".c"):
+                continue
+
+            path = Path(folder) / filename
+
+            try:
+                lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            except OSError:
+                continue
+
+            for index, line in enumerate(lines):
+                match = _START.match(line)
+
+                if (
+                    match
+                    and match.group(1) in wanted
+                    and match.group(1) not in found
+                    and _body_end(lines, index) is not None
+                ):
+                    found[match.group(1)] = (
+                        path.relative_to(root).as_posix(),
+                        index + 1,
+                    )
+
+    return found
+
+
+def source_files(path, say=lambda text: None):
+    """Return ({file: [function names]}, root), or (None, message).
+
+    The files are those of the source package that define functions
+    this binary has, found by name.
+    """
+
+    path = Path(path)
+
+    if command_kind(path) != "elf":
+        return None, "Not an ELF binary: --source reads ELF only"
+
+    table = read_function_table(path)
+
+    if not table:
+        return None, "No function names in this binary (it has no .gnu_debugdata)"
+
+    info = _query(path.resolve())
+
+    if info is None:
+        return None, "No installed package owns this file, so there is no source package"
+
+    try:
+        root = ensure_source(info[0], info[1], say)
+    except FileNotFoundError as error:
+        return None, f"Source not available: {error}"
+    except (OSError, subprocess.SubprocessError) as error:
+        return None, f"Could not fetch the source package: {error}"
+
+    files = {}
+
+    for name, (relative, _line) in index_functions(root, [e[2] for e in table]).items():
+        files.setdefault(relative, []).append(name)
+
+    ordered = sorted(files, key=lambda f: (-len(files[f]), f))
+
+    return {f: sorted(files[f]) for f in ordered}, root
+
+
+def file_lines(root, relative, max_lines=400):
+    """Return a source file with line numbers, capped at max_lines."""
+
+    root = Path(root).resolve()
+    path = (root / relative).resolve()
+
+    if root not in path.parents or not path.is_file():
+        return ["Not a source file"]
+
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    shown = [f"{n:5d}  {line}" for n, line in enumerate(lines[:max_lines], 1)]
+
+    if len(lines) > max_lines:
+        shown.append(f"... and {len(lines) - max_lines} more lines")
+
+    return shown
+
+
+def files_lines(path, name=None, say=lambda text: None):
+    """List the source files of a binary, or print one of them."""
+
+    files, root = source_files(path, say)
+
+    if files is None:
+        return [root]
+
+    if name is None:
+        lines = [f"{f} ({len(n)} function(s))" for f, n in files.items()]
+
+        return lines + [
+            "",
+            "Read one with --source <file>, or a function with --source <function>.",
+        ]
+
+    matches = [f for f in files if f == name or f.endswith("/" + name)]
+
+    if not matches:
+        return [f"Not one of this binary's source files: {name[:60]}"] + list(files)[:10]
+
+    return [matches[0]] + file_lines(root, matches[0])

@@ -589,15 +589,18 @@ QUERIES["--disasm"] = query_disasm
 
 
 def query_source(context):
-    from xray.sourcelookup import source_lines
+    from xray.sourcelookup import files_lines, source_lines
 
-    name = sys.argv[3]
+    name = sys.argv[3] if len(sys.argv) > 3 else None
+    say = lambda t: print(t, file=sys.stderr)
     print()
-    print(f"Source of {name} in {context.source_node}")
+    print(f"Source of {name or "all files"} in {context.source_node}")
     print("────────────────────────────")
-    for line in source_lines(
-        context.path, name, say=lambda t: print(t, file=sys.stderr)
-    ):
+    if name and not name.endswith((".c", ".h")):
+        lines = source_lines(context.path, name, say=say)
+    else:
+        lines = files_lines(context.path, name, say=say)
+    for line in lines:
         print(line)
 
 
@@ -970,8 +973,8 @@ def run():
             )
 
     elif query == "--source":
-        if len(sys.argv) != 4:
-            raise CLIError("Usage: xray <command> --source <function>")
+        if len(sys.argv) not in (3, 4):
+            raise CLIError("Usage: xray <command> --source [<function or file>]")
 
     elif query == "--trace":
         if len(sys.argv) > 3 and sys.argv[3] != "--":
