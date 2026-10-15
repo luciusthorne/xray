@@ -4,6 +4,10 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.54
+- The graph page side panel has tabs (Overview, Edges, Code) for a selected
+  node. Cycles, path and impact results still fill the whole panel.
+
 ## 0.9.53
 - `--serve` shows source, disassembly and script text in a code viewer:
   syntax highlighting for C, shell, Perl and Python, and a line-number

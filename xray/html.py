@@ -18,6 +18,9 @@ _TEMPLATE = r"""<!doctype html>
   #panel h2 { font-size: 14px; margin: 0 0 8px; word-break: break-all; }
   #panel ul { padding-left: 16px; margin: 4px 0 12px; }
   #panel li { margin: 2px 0; word-break: break-all; }
+  .tabbar { display: flex; gap: 4px; margin: 8px 0; border-bottom: 1px solid #2c3446; }
+  .tabbar button { background: none; color: #8a94a8; border: 0; padding: 4px 10px; cursor: pointer; }
+  .tabbar button.on { color: #dde3ee; border-bottom: 2px solid #f2c14e; }
   .muted { color: #8a94a8; }
   #notice { position: absolute; top: 8px; left: 8px; padding: 6px 10px;
             background: #5a4310; border-radius: 4px; font-size: 12px; }
@@ -546,6 +549,52 @@ __SERVE__
       "<b>Directly (" + direct.length + ")</b>" + names(direct) +
       "<b>Indirectly (" + indirect.length + ")</b>" + names(indirect);
   });
+
+  var lastTab = "Overview";
+  function tabify() {
+    var kids = Array.prototype.slice.call(panel.childNodes);
+    var head = null;
+    if (kids.length && kids[0].nodeType === 1 && kids[0].tagName === "H2") head = kids.shift();
+    var order = ["Overview", "Edges", "Code"];
+    var groups = { Overview: [], Edges: [], Code: [] };
+    var cur = "Overview";
+    kids.forEach(function (k) {
+      if (k.nodeType === 1 && k.tagName === "B" && /^(Outgoing|Incoming)/.test(k.textContent)) cur = "Edges";
+      else if (k.nodeType === 1 && k.tagName === "DIV") cur = "Code";
+      groups[cur].push(k);
+    });
+    var bar = document.createElement("div");
+    bar.className = "tabbar";
+    var panes = {}, buttons = {};
+    var shown = order.filter(function (name) { return groups[name].length > 0; });
+    if (shown.length < 2) return;
+    function pick(name) {
+      lastTab = name;
+      shown.forEach(function (t) {
+        panes[t].hidden = t !== name;
+        buttons[t].className = t === name ? "on" : "";
+      });
+    }
+    shown.forEach(function (name) {
+      var pane = document.createElement("div");
+      pane.className = "pane";
+      groups[name].forEach(function (k) { pane.appendChild(k); });
+      panes[name] = pane;
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = name;
+      b.addEventListener("click", function () { pick(name); });
+      buttons[name] = b;
+      bar.appendChild(b);
+    });
+    panel.textContent = "";
+    if (head) panel.appendChild(head);
+    panel.appendChild(bar);
+    shown.forEach(function (name) { panel.appendChild(panes[name]); });
+    pick(shown.indexOf(lastTab) >= 0 ? lastTab : "Overview");
+  }
+  var tab_base = select;
+  select = function (n) { tab_base(n); tabify(); };
 
   (function loop() { tick(); requestAnimationFrame(loop); })();
 })();
