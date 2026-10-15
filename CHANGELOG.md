@@ -4,6 +4,9 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.56
+- Remove a duplicated `disasm_result` definition, and test that no module repeats a top-level name.
+
 ## 0.9.55
 - The graph page has a light theme toggle (remembered) and a draggable side panel.
 
