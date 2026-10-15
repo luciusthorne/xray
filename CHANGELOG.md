@@ -4,6 +4,9 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.55
+- The graph page has a light theme toggle (remembered) and a draggable side panel.
+
 ## 0.9.54
 - The graph page side panel has tabs (Overview, Edges, Code) for a selected
   node. Cycles, path and impact results still fill the whole panel.

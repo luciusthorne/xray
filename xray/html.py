@@ -8,27 +8,33 @@ _TEMPLATE = r"""<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__</title>
 <style>
+  :root { --bg:#12151c; --panel:#1a1f2b; --panel-a:#1a1f2bcc; --line:#2c3446; --fg:#dde3ee;
+          --muted:#8a94a8; --label:#c3cbdb; --edge:#5b6783; --notice:#5a4310; --ring:#0c0e13; }
+  [data-theme="light"] { --bg:#f6f7fb; --panel:#ffffff; --panel-a:#ffffffdd; --line:#d5d9e4;
+          --fg:#1c2230; --muted:#5d6678; --label:#2c3446; --edge:#9aa3b8; --notice:#ffe9b3; --ring:#ffffff; }
+  #resizer { width: 6px; cursor: col-resize; background: var(--line); }
+  #theme { margin-left: 6px; }
   html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
-  body { display: flex; background: #12151c; color: #dde3ee; }
+  body { display: flex; background: var(--bg); color: var(--fg); }
   #stage { flex: 1; position: relative; overflow: hidden; }
   svg { width: 100%; height: 100%; cursor: grab; }
   svg.panning { cursor: grabbing; }
-  #panel { width: 320px; padding: 14px; overflow-y: auto; background: #1a1f2b;
-           border-left: 1px solid #2c3446; font-size: 13px; }
+  #panel { width: 320px; padding: 14px; overflow-y: auto; background: var(--panel);
+           border-left: 1px solid var(--line); font-size: 13px; }
   #panel h2 { font-size: 14px; margin: 0 0 8px; word-break: break-all; }
   #panel ul { padding-left: 16px; margin: 4px 0 12px; }
   #panel li { margin: 2px 0; word-break: break-all; }
-  .tabbar { display: flex; gap: 4px; margin: 8px 0; border-bottom: 1px solid #2c3446; }
-  .tabbar button { background: none; color: #8a94a8; border: 0; padding: 4px 10px; cursor: pointer; }
-  .tabbar button.on { color: #dde3ee; border-bottom: 2px solid #f2c14e; }
-  .muted { color: #8a94a8; }
+  .tabbar { display: flex; gap: 4px; margin: 8px 0; border-bottom: 1px solid var(--line); }
+  .tabbar button { background: none; color: var(--muted); border: 0; padding: 4px 10px; cursor: pointer; }
+  .tabbar button.on { color: var(--fg); border-bottom: 2px solid #f2c14e; }
+  .muted { color: var(--muted); }
   #notice { position: absolute; top: 8px; left: 8px; padding: 6px 10px;
-            background: #5a4310; border-radius: 4px; font-size: 12px; }
+            background: var(--notice); border-radius: 4px; font-size: 12px; }
   #legend { position: absolute; bottom: 8px; left: 8px; font-size: 12px; }
   #legend span { margin-right: 12px; }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
          margin-right: 4px; }
-  line { stroke: #5b6783; stroke-width: 1; }
+  line { stroke: var(--edge); stroke-width: 1; }
   line.dim { opacity: 0.08; }
   line.hot { stroke: #f2c14e; stroke-width: 1.6; }
   line.cyc { stroke: #e5484d; stroke-width: 2; }
@@ -38,24 +44,24 @@ _TEMPLATE = r"""<!doctype html>
   circle.imp2 { stroke: #ffc999; stroke-width: 3.5; }
   line.imp { stroke: #ff8c42; stroke-width: 1.8; opacity: 1; }
   circle.path { stroke: #4dd0e1; stroke-width: 3.5; }
-  #controls button { margin-top: 6px; background: #12151c; color: #dde3ee;
-              border: 1px solid #2c3446; padding: 3px 8px; border-radius: 3px;
+  #controls button { margin-top: 6px; background: var(--bg); color: var(--fg);
+              border: 1px solid var(--line); padding: 3px 8px; border-radius: 3px;
               cursor: pointer; }
-  #hint { margin-top: 6px; max-width: 230px; color: #8a94a8; }
+  #hint { margin-top: 6px; max-width: 230px; color: var(--muted); }
   line.open { stroke-dasharray: 3 3; }
-  circle { stroke: #0c0e13; stroke-width: 1.5; cursor: pointer; }
-  circle.hollow { fill: none !important; stroke: #c3cbdb; stroke-width: 2; }
+  circle { stroke: var(--ring); stroke-width: 1.5; cursor: pointer; }
+  circle.hollow { fill: none !important; stroke: var(--label); stroke-width: 2; }
   circle.gone, text.gone, line.gone { display: none; }
   circle.nomatch { opacity: 0.15; }
   text.nomatch { opacity: 0.1; }
   #controls { position: absolute; top: 8px; right: 8px; padding: 8px;
-              background: #1a1f2bcc; border-radius: 4px; font-size: 12px; }
+              background: var(--panel-a); border-radius: 4px; font-size: 12px; }
   #controls input[type=text] { width: 170px; margin-bottom: 6px;
-              background: #12151c; color: #dde3ee; border: 1px solid #2c3446;
+              background: var(--bg); color: var(--fg); border: 1px solid var(--line);
               padding: 4px; border-radius: 3px; }
   #controls label { margin-right: 8px; white-space: nowrap; }
   circle.sel { stroke: #fff; stroke-width: 3; }
-  text { fill: #c3cbdb; font-size: 10px; pointer-events: none; }
+  text { fill: var(--label); font-size: 10px; pointer-events: none; }
   text.dim { opacity: 0.15; }
 </style>
 </head>
@@ -73,10 +79,12 @@ _TEMPLATE = r"""<!doctype html>
     <label><input type="checkbox" data-kind="function" checked> function</label>
     <label><input type="checkbox" data-kind="import" checked> import</label><br>
     <button id="cycles" type="button">Highlight cycles</button>
+    <button id="theme" type="button">Light theme</button>
     <button id="impact" type="button">Show impact</button>
     <div id="hint">Shift-click a node to trace the shortest path from the selected one.</div>
   </div>
 </div>
+<div id="resizer"></div>
 <div id="panel"><h2>__TITLE__</h2><p class="muted">Click a node to inspect it. Scroll to zoom, drag the background to pan.</p></div>
 <script id="graph-data" type="application/json">__DATA__</script>
 <script>
@@ -595,6 +603,30 @@ __SERVE__
   }
   var tab_base = select;
   select = function (n) { tab_base(n); tabify(); };
+
+  var themeBtn = document.getElementById("theme");
+  function setTheme(name) {
+    document.documentElement.setAttribute("data-theme", name);
+    themeBtn.textContent = name === "light" ? "Dark theme" : "Light theme";
+    try { localStorage.setItem("xray-theme", name); } catch (e) {}
+  }
+  try {
+    var saved = localStorage.getItem("xray-theme");
+    if (saved === "light" || saved === "dark") setTheme(saved);
+  } catch (e) {}
+  themeBtn.addEventListener("click", function () {
+    setTheme(document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light");
+  });
+  var resizer = document.getElementById("resizer");
+  var resizing = false;
+  resizer.addEventListener("mousedown", function (ev) { resizing = true; ev.preventDefault(); });
+  window.addEventListener("mousemove", function (ev) {
+    if (!resizing) return;
+    var w = Math.min(700, Math.max(240, window.innerWidth - ev.clientX));
+    panel.style.width = w + "px";
+    centre();
+  });
+  window.addEventListener("mouseup", function () { resizing = false; });
 
   (function loop() { tick(); requestAnimationFrame(loop); })();
 })();
