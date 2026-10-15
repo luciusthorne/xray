@@ -357,33 +357,3 @@ def cached_source_files(path):
         files.setdefault(relative, []).append(name)
 
     return {f: sorted(files[f]) for f in sorted(files, key=lambda f: (-len(files[f]), f))}
-
-
-def cached_source_files(path):
-    """Return {file: [functions]} if the source package is already cached, else None.
-
-    Never downloads.
-    """
-
-    path = Path(path)
-
-    if command_kind(path) != "elf":
-        return None
-
-    info = _query(path.resolve())
-
-    if info is None:
-        return None
-
-    root = cache_root() / info[1]
-
-    if not (root / ".done").is_file():
-        return None
-
-    table = read_function_table(path)
-    files = {}
-
-    for name, (relative, _line) in index_functions(root, [e[2] for e in table]).items():
-        files.setdefault(relative, []).append(name)
-
-    return {f: sorted(files[f]) for f in sorted(files, key=lambda f: (-len(files[f]), f))}
