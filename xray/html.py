@@ -556,6 +556,166 @@ __SERVE__
 
 
 _SERVE_JS = r'''
+  /* viewer:start */
+  /* tokens:start */
+  var SPEC = {
+    c: {
+      kw: "auto break case char const continue default do double else enum extern float for goto if inline int long register return short signed sizeof static struct switch typedef union unsigned void volatile while bool true false NULL size_t uint8_t uint16_t uint32_t uint64_t int8_t int16_t int32_t int64_t",
+      slash: true, block: true, pp: true
+    },
+    sh: {
+      kw: "if then else elif fi for while until do done case esac in function select return exit break continue local export readonly shift unset set eval exec trap source",
+      hash: true, vars: "sh"
+    },
+    perl: {
+      kw: "my our local sub if elsif else unless while until for foreach do return last next redo use no package require print die warn eval defined undef",
+      hash: true, vars: "perl"
+    },
+    python: {
+      kw: "and as assert break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield None True False",
+      hash: true
+    }
+  };
+  Object.keys(SPEC).forEach(function (k) {
+    var set = Object.create(null);
+    SPEC[k].kw.split(" ").forEach(function (w) { set[w] = true; });
+    SPEC[k].kwset = set;
+  });
+  var RE = {
+    s: /"(?:[^"\\]|\\.)*"?|'(?:[^'\\]|\\.)*'?/y,
+    n: /\b(?:0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?)\b/y,
+    w: /[A-Za-z_]\w*/y,
+    v: /\$(?:[A-Za-z_]\w*|\{[^}]*\}|[0-9#?@*!$-])/y,
+    p: /[$@%](?:[A-Za-z_]\w*|\{[^}]*\})|\$[0-9#?@*!$&-]/y
+  };
+  function tokens(line, spec, st) {
+    var out = [], buf = "", i = 0, m;
+    function push(kind, s) {
+      if (buf) { out.push(["", buf]); buf = ""; }
+      out.push([kind, s]);
+    }
+    function at(re) { re.lastIndex = i; return re.exec(line); }
+    if (st.block) {
+      var e = line.indexOf("*/");
+      if (e < 0) { push("com", line); return out; }
+      push("com", line.slice(0, e + 2));
+      st.block = false;
+      i = e + 2;
+    } else if (spec.pp && /^\s*#/.test(line)) {
+      push("pp", line);
+      return out;
+    }
+    var vre = spec.vars === "perl" ? RE.p : RE.v;
+    while (i < line.length) {
+      var c = line.charAt(i);
+      if (spec.slash && line.startsWith("//", i)) { push("com", line.slice(i)); break; }
+      if (spec.block && line.startsWith("/*", i)) {
+        var e2 = line.indexOf("*/", i + 2);
+        if (e2 < 0) { push("com", line.slice(i)); st.block = true; break; }
+        push("com", line.slice(i, e2 + 2));
+        i = e2 + 2;
+        continue;
+      }
+      if (spec.vars && (m = at(vre))) { push("var", m[0]); i += m[0].length; continue; }
+      if (spec.hash && c === "#" && (i === 0 || /\s/.test(line.charAt(i - 1)))) {
+        push("com", line.slice(i));
+        break;
+      }
+      if ((m = at(RE.s))) { push("str", m[0]); i += m[0].length; continue; }
+      if ((m = at(RE.n))) { push("num", m[0]); i += m[0].length; continue; }
+      if ((m = at(RE.w))) {
+        if (spec.kwset[m[0]]) push("kw", m[0]); else buf += m[0];
+        i += m[0].length;
+        continue;
+      }
+      buf += c;
+      i += 1;
+    }
+    if (buf) out.push(["", buf]);
+    return out;
+  }
+  /* tokens:end */
+
+  var vstyle = document.createElement("style");
+  vstyle.textContent =
+    ".code { font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; background: #12151c;" +
+    " border: 1px solid #2c3446; border-radius: 3px; max-height: 60vh; overflow: auto; margin-top: 6px; }" +
+    ".code .cl { white-space: pre; position: relative; padding-left: 4.4em; min-height: 1.45em; }" +
+    ".code.nogut .cl { padding-left: 4px; }" +
+    ".code .cl::before { content: attr(data-n); position: absolute; left: 0; width: 3.4em;" +
+    " text-align: right; color: #5b6783; user-select: none; -webkit-user-select: none; }" +
+    ".code.nogut .cl::before { content: none; }" +
+    ".tk-kw { color: #c792ea; } .tk-str { color: #a5d6a7; } .tk-com { color: #6b7690; font-style: italic; }" +
+    " .tk-num { color: #f2c14e; } .tk-var { color: #4dd0e1; } .tk-pp { color: #ff8c42; }";
+  document.head.appendChild(vstyle);
+
+  var NUMBERED = /^\s*(\d+)(?:  |\t|: )/;
+  var MORE = /^\.\.\. and \d+ more/;
+
+  function show(out, text, lang) {
+    var spec = SPEC[lang];
+    var rows = text.split("\n");
+    var extra = 0;
+    if (rows.length > 5000) { extra = rows.length - 5000; rows = rows.slice(0, 5000); }
+    var numbered = lang !== "asm" && rows.some(function (l) { return l.trim() !== ""; }) &&
+      rows.every(function (l) { return l.trim() === "" || NUMBERED.test(l) || MORE.test(l); });
+    var box = document.createElement("div");
+    box.className = "code" + (lang === "asm" ? " nogut" : "");
+    var st = { block: false };
+    rows.forEach(function (raw, idx) {
+      var n = String(idx + 1), line = raw;
+      if (numbered) {
+        var m = NUMBERED.exec(raw);
+        if (m) { n = m[1]; line = raw.slice(m[0].length); } else { n = ""; }
+      }
+      var row = document.createElement("div");
+      row.className = "cl";
+      row.setAttribute("data-n", n);
+      if (spec) {
+        tokens(line, spec, st).forEach(function (t) {
+          if (t[0]) {
+            var s = document.createElement("span");
+            s.className = "tk-" + t[0];
+            s.textContent = t[1];
+            row.appendChild(s);
+          } else {
+            row.appendChild(document.createTextNode(t[1]));
+          }
+        });
+      } else {
+        row.appendChild(document.createTextNode(line));
+      }
+      box.appendChild(row);
+    });
+    if (extra) {
+      var more = document.createElement("div");
+      more.className = "cl";
+      more.setAttribute("data-n", "");
+      more.textContent = "... and " + extra + " more lines";
+      box.appendChild(more);
+    }
+    out.textContent = "";
+    out.style.whiteSpace = "normal";
+    out.appendChild(box);
+  }
+
+  function langOfFile(name) {
+    var ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+    if (["c", "h", "cc", "cpp", "cxx", "hpp", "hh"].indexOf(ext) >= 0) return "c";
+    if (ext === "py") return "python";
+    if (ext === "pl" || ext === "pm") return "perl";
+    if (ext === "sh" || ext === "bash") return "sh";
+    return "";
+  }
+
+  function langOfKind(kind) {
+    if (kind === "shell") return "sh";
+    if (kind === "perl") return "perl";
+    if (kind === "python") return "python";
+    return "";
+  }
+  /* viewer:end */
+
   var base_select = select;
   select = function (n) {
     base_select(n);
@@ -579,7 +739,7 @@ _SERVE_JS = r'''
               out.textContent = "Loading...";
               fetch("/api/file?path=" + encodeURIComponent(f) + "&cmd=" + encodeURIComponent(data.root))
                 .then(function (r) { return r.text(); })
-                .then(function (t) { out.textContent = t; });
+                .then(function (t) { show(out, t, langOfFile(f)); });
             });
             list.appendChild(b);
           });
@@ -599,7 +759,7 @@ _SERVE_JS = r'''
       out.textContent = "Loading...";
       fetch("/api/" + kind + "?name=" + encodeURIComponent(name) + "&cmd=" + encodeURIComponent(data.root))
         .then(function (r) { return r.text(); })
-        .then(function (t) { out.textContent = t; })
+        .then(function (t) { show(out, t, kind === "source" ? "c" : "asm"); })
         .catch(function () { out.textContent = "Request failed"; });
     }
     document.getElementById("b-src").addEventListener("click", function () { load("source"); });
@@ -624,7 +784,7 @@ _SERVE_JS = r'''
       out.textContent = "Loading...";
       fetch("/api/text?path=" + encodeURIComponent(n.id))
         .then(function (r) { return r.text(); })
-        .then(function (t) { out.textContent = t; })
+        .then(function (t) { show(out, t, langOfKind(n.kind)); })
         .catch(function () { out.textContent = "Request failed"; });
     });
   };
