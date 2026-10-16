@@ -216,7 +216,8 @@ xray/
 ├── sourcelookup.py     C source of a function from the source package
 ├── serve.py            local server behind --serve
 ├── codeview.py         the code of any command, behind --code
-└── report.py           one report about a command, behind --report
+├── report.py           one report about a command, behind --report
+└── commandproject.py   --path and --project for commands
 ```
 
 ## Testing
