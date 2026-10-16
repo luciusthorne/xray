@@ -315,14 +315,24 @@ def query_path(context):
     graph = context.graph
     source_node = context.source_node
 
-    target_path = Path(path_target).resolve()
+    from .entrypoints import command_kind as _ck
 
-    try:
-        target_node = str(
-            target_path.relative_to(workspace_root)
-        )
-    except ValueError:
-        target_node = path_target
+    if _ck(context.path) in ("shell", "elf", "perl"):
+        from .commandproject import resolve_target_node
+
+        target_node = resolve_target_node(path_target)
+
+        if target_node is None:
+            raise TargetError(f"Target not found: {path_target}")
+    else:
+        target_path = Path(path_target).resolve()
+
+        try:
+            target_node = str(
+                target_path.relative_to(workspace_root)
+            )
+        except ValueError:
+            target_node = path_target
 
     print()
     print(
@@ -400,6 +410,18 @@ QUERIES["--impact"] = query_impact
 
 def query_project(context):
     graph = context.graph
+
+    from .entrypoints import command_kind as _ck
+
+    if _ck(context.path) in ("shell", "elf", "perl"):
+        from .commandproject import project_lines
+
+        print()
+
+        for line in project_lines(graph):
+            print(line)
+
+        return
 
     print()
     print("Project")
@@ -965,6 +987,8 @@ COMMAND_GRAPH_QUERIES = frozenset(
         "--components",
         "--reachable",
         "--reverse-reachable",
+        "--path",
+        "--project",
     )
 )
 
