@@ -4,6 +4,11 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.60
+- `--source` no longer returns code from `mini-gmp`, a separate
+  implementation that is not in the installed library, and the source
+  search now visits folders in a fixed order.
+
 ## 0.9.59
 - `--path` and `--project` work on shell, ELF and Perl commands. `--path`
   takes a command name, a library name or a path.

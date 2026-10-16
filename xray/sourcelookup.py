@@ -9,6 +9,10 @@ from pathlib import Path
 from xray.entrypoints import command_kind
 from xray.minidebug import read_function_table
 
+# Folders holding a separate or non-installed implementation of the same
+# names (gmp ships a simplified mini-gmp); never the code of the build.
+SKIPPED_DIRS = {"mini-gmp"}
+
 VARIANT = re.compile(r"(\.(isra|constprop|part|cold|lto_priv)(\.\d+)?)+$")
 
 
@@ -35,7 +39,9 @@ def find_definition(root, name, max_lines=120):
     pattern = re.compile(rf"^{re.escape(name)}\s*\(")
     found = []
 
-    for folder, _dirs, files in os.walk(root):
+    for folder, dirs, files in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if d not in SKIPPED_DIRS)
+
         for filename in sorted(files):
             if not filename.endswith((".c", ".h")):
                 continue
