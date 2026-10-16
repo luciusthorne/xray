@@ -158,6 +158,19 @@ def ensure_source(nvr, stem, say):
     return target
 
 
+def _may_be_exported(name, plain, known):
+    """True if the name is exported, or might be a header alias of an export.
+
+    A name inside an exported symbol (mpz_add in __gmpz_add) passes, so the
+    source can be searched for the alias. Short names must match exactly.
+    """
+
+    if name in known or plain in {base_name(n) for n in known}:
+        return True
+
+    return len(plain) >= 4 and any(plain in n for n in known)
+
+
 def source_lines(path, name, say=lambda text: None, max_lines=120):
     """Return the C source of a function of an installed binary.
 
@@ -175,7 +188,7 @@ def source_lines(path, name, say=lambda text: None, max_lines=120):
     known = {entry[2] for entry in read_function_table(path)}
     plain = base_name(name)
 
-    if known and name not in known and plain not in {base_name(n) for n in known}:
+    if known and not _may_be_exported(name, plain, known):
         return [f"Unknown function: {name[:60]} (see --disasm for names)"]
 
     info = _query(path.resolve())
@@ -192,10 +205,20 @@ def source_lines(path, name, say=lambda text: None, max_lines=120):
     except (OSError, subprocess.SubprocessError) as error:
         return [f"Could not fetch the source package: {error}"]
 
+    alias = None
+
+    if known and plain not in known:
+        alias = elf_alias(root, plain, known)
+
     result = find_definition(root, plain, max_lines)
 
     if result is None:
-        return [f"No definition of {plain} found in the source of {nvr}"]
+        message = f"No definition of {plain} found in the source of {nvr}"
+
+        if alias:
+            message += f" (it is exported as {alias})"
+
+        return [message]
 
     file, line, shown, others = result
     header = [f"{file.relative_to(root)}:{line}"]
@@ -203,10 +226,47 @@ def source_lines(path, name, say=lambda text: None, max_lines=120):
     if plain != name:
         header.append(f"({name} is a compiler variant of {plain})")
 
+    if alias:
+        header.append(f"({plain} is exported as {alias})")
+
     if others:
         header.append(f"({others} more match(es) elsewhere; showing the first)")
 
     return header + shown
+
+
+_DEFINE = re.compile(r"^\s*#\s*define\s+(\w+)\s+(\w+)\s*$")
+
+
+def elf_alias(root, name, exported):
+    """Return the exported symbol a header #define maps name to, or None.
+
+    Reads "#define name other" lines in .h and .in files under root and
+    accepts only a target the binary actually exports (gmp does this:
+    mpz_add is __gmpz_add).
+    """
+
+    for folder, dirs, files in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if d not in SKIPPED_DIRS)
+
+        for filename in sorted(files):
+            if not filename.endswith((".h", ".in")):
+                continue
+
+            try:
+                text = (Path(folder) / filename).read_text(
+                    encoding="utf-8", errors="replace"
+                )
+            except OSError:
+                continue
+
+            for line in text.splitlines():
+                match = _DEFINE.match(line)
+
+                if match and match.group(1) == name and match.group(2) in exported:
+                    return match.group(2)
+
+    return None
 
 
 _START = re.compile(r"^([A-Za-z_]\w*)\s*\(")

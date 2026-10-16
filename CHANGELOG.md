@@ -4,6 +4,11 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.61
+- `--source` accepts the name used in headers when the library exports
+  it under another name (`mpz_add` for `__gmpz_add`), read from
+  `#define` lines in the source, and says which symbol it is.
+
 ## 0.9.60
 - `--source` no longer returns code from `mini-gmp`, a separate
   implementation that is not in the installed library, and the source
