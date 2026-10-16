@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from xray.command_analyzers import ELFAnalyzer, ShellAnalyzer
+from xray.command_analyzers import ELFAnalyzer, PerlAnalyzer, ShellAnalyzer
 from xray.entrypoints import command_kind, import_files
 
 
@@ -33,6 +33,14 @@ def _children(path, kind):
                 name = f"{target.parent.name}/__init__.py"
 
             result.append((name, target, command_kind(target)))
+    elif kind == "perl":
+        for edge in PerlAnalyzer().edges(path):
+            if edge.status != "resolved":
+                result.append((edge.name, None, None))
+                continue
+
+            target = Path(edge.target)
+            result.append((edge.name, target, command_kind(target)))
     elif kind == "elf":
         for edge in ELFAnalyzer().edges(path):
             if edge.status != "resolved":
@@ -96,7 +104,7 @@ def chain_lines(
             state["count"] += 1
             lines.append(label)
 
-            if target_kind in ("shell", "elf", "python"):
+            if target_kind in ("shell", "elf", "python", "perl"):
                 extra = "    " if last else "│   "
                 walk(target, target_kind, depth + 1, prefix + extra)
 

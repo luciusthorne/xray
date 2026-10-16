@@ -103,6 +103,15 @@ def overview_lines(path):
 
         return lines
 
+    if kind == "perl":
+        lines = calls_lines(path)
+        chain = chain_lines(path, max_depth=2, max_files=15)
+
+        if len(chain) > 1:
+            lines = [*lines, "Chain:", *chain]
+
+        return lines
+
     if kind == "elf":
         return _elf_overview(path)
 

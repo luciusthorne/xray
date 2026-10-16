@@ -65,6 +65,9 @@ def command_kind(path):
     if start is None:
         return "unknown"
 
+    if path.suffix in (".pm", ".pl") and not start.startswith((b"#!", b"\x7fELF")):
+        return "perl"
+
     if start.startswith(b"\x7fELF"):
         return "elf"
 

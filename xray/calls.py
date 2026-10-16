@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from xray.command_analyzers import ShellAnalyzer
+from xray.command_analyzers import PerlAnalyzer, ShellAnalyzer
 from xray.elfscan import ElfScan, scan_elf
 from xray.entrypoints import command_kind
 from xray.libresolve import find_library, ldconfig_cache
@@ -76,6 +76,21 @@ def _elf_lines(path, max_imports):
     )
 
 
+def _perl_lines(path):
+    analyzer = PerlAnalyzer()
+    functions = [f"- {s.name}" for s in analyzer.symbols(path)]
+    modules = []
+
+    for edge in analyzer.edges(path):
+        if edge.status != "resolved":
+            modules.append(f"- {edge.name} -> not found")
+        else:
+            kind = command_kind(Path(edge.target))
+            modules.append(f"- {edge.name} -> {edge.target} [{kind}]")
+
+    return _section("Functions:", functions) + _section("Modules:", modules)
+
+
 def calls_lines(path, max_imports=20):
     """Return the lines that describe what a command runs or links to.
 
@@ -92,6 +107,9 @@ def calls_lines(path, max_imports=20):
 
     if kind == "elf":
         return _elf_lines(path, max_imports)
+
+    if kind == "perl":
+        return _perl_lines(path)
 
     return [
         f"Not a shell script or binary ({kind}): "
