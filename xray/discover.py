@@ -1,6 +1,8 @@
 import shutil
 from pathlib import Path
 
+from .libresolve import find_library
+
 
 def resolve_target(target: str) -> Path | None:
     """
@@ -14,7 +16,13 @@ def resolve_target(target: str) -> Path | None:
 
     executable = shutil.which(target)
 
-    if executable is None:
-        return None
+    if executable is not None:
+        return Path(executable).resolve()
 
-    return Path(executable).resolve()
+    # Allow installed shared libraries to be used as CLI targets.
+    library = find_library(target)
+
+    if library is not None:
+        return library
+
+    return None
