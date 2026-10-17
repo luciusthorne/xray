@@ -190,6 +190,65 @@ def _query(path):
     return parts[0], parts[1][:-4] if parts[1].endswith(".rpm") else parts[1]
 
 
+SOURCE_DOWNLOAD_LIMIT = 10 * 1024 * 1024
+
+
+def source_rpm_size(nvr):
+    """Return the source RPM download size in bytes, or None if unknown."""
+
+    try:
+        result = subprocess.run(
+            [
+                "dnf", "repoquery", "--srpm",
+                "--queryformat", "%{downloadsize}", nvr,
+            ],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=False,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+    value = result.stdout.strip()
+
+    if result.returncode != 0 or not value.isdigit():
+        return None
+
+    return int(value)
+
+
+def confirm_source_download(
+    size, say, max_bytes=SOURCE_DOWNLOAD_LIMIT, input_fn=input
+):
+    """Confirm oversized downloads; warn and proceed if size is unknown."""
+
+    if size is None:
+        say("Source package size is unknown; proceeding without a size check.")
+        return True
+
+    if size <= max_bytes:
+        return True
+
+    mib = 1024 * 1024
+    say(
+        f"Source package is large: {size / mib:.1f} MiB "
+        f"(limit {max_bytes / mib:.1f} MiB)."
+    )
+
+    try:
+        answer = input_fn("Download and extract it anyway? [y/N] ")
+    except (EOFError, OSError):
+        answer = ""
+
+    if answer.strip().lower() not in {"y", "yes"}:
+        say("Source download cancelled.")
+        return False
+
+    return True
+
+
 def ensure_source(nvr, stem, say):
     """Return the unpacked source folder for a package, downloading once."""
 
@@ -197,6 +256,11 @@ def ensure_source(nvr, stem, say):
 
     if (target / ".done").is_file():
         return target
+
+    size = source_rpm_size(nvr)
+
+    if not confirm_source_download(size, say):
+        raise FileNotFoundError("source download cancelled by user")
 
     say(f"Downloading source package for {nvr} (cached afterwards)")
 
