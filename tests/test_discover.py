@@ -48,5 +48,3 @@ def test_resolve_target_prefers_executable_over_library(
     monkeypatch.setattr(discover, "find_library", unexpected_lookup)
 
     assert discover.resolve_target("example") == executable.resolve()
-
-
