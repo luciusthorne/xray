@@ -4,6 +4,9 @@ Each entry is one released version, newest first. Versions 0.8.5 to 0.9.29
 were reconstructed from the commit history. Version 0.8.4 has no tag: its
 work shipped as 0.8.5.
 
+## 0.9.65
+- Add `--inspect [--md]`, combining command identity, overview and source information in one inspection.
+
 ## 0.9.64
 - `--source` checks source RPM download size before downloading and asks for confirmation when it exceeds the configured limit.
 

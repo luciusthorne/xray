@@ -472,3 +472,28 @@ def test_extensionless_python_command_dependencies(tmp_path):
 
     assert result.returncode == 0
     assert "helper.py" in result.stdout
+
+
+def test_inspect_combines_report_sections():
+    output = run_xray("--inspect")
+
+    assert "Inspection of" in output
+    assert "Identity" in output
+    assert "Overview" in output
+    assert "Source files" in output
+
+
+def test_inspect_markdown():
+    result = run_raw(TARGET, "--inspect", "--md")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.startswith("# Inspection:")
+    assert "## Identity" in result.stdout
+    assert "## Overview" in result.stdout
+
+
+def test_inspect_rejects_unknown_extra_arguments():
+    result = run_raw(TARGET, "--inspect", "--unknown")
+
+    assert result.returncode == 2
+    assert "Usage: xray" in result.stderr

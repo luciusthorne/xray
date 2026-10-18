@@ -66,6 +66,7 @@ xray --version    # or -V
 | `--reachable` | everything reachable from the file |
 | `--reverse-reachable` | everything that can reach the file |
 | `--path <target>` | the shortest dependency path to another file, or `No path found` |
+| `--inspect [--md]` | unified inspection combining command identity, overview and source information; `--md` prints Markdown |
 
 Example:
 
