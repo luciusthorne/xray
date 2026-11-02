@@ -76,7 +76,7 @@ Single-file `--json` includes `schema_version`, file identity, analyzer, symbols
 
 Static analyzers read source without executing it. For ELF binaries, `--code` lists available function names from configured debuginfod when possible; request a name to read its source. Without source data, it displays bounded `objdump` machine code. `--trace` runs the selected command under `strace`, discards its output, and stops it after ten seconds; use it only when running that command is appropriate. `--uses` reports symbols a binary may call, not proof that it calls them at runtime.
 
-Named Python functions, async functions, classes, and qualified methods use AST spans including decorators, capped at 400 lines. Other script analyzers show an excerpt of up to 60 lines from the symbol location. ELF source lookup uses available debug/source data; when source is unavailable, `--code` displays bounded `objdump` disassembly and labels it as machine code rather than source.
+Named Python functions, async functions, classes, and qualified methods use AST spans including decorators, capped at 400 lines. Other script analyzers show the whole definition, using the end line reported by their parser (JavaScript, TypeScript, Ruby, Lua, C) or the matching closing brace (shell, Perl), capped at 400 lines; when no end is found, up to 60 lines are shown and labelled as such. ELF source lookup uses available debug/source data; when source is unavailable, `--code` displays bounded `objdump` disassembly and labels it as machine code rather than source.
 
 ## Project structure
 

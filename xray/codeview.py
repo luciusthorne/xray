@@ -57,8 +57,9 @@ def code_lines(path, name=None, asm=False, say=lambda text: None):
 
     ELF binaries: source files, or the C source of a function (plus its
     disassembly with asm). Python definitions are returned through their
-    AST end line; other named script symbols return a bounded excerpt from
-    their definition line. Other files return their text.
+    AST end line; other named script symbols through the end line their
+    parser reports or, for shell and Perl, their matching closing brace.
+    Other files return their text.
     """
 
     path = Path(path)
@@ -135,23 +136,82 @@ def code_lines(path, name=None, asm=False, say=lambda text: None):
         else:
             start, end = span
             return _numbered(text[start - 1 : end], start=start, limit=400)
-    elif kind == "shell":
+    end = None
+
+    if kind == "shell":
         line = shell_function_lines(path).get(name)
+        end = _brace_end(text, line)
     elif kind == "perl":
         line = dict(scan_perl(path).subs).get(name)
+        end = _brace_end(text, line)
     elif kind in {"ruby", "javascript", "lua", "typescript", "c"}:
         analyzer = registry.analyzer_for(path)
-        line = next(
-            (symbol.line for symbol in analyzer.symbols(path) if symbol.name == name),
+        symbol = next(
+            (symbol for symbol in analyzer.symbols(path) if symbol.name == name),
             None,
         )
+        line = symbol.line if symbol else None
+        end = symbol.metadata.get("end_line") if symbol else None
     else:
         line = None
 
     if line is None:
         return [f"No function named {name[:60]} in this script"]
 
-    return _numbered(text[line - 1:], start=line, limit=60)
+    if end is None or end < line:
+        shown = _numbered(text[line - 1:], start=line, limit=60)
+        return [*shown, "(end of definition not found: showing up to 60 lines)"]
+
+    return _numbered(text[line - 1 : end], start=line, limit=400)
+
+
+def _brace_end(lines, line):
+    """Return the line holding the brace that closes the body opened at line.
+
+    Quotes and comments are skipped so braces inside them do not count.
+    """
+
+    if line is None:
+        return None
+
+    depth = 0
+    opened = False
+    quote = None
+
+    for number in range(line, len(lines) + 1):
+        text = lines[number - 1]
+        index = 0
+
+        while index < len(text):
+            ch = text[index]
+
+            if quote:
+                if ch == "\\" and quote != "'":
+                    index += 2
+                    continue
+                if ch == quote:
+                    quote = None
+            elif ch == "\\":
+                index += 2
+                continue
+            elif ch in "'\"`":
+                quote = ch
+            elif ch == "#" and (index == 0 or text[index - 1] in " \t;{}"):
+                break
+            elif ch == "{":
+                depth += 1
+                opened = True
+            elif ch == "}":
+                depth -= 1
+                if opened and depth == 0:
+                    return number
+
+            index += 1
+
+        if not opened and number > line + 1:
+            return None
+
+    return None
 
 
 def _source_unavailable(lines):

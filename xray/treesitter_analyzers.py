@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .analyzers import Analyzer, registry
 from .errors import AnalysisError, FileError
+from .javascript_analyzer import _end_metadata
 from .javascript_analyzer import _resolve as _resolve_node_modules
 from .model import Edge
 from .symbols import Symbol
@@ -66,8 +67,8 @@ end
 local function add_symbol(node, name_node, kind, parent, name_override)
   local name = name_override or text(name_node)
   if name ~= '' then
-    local row = node:range()
-    table.insert(symbols, {name = name, kind = kind, line = row + 1, parent = parent})
+    local row, _, end_row = node:range()
+    table.insert(symbols, {name = name, kind = kind, line = row + 1, ["end"] = end_row + 1, parent = parent})
   end
 end
 local function first_literal(node)
@@ -351,7 +352,7 @@ class LuaAnalyzer(Analyzer):
     def symbols(self, path):
         path, _kind, data = _read(path, self.name)
         return [
-            Symbol(item["name"], item["kind"], str(path), item["line"], item.get("parent"))
+            Symbol(item["name"], item["kind"], str(path), item["line"], item.get("parent"), _end_metadata(item))
             for item in data["symbols"]
         ]
 
@@ -387,7 +388,7 @@ class TypeScriptAnalyzer(Analyzer):
     def symbols(self, path):
         path, _kind, data = _read(path, self.name)
         return [
-            Symbol(item["name"], item["kind"], str(path), item["line"], item.get("parent"))
+            Symbol(item["name"], item["kind"], str(path), item["line"], item.get("parent"), _end_metadata(item))
             for item in data["symbols"]
         ]
 
@@ -463,7 +464,7 @@ class CAnalyzer(Analyzer):
     def symbols(self, path):
         path, _kind, data = _read(path, self.name)
         return [
-            Symbol(item["name"], item["kind"], str(path), item["line"], item.get("parent"))
+            Symbol(item["name"], item["kind"], str(path), item["line"], item.get("parent"), _end_metadata(item))
             for item in data["symbols"]
         ]
 

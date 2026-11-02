@@ -24,7 +24,30 @@ tree = Ripper.sexp(source)
 tokens = Ripper.lex(source).map do |position, event, text, _state|
   [event.to_s, text, position[0]]
 end
-STDOUT.write(JSON.generate({'valid' => !tree.nil?, 'tokens' => tokens, 'tree' => tree}))
+ends = {}
+begin
+  require 'prism'
+  pending = [Prism.parse(source).value]
+  until pending.empty?
+    node = pending.pop
+    next if node.nil?
+    if node.is_a?(Prism::DefNode) || node.is_a?(Prism::ClassNode) || node.is_a?(Prism::ModuleNode)
+      ends[node.location.start_line] ||= node.location.end_line
+    end
+    pending.concat(node.compact_child_nodes)
+  end
+rescue LoadError
+  if defined?(RubyVM::AbstractSyntaxTree)
+    pending = [RubyVM::AbstractSyntaxTree.parse(source)]
+    until pending.empty?
+      node = pending.pop
+      next unless node.is_a?(RubyVM::AbstractSyntaxTree::Node)
+      ends[node.first_lineno] ||= node.last_lineno if %i[DEFN DEFS CLASS MODULE].include?(node.type)
+      pending.concat(node.children)
+    end
+  end
+end
+STDOUT.write(JSON.generate({'valid' => !tree.nil?, 'tokens' => tokens, 'tree' => tree, 'ends' => ends}))
 """
 
 _IGNORED = {"on_sp", "on_ignored_nl", "on_nl", "on_comment"}
@@ -105,7 +128,10 @@ def _parse_snapshot(path_text, _mtime_ns, _ctime_ns, _size):
                     "parent": symbol.parent,
                     "metadata": dict(symbol.metadata),
                 }
-                for symbol in _symbols(path, parsed["tokens"], parsed["tree"])
+                for symbol in _with_ends(
+                    _symbols(path, parsed["tokens"], parsed["tree"]),
+                    parsed.get("ends") or {},
+                )
             ],
             "requires": [
                 {"kind": kind, "name": name, "line": line}
@@ -114,9 +140,18 @@ def _parse_snapshot(path_text, _mtime_ns, _ctime_ns, _size):
         }
 
     data = get_or_compute(
-        "ruby", version.stdout.strip() + ":ripper-v4", source.encode("utf-8"), compute
+        "ruby", version.stdout.strip() + ":ripper-v5", source.encode("utf-8"), compute
     )
     return path, data
+
+
+def _with_ends(symbols, ends):
+    """Record each definition's last line, as found by Ruby's own parser."""
+    for symbol in symbols:
+        end = ends.get(str(symbol.line))
+        if end:
+            symbol.metadata["end_line"] = end
+        yield symbol
 
 
 def _significant(tokens, index):
