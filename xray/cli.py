@@ -44,6 +44,7 @@ def print_help():
     print("  --report [--md]        Identity, overview, and available source files")
     print("  --inspect [--md]       Same unified command inspection as --report")
     print("  --code [name] [--asm]  Read source; ELF lists DWARF names or disassembles")
+    print("  --browse               Terminal menu: overview, functions and their code, calls, chain")
     print("  --source <function>    Show C source via local tree, debuginfod, or RPM/DNF")
     print("                         XRAY_SOURCE_PATH searches existing source trees first")
     print("  --source-cache-list    List cached source packages and their sizes")
@@ -1111,6 +1112,20 @@ def query_html(context):
 QUERIES["--html"] = query_html
 
 
+def query_browse(context):
+    from xray.browse import browse
+
+    if not sys.stdin.isatty():
+        raise CLIError(
+            "--browse needs an interactive terminal; use --inspect, --code, or --serve"
+        )
+
+    browse(context.path)
+
+
+QUERIES["--browse"] = query_browse
+
+
 def query_serve(context):
     from xray.entrypoints import command_kind
     from xray.serve import serve
@@ -1333,7 +1348,7 @@ def run():
     if query in PYTHON_ONLY_QUERIES and analysis is None:
         raise TargetError(f"Not a Python file: {path}")
 
-    show_banner = query not in ("--json", "--graph-json", "--html", "--serve") and not (
+    show_banner = query not in ("--json", "--graph-json", "--html", "--serve", "--browse") and not (
         query in ("--report", "--inspect") and len(sys.argv) == 4
     )
 
@@ -1362,7 +1377,7 @@ def run():
         QUERIES[query](context)
 
 # Queries whose output is already a document; --json cannot follow them.
-NOT_JSON_CONVERTIBLE = frozenset(["--json", "--graph-json", "--html", "--serve"])
+NOT_JSON_CONVERTIBLE = frozenset(["--json", "--graph-json", "--html", "--serve", "--browse"])
 
 
 def _json_modifier():
