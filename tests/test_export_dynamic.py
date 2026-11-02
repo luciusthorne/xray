@@ -10,7 +10,7 @@ def script(tmp_path, body):
 
 
 def test_variable_commands_add_a_note(tmp_path):
-    data = export_data(script(tmp_path, "ls\n$cmd x\neval y\n"))
+    data = export_data(script(tmp_path, 'ls\n$cmd x\neval "$y"\n'))
 
     assert data["notes"] == [
         "2 command(s) run through variables or eval (not resolved)"

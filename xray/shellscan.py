@@ -12,6 +12,20 @@ PREFIXES = frozenset(
     ["if", "then", "else", "elif", "do", "while", "until", "!", "{", "}", "time", "exec", "command", "nohup"]
 )
 
+# Commands that run another command given later on the same line, with
+# the options of each that take a separate value.
+WRAPPERS = {
+    "sudo": frozenset(["-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U", "-T"]),
+    "doas": frozenset(["-u", "-C"]),
+    "env": frozenset(["-u", "-C", "-S", "--unset", "--chdir"]),
+    "nice": frozenset(["-n", "--adjustment"]),
+    "ionice": frozenset(["-c", "-n", "-p", "-P", "-u"]),
+    "stdbuf": frozenset(["-i", "-o", "-e"]),
+    "timeout": frozenset(["-k", "-s", "--kill-after", "--signal"]),
+    "xargs": frozenset(["-a", "-d", "-E", "-e", "-I", "-i", "-L", "-l", "-n", "-P", "-s", "--arg-file", "--delimiter", "--max-args", "--max-procs", "--max-lines", "--max-chars", "--replace"]),
+}
+FIND_ACTIONS = frozenset(["-exec", "-execdir", "-ok", "-okdir"])
+
 # Segments that start with these hold no command to report.
 SKIP_SEGMENT = frozenset(
     ["case", "for", "select", "esac", "fi", "done", "in", "function", "coproc"]
@@ -191,7 +205,9 @@ def _extract(text):
             i = _matching(text, i) + 1
             continue
 
-        if text.startswith("$(", i):
+        if text.startswith("$(", i) or (
+            quote is None and text.startswith(("<(", ">("), i)
+        ):
             end = _matching(text, i + 1)
             inners.append(text[i + 2:end])
             out.append("_")
@@ -292,6 +308,13 @@ def _scan_words(words, commands, sources, dynamic=None):
     if first in SKIP_SEGMENT:
         return
 
+    if first == "eval" and index + 1 < len(words) and not any(
+        "$" in word or "`" in word for word in words[index + 1:]
+    ):
+        # A literal eval string is ordinary shell code: read it.
+        _collect(" ".join(words[index + 1:]), commands, sources, dynamic)
+        return
+
     if dynamic is not None and (first == "eval" or _DYNAMIC.match(first)):
         dynamic.append(first)
         return
@@ -307,6 +330,44 @@ def _scan_words(words, commands, sources, dynamic=None):
 
     if _NAME.match(first) and not first.isdigit():
         commands.add(first)
+
+    rest = words[index + 1:]
+
+    if first == "find":
+        for position, word in enumerate(rest):
+            if word in FIND_ACTIONS:
+                _scan_words(rest[position + 1:], commands, sources, dynamic)
+        return
+
+    if first in WRAPPERS:
+        _scan_words(_wrapped(first, rest), commands, sources, dynamic)
+
+
+def _wrapped(wrapper, words):
+    """Return the words of the command a wrapper runs."""
+
+    takes_value = WRAPPERS[wrapper]
+    index = 0
+
+    while index < len(words):
+        word = words[index]
+
+        if word == "--":
+            return words[index + 1:]
+
+        if wrapper == "env" and _ASSIGN.match(word):
+            index += 1
+            continue
+
+        if not word.startswith("-") or word == "-":
+            break
+
+        index += 2 if word in takes_value else 1
+
+    if wrapper == "timeout" and index < len(words):
+        index += 1  # the duration
+
+    return words[index:]
 
 
 def _collect(text, commands, sources, dynamic=None):
