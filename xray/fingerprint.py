@@ -18,6 +18,15 @@ _GO_MAGIC = b"\xff Go buildinf:"
 _PYINSTALLER = b"MEI\x0c\x0b\x0a\x0b\x0e"
 _RUST_MARKERS = (b"RUST_BACKTRACE", b"library/core/src/", b"rust_begin_unwind")
 _CPP_MARKERS = (b"GLIBCXX_", b"__cxa_throw", b"libc++.so", b"libstdc++.so")
+# Runtime libraries that only one language links against.
+_RUNTIMES = (
+    (b"libgfortran.so", "Fortran"),
+    (b"libgphobos.so", "D"),
+    (b"libphobos2", "D"),
+    (b"libHSbase", "Haskell"),
+    (b"libswiftCore.so", "Swift"),
+    (b"libobjc.so", "Objective-C"),
+)
 _CRATE = re.compile(
     rb"registry/src/[^/\x00]+/([A-Za-z0-9_-]+?)-(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.]+)?)/"
 )
@@ -204,11 +213,22 @@ def fingerprint(path):
                 notes=("The bundled Python code is not extracted",),
             )
 
+        for marker, language in _RUNTIMES:
+            if data.find(marker) != -1:
+                return Fingerprint(language, compilers=compilers)
+
         if any(data.find(marker) != -1 for marker in _CPP_MARKERS):
             return Fingerprint("C++", compilers=compilers)
 
         if compilers:
             return Fingerprint("C", compilers=compilers)
+
+        if data.find(b"libc.so") != -1:
+            return Fingerprint(
+                "C (inferred)",
+                notes=(("No compiler record (.comment was stripped); it links the C "
+                       "library and no other language runtime"),),
+            )
 
         return Fingerprint(notes=("No language markers found",))
 

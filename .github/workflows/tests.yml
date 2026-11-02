@@ -30,13 +30,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
 
       - name: Install test dependencies and run full regression suite
         run: |
@@ -85,3 +86,33 @@ jobs:
         run: |
           xray --version
           python -c "import importlib.metadata as metadata; import xray; assert metadata.version('xray') == xray.__version__"
+
+  fedora-integration:
+    name: Fedora integrations (rpm, dnf, strace, rizin, Neovim)
+    runs-on: ubuntu-latest
+    container:
+      image: registry.fedoraproject.org/fedora:45
+      options: --cap-add=SYS_PTRACE --security-opt seccomp=unconfined
+    steps:
+      - name: Install integration tools
+        run: |
+          dnf -y install git python3 python3-pip strace rizin rpm dnf-plugins-core \
+            binutils elfutils-debuginfod-client gcc gcc-c++ golang rust neovim \
+            nodejs ruby lua perl-podlators cpio file which findutils util-linux-script
+
+      - uses: actions/checkout@v7
+
+      - name: Run full regression suite
+        run: |
+          python3 -m venv /tmp/venv
+          /tmp/venv/bin/pip install --no-cache-dir '.[test]'
+          /tmp/venv/bin/python -m pytest -q -rs
+
+      - name: Exercise real tool integrations
+        run: |
+          xray() { /tmp/venv/bin/python -m xray "$@"; }
+          xray /usr/bin/ls --inspect | grep -q "Package: coreutils"
+          xray /usr/bin/true --trace | grep -q "Executed:"
+          xray /usr/bin/ls --disasm-function main | grep -q "main"
+          xray /usr/bin/ls --toolchain | grep -q "Language: C"
+          echo y | xray libgmp.so.10 --source mpz_add | grep -q "FUNCTION (mpz_ptr w"

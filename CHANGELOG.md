@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Add `--toolchain`: the language that built an ELF binary (Go module, dependencies and build settings; Rust compiler and crates; C++, Fortran, D, Haskell, Swift, Objective-C runtimes; C, inferred when `.comment` is stripped; PyInstaller) and the compilers in `.comment`. `--report` and `--inspect` show the language on their Identity line.
+- Add a trailing `--json` modifier that prints any text query as a versioned JSON document (title, sections, fields, items, lines).
+- Add `--browse`, a terminal menu over the overview, functions and their code, calls, chain, toolchain, and uses views.
+- `--code <name>` shows the whole definition for JavaScript, TypeScript, Ruby, Lua, C, shell, and Perl, using parser end lines or the matching closing brace, instead of a 60-line excerpt that could run into the next definition.
+- The shell reader follows commands run through `sudo`, `doas`, `env`, `nice`, `ionice`, `stdbuf`, `timeout`, `xargs`, and `find -exec`; reads process substitutions; and reads literal `eval` strings as shell code.
+- RPM source lookup prefers the binary's own source file when several files define the same function (`ls --code main` opens `src/ls.c`).
+- `--disasm-function` falls back to the symbol's exact range when rizin's `pdf` refuses a function, disables colour codes, and reports rizin's error text.
+- Report a missing Neovim Tree-sitter grammar as "parser unavailable" (Neovim 0.12 returns no parser instead of raising), and gate parser tests on the installed grammar.
+- Verified on Fedora 45 (Python 3.15) with real rpm/dnf source retrieval, strace, rizin, and Neovim, and on Arch with Python 3.10–3.14.
+
 - Make a bare `xray` invocation inspect XRAY's own CLI, and show relevant follow-up commands in every default command overview.
 - Build project dependency graphs through the analyzer registry for supported languages, including resolved in-project imports and sourced files.
 - Preserve and report external and unresolved project dependencies separately from file-to-file graph edges.

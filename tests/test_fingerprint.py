@@ -169,3 +169,23 @@ def test_real_rustc_build(tmp_path):
 
     assert found.language == "Rust"
     assert found.toolchain.startswith("rustc ")
+
+
+@gcc
+def test_stripped_comment_falls_back_to_an_inferred_c(tmp_path):
+    binary = compile_c(tmp_path, "int main(void) { return 0; }\n")
+    if not shutil.which("objcopy"):
+        pytest.skip("objcopy is required")
+    subprocess.run(["objcopy", "--remove-section=.comment", str(binary)], check=True)
+
+    found = fingerprint(binary)
+
+    assert found.language == "C (inferred)"
+    assert ".comment was stripped" in found.notes[0]
+
+
+@gcc
+def test_runtime_library_names_the_language(tmp_path):
+    binary = compile_c(tmp_path, 'const char *r = "libgfortran.so.5";\nint main(void) { return r[0]; }\n')
+
+    assert fingerprint(binary).language == "Fortran"
