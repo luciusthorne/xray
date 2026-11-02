@@ -97,6 +97,7 @@ def print_help():
     print("  --json                 Export file metadata, symbols, and relationships as JSON")
     print("  --graph-json           Export graph nodes, symbols, metadata, and edges as JSON")
     print("  --html                 Print an interactive graph page (save it with >)")
+    print("  <query> ... --json     Print any text query as structured JSON")
     print()
     print("Other:")
     print("  --version, -V          Show the version")
@@ -1341,9 +1342,54 @@ def run():
     else:
         QUERIES[query](context)
 
+# Queries whose output is already a document; --json cannot follow them.
+NOT_JSON_CONVERTIBLE = frozenset(["--json", "--graph-json", "--html", "--serve"])
+
+
+def _json_modifier():
+    """True when argv ends with --json after a text query."""
+
+    args = sys.argv
+
+    if len(args) < 4 or args[-1] != "--json" or args[2] not in QUERIES:
+        return False
+
+    if "--" in args[3:-1]:
+        return False  # --json belongs to the traced command's arguments
+
+    if args[2] in NOT_JSON_CONVERTIBLE:
+        raise CLIError(f"{args[2]} cannot be combined with --json")
+
+    if "--md" in args:
+        raise CLIError("--md and --json cannot be combined")
+
+    return True
+
+
+def run_json():
+    """Run a text query and print its output as structured JSON."""
+
+    import json
+
+    from .textjson import text_to_data
+
+    query, target = sys.argv[2], sys.argv[1]
+    sys.argv.pop()
+    output = StringIO()
+
+    with redirect_stdout(output):
+        run()
+
+    data = text_to_data(output.getvalue().splitlines(), query, target)
+    print(json.dumps(data, indent=2, ensure_ascii=False))
+
+
 def main():
     try:
-        run()
+        if _json_modifier():
+            run_json()
+        else:
+            run()
     except XRAYError as error:
         print(f"Error: {error}", file=sys.stderr)
         return error.exit_code

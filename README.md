@@ -70,6 +70,8 @@ Downloaded RPM source trees can be listed with `xray --source-cache-list`, remov
 
 ## JSON contracts
 
+Any text query also accepts a trailing `--json` (for example `xray ls --inspect --json` or `xray tool.sh --calls --json`). The output has `schema_version`, `query`, `target`, `title`, and `sections`; each section has a `heading` (null for text before the first heading), `fields` (`Key: value` lines, with lists for keys followed by `- item` lines), `items` (other `- item` lines), and `lines` (anything else). It cannot be combined with `--md`, `--html`, `--serve`, or `--graph-json`. Errors still go to stderr with the usual exit codes.
+
 Single-file `--json` includes `schema_version`, file identity, analyzer, symbols, edges, notes, and metadata. `--graph-json` includes a root, nodes, edges, and traversal limits and truncation metadata. External and unresolved edges preserve their written name and use a null target when no file resolves.
 
 ## Safety and limits
@@ -132,6 +134,7 @@ xray/
 ├── shellscan.py
 ├── sourcelookup.py
 ├── symbols.py
+├── textjson.py
 ├── trace.py
 ├── treesitter_analyzers.py
 ├── unused.py
