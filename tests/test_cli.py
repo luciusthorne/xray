@@ -1,7 +1,6 @@
 import subprocess
 import sys
 
-
 TARGET = "test_programs/cycle_a.py"
 
 
@@ -10,6 +9,7 @@ def run_xray(*args):
         [sys.executable, "-m", "xray.cli", TARGET, *args],
         capture_output=True,
         text=True,
+        check=False,
     )
 
     assert result.returncode == 0, result.stderr
@@ -22,6 +22,7 @@ def run_raw(*args):
         [sys.executable, "-m", "xray.cli", *args],
         capture_output=True,
         text=True,
+        check=False,
     )
 
 
@@ -30,6 +31,15 @@ def test_deps():
 
     assert "Dependencies of test_programs/cycle_a.py" in output
     assert "test_programs/cycle_b.py" in output
+
+
+def test_default_overview_suggests_next_queries():
+    output = run_xray()
+
+    assert "Explore this command" in output
+    assert "xray test_programs/cycle_a.py --code" in output
+    assert "--cycles" in output
+    assert "--path <target>" in output
 
 
 def test_dependents():
@@ -103,6 +113,7 @@ def test_help():
     assert "--components" in result.stdout
     assert "--reachable" in result.stdout
     assert "--reverse-reachable" in result.stdout
+    assert "--changes" in result.stdout
 
 
 def test_short_help():
@@ -112,12 +123,15 @@ def test_short_help():
     assert "Usage" in result.stdout
 
 
-def test_missing_target():
+def test_no_arguments_shows_xray_self_overview_and_next_commands():
     result = run_raw()
 
-    assert result.returncode == 2
-    assert result.stdout == ""
-    assert "Error: missing target" in result.stderr
+    assert result.returncode == 0
+    assert result.stderr == ""
+    assert "Explore this command" in result.stdout
+    assert "xray xray/cli.py --code" in result.stdout
+    assert "xray xray/cli.py --cycles" in result.stdout
+    assert "xray xray/cli.py --path <target>" in result.stdout
 
 
 def test_unknown_target():
@@ -270,10 +284,11 @@ def test_module_help():
         [sys.executable, "-m", "xray", "--help"],
         capture_output=True,
         text=True,
+        check=False,
     )
 
     assert result.returncode == 0
-    assert "Usage: xray <target> [options]" in result.stdout
+    assert "Usage: xray <target> [option] [option arguments]" in result.stdout
 
 
 def test_invalid_python_reports_analysis_error(tmp_path):

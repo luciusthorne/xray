@@ -4,22 +4,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 BUILTINS = frozenset(
-    ". : [ [[ alias bg bind break builtin caller cd command compgen "
-    "complete continue declare dirs disown echo enable eval exec exit "
-    "export false fg getopts hash help history jobs kill let local "
-    "logout mapfile popd printf pushd pwd read readarray readonly "
-    "return set shift shopt source suspend test times trap true type "
-    "typeset ulimit umask unalias unset wait".split()
+    [".", ":", "[", "[[", "alias", "bg", "bind", "break", "builtin", "caller", "cd", "command", "compgen", "complete", "continue", "declare", "dirs", "disown", "echo", "enable", "eval", "exec", "exit", "export", "false", "fg", "getopts", "hash", "help", "history", "jobs", "kill", "let", "local", "logout", "mapfile", "popd", "printf", "pushd", "pwd", "read", "readarray", "readonly", "return", "set", "shift", "shopt", "source", "suspend", "test", "times", "trap", "true", "type", "typeset", "ulimit", "umask", "unalias", "unset", "wait"]
 )
 
 # Words that can come before the real command on the same segment.
 PREFIXES = frozenset(
-    "if then else elif do while until ! { } time exec command nohup".split()
+    ["if", "then", "else", "elif", "do", "while", "until", "!", "{", "}", "time", "exec", "command", "nohup"]
 )
 
 # Segments that start with these hold no command to report.
 SKIP_SEGMENT = frozenset(
-    "case for select esac fi done in function coproc".split()
+    ["case", "for", "select", "esac", "fi", "done", "in", "function", "coproc"]
 )
 
 _HEREDOC = re.compile(r"(?<!<)<<(?!<)-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")

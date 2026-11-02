@@ -2,6 +2,7 @@ from pathlib import Path
 
 from .analyze import analyze_python
 from .analyzers import Analyzer, registry
+from .entrypoints import import_files
 from .graph import DependencyGraph
 from .model import Edge
 from .references import find_references
@@ -36,6 +37,30 @@ class PythonAnalyzer(Analyzer):
     def symbols(self, path):
         return extract_symbols(path)
 
+    def command_edges(self, path):
+        """Resolve imports to files for launcher and command-chain views.
+
+        Project dependency edges intentionally keep standard-library and
+        third-party modules external. Command inspection follows installed
+        module files so users can read what a launcher enters.
+        """
+
+        path = Path(path).resolve()
+        found = []
+
+        for target in import_files(path):
+            target = target.resolve()
+            name = target.name
+
+            if name == "__init__.py":
+                name = f"{target.parent.name}/__init__.py"
+
+            found.append(
+                Edge(str(path), str(target), "imports", "resolved", name=name)
+            )
+
+        return found
+
     def edges(self, path, project_root=None):
         path = Path(path).resolve()
         root = (
@@ -58,6 +83,7 @@ class PythonAnalyzer(Analyzer):
                     dependency["module"],
                     "imports",
                     "external",
+                    name=dependency["module"],
                 )
             elif kind == "local":
                 target = graph.resolve_import(
@@ -68,7 +94,16 @@ class PythonAnalyzer(Analyzer):
                 )
 
                 if target is None:
-                    edge = Edge(str(path), None, "imports", "unresolved")
+                    module = dependency["module"]
+                    name = dependency["name"]
+                    if module and name:
+                        separator = "" if module.endswith(".") else "."
+                        written = f"{module}{separator}{name}"
+                    else:
+                        written = module or name
+                    edge = Edge(
+                        str(path), None, "imports", "unresolved", name=written
+                    )
                 else:
                     edge = Edge(
                         str(path),
@@ -111,6 +146,9 @@ class PythonAnalyzer(Analyzer):
             )
 
         return found
+
+    def project_edges(self, path, project_root):
+        return self.edges(path, project_root)
 
 
 if "python" not in registry.names():

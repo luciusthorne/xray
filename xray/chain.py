@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from xray.command_analyzers import ELFAnalyzer, PerlAnalyzer, ShellAnalyzer
-from xray.entrypoints import command_kind, import_files
+from xray.analyzers import registry
+from xray.entrypoints import command_kind
 
 
 def _children(path, kind):
@@ -14,40 +14,31 @@ def _children(path, kind):
 
     result = []
 
-    if kind == "shell":
-        for edge in ShellAnalyzer().edges(path):
-            if edge.kind != "runs":
-                continue
+    analyzer = registry.analyzer_for(path)
 
-            if edge.status != "resolved":
-                result.append((edge.name, None, None))
-                continue
+    if analyzer is None:
+        return result
 
-            target = Path(edge.target)
-            result.append((edge.name, target, command_kind(target)))
-    elif kind == "python":
-        for target in import_files(path):
-            name = target.name
+    for edge in analyzer.command_edges(path):
+        if kind == "shell" and edge.kind != "runs":
+            continue
 
-            if name == "__init__.py":
-                name = f"{target.parent.name}/__init__.py"
+        if edge.status == "external":
+            result.append((edge.name or "unknown", None, "external"))
+            continue
+
+        if edge.status != "resolved" or edge.target is None:
+            result.append((edge.name or "unknown", None, None))
+            continue
+
+        target = Path(edge.target)
+
+        if kind == "elf" and edge.kind == "links":
+            result.append((edge.name or target.name, target, "library"))
+        else:
+            name = edge.name or target.name
 
             result.append((name, target, command_kind(target)))
-    elif kind == "perl":
-        for edge in PerlAnalyzer().edges(path):
-            if edge.status != "resolved":
-                result.append((edge.name, None, None))
-                continue
-
-            target = Path(edge.target)
-            result.append((edge.name, target, command_kind(target)))
-    elif kind == "elf":
-        for edge in ELFAnalyzer().edges(path):
-            if edge.status != "resolved":
-                result.append((edge.name, None, None))
-                continue
-
-            result.append((edge.name, Path(edge.target), "library"))
 
     return result
 
@@ -87,7 +78,8 @@ def chain_lines(
             branch = "└── " if last else "├── "
 
             if target is None:
-                lines.append(f"{prefix}{branch}{name} (not found)")
+                marker = " (external)" if target_kind == "external" else " (not found)"
+                lines.append(f"{prefix}{branch}{name}{marker}")
                 continue
 
             label = f"{prefix}{branch}{name} -> {target} [{target_kind}]"
@@ -104,7 +96,9 @@ def chain_lines(
             state["count"] += 1
             lines.append(label)
 
-            if target_kind in ("shell", "elf", "python", "perl"):
+            if target_kind in (
+                "shell", "elf", "python", "perl", "ruby", "javascript", "lua", "typescript", "c"
+            ):
                 extra = "    " if last else "│   "
                 walk(target, target_kind, depth + 1, prefix + extra)
 

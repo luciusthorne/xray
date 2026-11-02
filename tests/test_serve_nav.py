@@ -52,7 +52,7 @@ def test_text_endpoint_serves_graph_scripts_only(monkeypatch, tmp_path):
 
 
 def test_cmd_page_opens_another_command_and_allows_its_files(monkeypatch, tmp_path):
-    server, root, other = start(monkeypatch, tmp_path)
+    server, _root, other = start(monkeypatch, tmp_path)
 
     try:
         assert get(server, f"/api/text?path={other}")[0] == 404

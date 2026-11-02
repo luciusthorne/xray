@@ -63,12 +63,11 @@ def _used_names(tree):
         elif isinstance(node, ast.AnnAssign):
             _annotation_strings(node.annotation, names)
 
-        elif isinstance(
-            node,
-            (ast.FunctionDef, ast.AsyncFunctionDef),
+        elif (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.returns is not None
         ):
-            if node.returns is not None:
-                _annotation_strings(node.returns, names)
+            _annotation_strings(node.returns, names)
 
         if isinstance(node, ast.Assign):
             for target in node.targets:
@@ -77,11 +76,12 @@ def _used_names(tree):
                 ):
                     _string_items(node.value, names)
 
-        elif isinstance(node, ast.AugAssign):
-            if isinstance(node.target, ast.Name) and (
-                node.target.id == "__all__"
-            ):
-                _string_items(node.value, names)
+        elif (
+            isinstance(node, ast.AugAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "__all__"
+        ):
+            _string_items(node.value, names)
 
     return names
 

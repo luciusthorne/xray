@@ -1,19 +1,26 @@
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import tarfile
 import tempfile
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 
+from xray.analysis_cache import cache_home
 from xray.entrypoints import command_kind
 from xray.minidebug import read_function_table
+from xray.provenance import package_of
 
 # Folders holding a separate or non-installed implementation of the same
 # names (gmp ships a simplified mini-gmp); never the code of the build.
 SKIPPED_DIRS = {"mini-gmp"}
 
 VARIANT = re.compile(r"(\.(isra|constprop|part|cold|lto_priv)(\.\d+)?)+$")
+_CACHE_MUTEX = threading.RLock()
+_CACHE_LOCK_STATE = threading.local()
 
 
 def base_name(name):
@@ -23,20 +30,105 @@ def base_name(name):
 
 
 def cache_root():
-    return Path(os.environ.get("XRAY_CACHE", Path.home() / ".cache" / "xray")) / "src"
+    return cache_home() / "src"
+
+
+@contextmanager
+def _cache_lock():
+    """Serialize source-cache use and mutation across XRAY processes on Unix."""
+    import fcntl
+
+    with _CACHE_MUTEX:
+        depth = getattr(_CACHE_LOCK_STATE, "depth", 0)
+        if depth:
+            _CACHE_LOCK_STATE.depth += 1
+            try:
+                yield
+            finally:
+                _CACHE_LOCK_STATE.depth -= 1
+            return
+        root = cache_root()
+        root.mkdir(parents=True, exist_ok=True)
+        if root.is_symlink():
+            raise ValueError("source cache root must not be a symlink")
+        with (root / ".lock").open("a") as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            _CACHE_LOCK_STATE.depth = 1
+            try:
+                yield
+            finally:
+                _CACHE_LOCK_STATE.depth = 0
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def source_cache_entries():
+    """Return completed cached source trees and their on-disk sizes."""
+    root = cache_root()
+    if not root.exists():
+        return []
+    with _cache_lock():
+        entries = []
+        for path in sorted(root.iterdir()):
+            if path.is_dir() and not path.is_symlink() and (path / ".done").is_file():
+                size = _tree_size(path)
+                entries.append((path.name, size))
+        return entries
+
+
+def remove_source_cache(name=None):
+    """Remove completed source trees; refuse unsafe names and symlinks."""
+    root = cache_root()
+    if not root.exists():
+        return 0
+    if root.is_symlink():
+        raise ValueError("source cache root must not be a symlink")
+    if name is not None and (name in {"", ".", ".."} or Path(name).name != name):
+        raise ValueError("invalid source cache package name")
+    with _cache_lock():
+        targets = [root / name] if name is not None else list(root.iterdir())
+        removed = 0
+        for path in targets:
+            if path.is_symlink():
+                raise ValueError(f"refusing to remove symlink: {path.name}")
+            if path.name == ".lock":
+                continue
+            if path.is_dir():
+                shutil.rmtree(path)
+                removed += 1
+            elif path.exists():
+                raise ValueError(f"refusing to remove non-directory cache entry: {path.name}")
+        return removed
+
+
+def _tree_size(root):
+    """Count regular files without following symlinks out of the cache tree."""
+    return sum(
+        path.stat().st_size
+        for path in root.rglob("*")
+        if path.is_file() and not path.is_symlink()
+    )
+
+
+def _top_level_lines(lines):
+    """Yield source lines with their brace depth before that line."""
+    depth = 0
+    for index, line in enumerate(lines):
+        yield index, depth
+        if not line.lstrip().startswith("#"):
+            depth = max(0, depth + line.count("{") - line.count("}"))
 
 
 def find_definition(root, name, max_lines=120):
     """Find a C function definition under root.
 
     Returns (file, first line number, lines, others) or None. Matches a
-    name at the start of a line followed by "(", and only if a "{" at
-    column 0 comes before any ";" (so prototypes are skipped). The
-    line above is included when it holds the return type. others counts
-    further matches in other places.
+    function name in its declaration and requires a body brace before
+    a terminating semicolon, so prototypes are skipped. The line above
+    is included when it holds the return type. others counts further
+    matches in other places.
     """
 
-    pattern = re.compile(rf"^{re.escape(name)}\s*\(")
+    pattern = re.compile(rf"\b{re.escape(name)}\s*\(")
     found = []
 
     for folder, dirs, files in os.walk(root):
@@ -53,8 +145,9 @@ def find_definition(root, name, max_lines=120):
             except OSError:
                 continue
 
-            for index, line in enumerate(lines):
-                if not pattern.match(line):
+            for index, depth in _top_level_lines(lines):
+                line = lines[index]
+                if depth or not pattern.search(line):
                     continue
 
                 end = _body_end(lines, index)
@@ -80,6 +173,36 @@ def find_definition(root, name, max_lines=120):
         shown = shown[:max_lines] + [f"... and {len(shown) - max_lines} more lines"]
 
     return path, start + 1, shown, len(found) - 1
+
+
+def find_definition_file(path, name, max_lines=120):
+    """Find one top-level C function in a specific source file."""
+    path = Path(path)
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+
+    pattern = re.compile(rf"\b{re.escape(name)}\s*\(")
+    matches = []
+    for index, depth in _top_level_lines(lines):
+        if not depth and pattern.search(lines[index]):
+            end = _body_end(lines, index)
+            if end is not None:
+                matches.append((index, end))
+    if not matches:
+        return None
+
+    index, end = matches[0]
+    start = index
+    if index > 0:
+        above = lines[index - 1].rstrip()
+        if above and not above.startswith(("#", "}", "/")) and not above.endswith((";", "*/")):
+            start = index - 1
+    shown = lines[start : end + 1]
+    if len(shown) > max_lines:
+        shown = shown[:max_lines] + [f"... and {len(shown) - max_lines} more lines"]
+    return path, start + 1, shown, len(matches) - 1
 
 
 def find_macro_definition(root, name, max_lines=120):
@@ -129,7 +252,7 @@ def find_macro_definition(root, name, max_lines=120):
                     while context_start > 0:
                         previous = lines[context_start - 1].strip()
 
-                        if previous.startswith("#ifdef ") or previous.startswith("#if "):
+                        if previous.startswith(("#ifdef ", "#if ")):
                             context_start -= 1
                             break
 
@@ -157,18 +280,20 @@ def find_macro_definition(root, name, max_lines=120):
     return path, index + 1, shown, len(found) - 1
 
 def _body_end(lines, index):
-    opened = False
+    depth = 0
 
     for j in range(index, min(index + 2000, len(lines))):
         line = lines[j]
-
-        if not opened:
-            if line.startswith("{"):
-                opened = True
-            elif line.rstrip().endswith(";"):
-                return None
-        elif line.startswith("}"):
+        had_body = depth > 0
+        depth += line.count("{") - line.count("}")
+        if (had_body or "{" in line) and depth == 0:
             return j
+        if depth > 0:
+            continue
+        if depth < 0:
+            return None
+        if line.rstrip().endswith(";"):
+            return None
 
     return None
 
@@ -187,7 +312,7 @@ def _query(path):
     if result.returncode != 0 or len(parts) < 2 or parts[1] == "(none)":
         return None
 
-    return parts[0], parts[1][:-4] if parts[1].endswith(".rpm") else parts[1]
+    return parts[0], parts[1].removesuffix(".rpm")
 
 
 SOURCE_DOWNLOAD_LIMIT = 10 * 1024 * 1024
@@ -252,9 +377,22 @@ def confirm_source_download(
 def ensure_source(nvr, stem, say):
     """Return the unpacked source folder for a package, downloading once."""
 
+    with _cache_lock():
+        target = _ensure_source_locked(nvr, stem, say)
+        _prune_source_cache(target)
+        return target
+
+
+def _ensure_source_locked(nvr, stem, say):
+    """Populate one cache entry while the caller holds the cache lock."""
+
+    if stem in {"", ".", ".."} or Path(stem).name != stem:
+        raise ValueError("invalid source package cache name")
+
     target = cache_root() / stem
 
     if (target / ".done").is_file():
+        os.utime(target / ".done", None)
         return target
 
     size = source_rpm_size(nvr)
@@ -286,14 +424,43 @@ def ensure_source(nvr, stem, say):
         if not tarballs:
             raise FileNotFoundError("the source package holds no tarball")
 
-        target.mkdir(parents=True, exist_ok=True)
-
-        with tarfile.open(max(tarballs, key=lambda p: p.stat().st_size)) as archive:
-            archive.extractall(target, filter="data")
-
-    (target / ".done").write_text("ok\n", encoding="utf-8")
+        root = cache_root()
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix=f".{stem}-", dir=root) as staging:
+            staging = Path(staging)
+            with tarfile.open(max(tarballs, key=lambda p: p.stat().st_size)) as archive:
+                archive.extractall(staging, filter="data")
+            (staging / ".done").write_text("ok\n", encoding="utf-8")
+            if target.exists():
+                shutil.rmtree(target)
+            os.replace(staging, target)
 
     return target
+
+
+def _prune_source_cache(preserve):
+    """Enforce optional XRAY_SOURCE_CACHE_MAX_MIB using least-recently-used trees."""
+    configured = os.environ.get("XRAY_SOURCE_CACHE_MAX_MIB")
+    if configured is None:
+        return
+    try:
+        limit = int(configured) * 1024 * 1024
+    except ValueError as error:
+        raise ValueError("XRAY_SOURCE_CACHE_MAX_MIB must be a non-negative integer") from error
+    if limit < 0:
+        raise ValueError("XRAY_SOURCE_CACHE_MAX_MIB must be a non-negative integer")
+    root = cache_root()
+    trees = [p for p in root.iterdir() if p.is_dir() and not p.is_symlink() and (p / ".done").is_file()]
+    sizes = {path: _tree_size(path) for path in trees}
+    total = sum(sizes.values())
+    for path in sorted(
+        (p for p in trees if p != preserve),
+        key=lambda p: (p / ".done").stat().st_mtime_ns,
+    ):
+        if total <= limit:
+            break
+        shutil.rmtree(path)
+        total -= sizes[path]
 
 
 def _may_be_exported(name, plain, known):
@@ -309,6 +476,31 @@ def _may_be_exported(name, plain, known):
     return len(plain) >= 4 and any(plain in n for n in known)
 
 
+def _source_package_unavailable(path):
+    package = package_of(path)
+
+    if package is not None:
+        return (
+            f"Package {package} owns this file, but source package lookup "
+            "currently supports RPM packages with source metadata only"
+        )
+
+    return "No installed package owns this file, so there is no source package"
+
+
+def local_source_roots():
+    """Return user-configured source trees from XRAY_SOURCE_PATH."""
+    configured = os.environ.get("XRAY_SOURCE_PATH", "")
+    roots = []
+    for item in configured.split(os.pathsep):
+        if not item.strip():
+            continue
+        root = Path(item).expanduser()
+        if root.is_dir():
+            roots.append(root.resolve())
+    return roots
+
+
 def source_lines(path, name, say=lambda text: None, max_lines=120):
     """Return the C source of a function of an installed binary.
 
@@ -318,6 +510,11 @@ def source_lines(path, name, say=lambda text: None, max_lines=120):
     installed.
     """
 
+    with _cache_lock():
+        return _source_lines_locked(path, name, say, max_lines)
+
+
+def _source_lines_locked(path, name, say, max_lines):
     path = Path(path)
 
     if command_kind(path) != "elf":
@@ -326,13 +523,49 @@ def source_lines(path, name, say=lambda text: None, max_lines=120):
     known = {entry[2] for entry in read_function_table(path)}
     plain = base_name(name)
 
+    for root in local_source_roots():
+        alias = elf_alias(root, plain, known) if known else None
+        result = find_definition(root, plain, max_lines)
+        if result is None and alias:
+            result = find_definition(root, alias, max_lines)
+        if result is not None:
+            file, line, shown, others = result
+            header = [f"{file.relative_to(root)}:{line}", "(local source tree)"]
+            if plain != name:
+                header.append(f"({name} is a compiler variant of {plain})")
+            if alias:
+                header.append(f"({plain} is exported as {alias})")
+            if others:
+                header.append(f"({others} more match(es) elsewhere; showing the first)")
+            return header + shown
+
+    try:
+        from xray.debuginfod import configured, function_source
+
+        if configured():
+            say("Querying configured debuginfod servers for function source")
+            remote = function_source(path, name)
+            if remote is not None:
+                source_name, cached_source, _line_hint = remote
+                result = find_definition_file(cached_source, plain, max_lines)
+                if result is not None:
+                    _file, line, shown, others = result
+                    header = [f"{source_name}:{line}", "(source from debuginfod)"]
+                    if plain != name:
+                        header.append(f"({name} is a compiler variant of {plain})")
+                    if others:
+                        header.append(f"({others} more match(es) in this file)")
+                    return header + shown
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+        pass
+
     if known and not _may_be_exported(name, plain, known):
         return [f"Unknown function: {name[:60]} (see --disasm for names)"]
 
     info = _query(path.resolve())
 
     if info is None:
-        return ["No installed package owns this file, so there is no source package"]
+        return [_source_package_unavailable(path.resolve())]
 
     nvr, stem = info
 
@@ -340,7 +573,7 @@ def source_lines(path, name, say=lambda text: None, max_lines=120):
         root = ensure_source(nvr, stem, say)
     except FileNotFoundError as error:
         return [f"Source not available: {error}"]
-    except (OSError, subprocess.SubprocessError) as error:
+    except (OSError, subprocess.SubprocessError, ValueError) as error:
         return [f"Could not fetch the source package: {error}"]
 
     alias = None
@@ -407,7 +640,7 @@ def elf_alias(root, name, exported):
     return None
 
 
-_START = re.compile(r"^([A-Za-z_]\w*)\s*\(")
+_START = re.compile(r"\b([A-Za-z_]\w*)\s*\(")
 
 
 def index_functions(root, names):
@@ -435,10 +668,13 @@ def index_functions(root, names):
             except OSError:
                 continue
 
-            for index, line in enumerate(lines):
-                match = _START.match(line)
+            for index, depth in _top_level_lines(lines):
+                line = lines[index]
+                match = _START.search(line)
 
                 if (
+                    not depth
+                    and
                     match
                     and match.group(1) in wanted
                     and match.group(1) not in found
@@ -459,6 +695,11 @@ def source_files(path, say=lambda text: None):
     this binary has, found by name.
     """
 
+    with _cache_lock():
+        return _source_files_locked(path, say)
+
+
+def _source_files_locked(path, say):
     path = Path(path)
 
     if command_kind(path) != "elf":
@@ -469,16 +710,24 @@ def source_files(path, say=lambda text: None):
     if not table:
         return None, "No function names in this binary (it has no .gnu_debugdata)"
 
+    for root in local_source_roots():
+        files = {}
+        for name, (relative, _line) in index_functions(root, [e[2] for e in table]).items():
+            files.setdefault(relative, []).append(name)
+        if files:
+            ordered = sorted(files, key=lambda f: (-len(files[f]), f))
+            return {f: sorted(files[f]) for f in ordered}, root
+
     info = _query(path.resolve())
 
     if info is None:
-        return None, "No installed package owns this file, so there is no source package"
+        return None, _source_package_unavailable(path.resolve())
 
     try:
         root = ensure_source(info[0], info[1], say)
     except FileNotFoundError as error:
         return None, f"Source not available: {error}"
-    except (OSError, subprocess.SubprocessError) as error:
+    except (OSError, subprocess.SubprocessError, ValueError) as error:
         return None, f"Could not fetch the source package: {error}"
 
     files = {}
@@ -512,6 +761,11 @@ def file_lines(root, relative, max_lines=400):
 def files_lines(path, name=None, say=lambda text: None):
     """List the source files of a binary, or print one of them."""
 
+    with _cache_lock():
+        return _files_lines_locked(path, name, say)
+
+
+def _files_lines_locked(path, name, say):
     files, root = source_files(path, say)
 
     if files is None:
@@ -539,10 +793,32 @@ def cached_source_files(path):
     Never downloads.
     """
 
+    with _cache_lock():
+        return _cached_source_files_locked(path)
+
+
+def _cached_source_files_locked(path):
     path = Path(path)
 
     if command_kind(path) != "elf":
         return None
+
+    local_roots = local_source_roots()
+    table = read_function_table(path) if local_roots else None
+    if table:
+        for local_root in local_roots:
+            local_files = {}
+            for name, (relative, _line) in index_functions(
+                local_root, [entry[2] for entry in table]
+            ).items():
+                local_files.setdefault(relative, []).append(name)
+            if local_files:
+                return {
+                    file: sorted(names)
+                    for file, names in sorted(
+                        local_files.items(), key=lambda item: (-len(item[1]), item[0])
+                    )
+                }
 
     info = _query(path.resolve())
 
@@ -554,7 +830,8 @@ def cached_source_files(path):
     if not (root / ".done").is_file():
         return None
 
-    table = read_function_table(path)
+    if table is None:
+        table = read_function_table(path)
     files = {}
 
     for name, (relative, _line) in index_functions(root, [e[2] for e in table]).items():

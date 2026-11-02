@@ -10,6 +10,89 @@ from xray.minidebug import read_function_table
 
 _SITE = re.compile(r"^\s*([0-9a-fA-F]+):\s")
 _CALL = re.compile(r"\bcall\s+(?:([0-9a-fA-F]+)\s+<([^>]*)>|(\*.*?))\s*$")
+_ASM_LABEL = re.compile(r"^\s*[0-9a-fA-F]+\s+<(.+)>:$")
+_ASM_SECTION = re.compile(r"^Disassembly of section .+:")
+
+
+def _matches_symbol(label, name):
+    """Match an exact symbol or its ELF version suffix, not a nearby offset."""
+    return bool(
+        label == name
+        or re.fullmatch(re.escape(name) + r"@{1,2}[A-Za-z0-9_.]+", label)
+    )
+
+
+def assembly_lines(path, name=None, max_lines=400, timeout=30):
+    """Read machine instructions with objdump when source is unavailable."""
+    path = Path(path)
+    env = dict(os.environ)
+    env["LC_ALL"] = "C"
+    command = ["objdump", "-d", "-C"]
+    if name is not None:
+        symbol = next(
+            (
+                entry
+                for entry in read_function_table(path)
+                if _matches_symbol(entry[2], name)
+            ),
+            None,
+        )
+        if symbol is not None and symbol[1] > 0:
+            command.extend(
+                [f"--start-address={symbol[0]}", f"--stop-address={symbol[0] + symbol[1]}"]
+            )
+    command.append(str(path))
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            env=env,
+            timeout=timeout,
+            check=False,
+        )
+    except FileNotFoundError:
+        return ["objdump not found: install binutils to read machine code"]
+    except subprocess.TimeoutExpired:
+        return [f"objdump took longer than {timeout} seconds: stopped"]
+    except OSError as error:
+        return [f"Unable to run objdump: {error}"]
+
+    if result.returncode != 0 or not result.stdout.strip():
+        message = result.stderr.strip() or "objdump returned no disassembly"
+        return [f"Unable to disassemble {path}: {message}"]
+
+    lines = result.stdout.splitlines()
+    if name is not None:
+        starts = [
+            index for index, line in enumerate(lines)
+            if (match := _ASM_LABEL.match(line))
+            and _matches_symbol(match.group(1), name)
+        ]
+        if not starts:
+            labels = [
+                match.group(1) for line in lines
+                if (match := _ASM_LABEL.match(line))
+            ]
+            return [
+                f"No disassembly label named {name[:60]} was found",
+                "Available labels: " + (", ".join(labels[:20]) or "none"),
+            ]
+        start = starts[0]
+        end = next(
+            (
+                index for index in range(start + 1, len(lines))
+                if _ASM_LABEL.match(lines[index]) or _ASM_SECTION.match(lines[index])
+            ),
+            len(lines),
+        )
+        lines = lines[start:end]
+
+    shown = lines[:max_lines]
+    if len(lines) > max_lines:
+        shown.append(f"... and {len(lines) - max_lines} more lines")
+    return shown
 
 
 @dataclass(frozen=True)

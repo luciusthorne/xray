@@ -41,9 +41,10 @@ def test_python_file_export(tmp_path):
     assert [s["name"] for s in data["symbols"]] == ["f"]
     assert {
         "source": str(source.resolve()),
-        "target": "os",
+        "target": None,
         "kind": "imports",
         "status": "external",
+        "name": "os",
     } in data["edges"]
 
 
@@ -61,6 +62,7 @@ def test_shell_script_export(tmp_path):
             "target": "nosuchcmd_xyz",
             "kind": "runs",
             "status": "unresolved",
+            "name": "nosuchcmd_xyz",
         }
     ]
 

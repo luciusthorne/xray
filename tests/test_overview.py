@@ -67,7 +67,9 @@ def test_python_launcher_lists_installed_code(tmp_path, installed):
 def test_python_project_file_has_no_overview(tmp_path):
     source = write(tmp_path / "a.py", "import os\n")
 
-    assert overview_lines(source) == []
+    lines = overview_lines(source)
+    assert lines
+    assert lines[0].startswith("Static Python source summary")
 
 
 def test_unknown_file_has_no_overview(tmp_path):
@@ -110,7 +112,8 @@ def test_cli_has_no_overview_for_python_file(tmp_path):
     )
 
     assert result.returncode == 0
-    assert "Overview" not in result.stdout
+    assert "Overview" in result.stdout
+    assert "Static Python source summary" in result.stdout
 
 
 def test_shell_script_without_visible_commands_gets_a_note(tmp_path):

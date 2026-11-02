@@ -3,12 +3,14 @@ from dataclasses import dataclass, field
 
 from .errors import AnalysisError, FileError
 
-
 SYMBOL_KINDS = (
     "function",
     "class",
+    "module",
     "method",
     "variable",
+    "interface",
+    "type",
 )
 
 

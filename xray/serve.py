@@ -13,15 +13,34 @@ from xray.minidebug import read_function_table
 from xray.rizinview import function_lines
 from xray.sourcelookup import file_lines, source_files, source_lines
 
-SERVED = ("elf", "shell", "perl", "python")
-TEXT = ("shell", "perl", "python")
+SERVED = ("elf", "shell", "perl", "ruby", "javascript", "lua", "typescript", "c", "python")
+TEXT = ("shell", "perl", "ruby", "javascript", "lua", "typescript", "c", "python")
+
+
+def _local_host(value):
+    """Accept only loopback names in HTTP Host headers."""
+
+    if not value:
+        return False
+
+    host = value.strip().lower()
+
+    for name in ("127.0.0.1", "localhost"):
+        if host == name:
+            return True
+
+        prefix, separator, port = host.rpartition(":")
+        if separator and prefix == name and port.isdigit():
+            return True
+
+    return False
 
 
 def make_server(path, data, port=0):
     """Return an HTTP server bound to 127.0.0.1 for a command and the ones it leads to.
 
     The starting command is served at "/". "/?cmd=<name or path>" serves
-    another command (ELF, shell, Perl or Python files only). Read-only
+    another command (ELF, shell, Perl, Ruby, JavaScript, Lua, TypeScript, C or Python files only). Read-only
     endpoints: /api/source, /api/disasm, /api/files, /api/file and
     /api/text. A function name must be in that binary's own function
     table, and a file path must be a node of a page already served.
@@ -68,6 +87,9 @@ def make_server(path, data, port=0):
             self.wfile.write(raw)
 
         def do_GET(self):
+            if not _local_host(self.headers.get("Host")):
+                return self.reply(403, "host not allowed")
+
             url = urlparse(self.path)
             qs = parse_qs(url.query)
 

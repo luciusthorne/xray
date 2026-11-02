@@ -3,7 +3,6 @@ import pytest
 from xray.errors import AnalysisError, FileError
 from xray.relationships import Relationship, find_relationships
 
-
 UTILS = "def calculate():\n    return 1\n"
 
 

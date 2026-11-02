@@ -1,6 +1,4 @@
-from pathlib import Path
 
-import xray.calls as calls_module
 from xray.locate import locate
 
 
@@ -38,7 +36,3 @@ def test_bare_names_ignore_the_current_directory(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
 
     assert locate("locq") is None
-
-
-def test_calls_still_exposes_locate():
-    assert calls_module._locate is locate

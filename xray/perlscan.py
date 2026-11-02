@@ -14,9 +14,7 @@ DEFAULT_INC = (
 )
 
 PRAGMAS = frozenset(
-    "strict warnings utf8 vars lib constant parent base feature integer "
-    "overload bytes locale open subs fields diagnostics autodie bigint "
-    "bignum less sort if experimental mro".split()
+    ["strict", "warnings", "utf8", "vars", "lib", "constant", "parent", "base", "feature", "integer", "overload", "bytes", "locale", "open", "subs", "fields", "diagnostics", "autodie", "bigint", "bignum", "less", "sort", "if", "experimental", "mro"]
 )
 
 _USE = re.compile(r"^\s*(?:use|require)\s+([A-Za-z_]\w*(?:::\w+)*)")

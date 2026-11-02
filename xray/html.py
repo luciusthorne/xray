@@ -74,9 +74,18 @@ _TEMPLATE = r"""<!doctype html>
     <input id="search" type="text" placeholder="Search names" autocomplete="off"><br>
     <label><input type="checkbox" data-kind="python" checked> python</label>
     <label><input type="checkbox" data-kind="shell" checked> shell</label>
+    <label><input type="checkbox" data-kind="perl" checked> perl</label>
+    <label><input type="checkbox" data-kind="ruby" checked> ruby</label>
+    <label><input type="checkbox" data-kind="javascript" checked> javascript</label>
+    <label><input type="checkbox" data-kind="lua" checked> lua</label>
+    <label><input type="checkbox" data-kind="typescript" checked> typescript</label>
+    <label><input type="checkbox" data-kind="c" checked> c</label>
     <label><input type="checkbox" data-kind="elf" checked> elf</label>
     <label><input type="checkbox" data-kind="library" checked> library</label>
     <label><input type="checkbox" data-kind="function" checked> function</label>
+    <label><input type="checkbox" data-kind="module" checked> module</label>
+    <label><input type="checkbox" data-kind="interface" checked> interface</label>
+    <label><input type="checkbox" data-kind="type" checked> type</label>
     <label><input type="checkbox" data-kind="import" checked> import</label><br>
     <button id="cycles" type="button">Highlight cycles</button>
     <button id="theme" type="button">Light theme</button>
@@ -90,8 +99,12 @@ _TEMPLATE = r"""<!doctype html>
 <script>
 (function () {
   var data = JSON.parse(document.getElementById("graph-data").textContent);
-  var COLORS = { python: "#4b8bbe", shell: "#6cc070", elf: "#e07a5f",
-                 library: "#a78bfa", function: "#f4b942", import: "#7ad1c2",
+  var COLORS = { python: "#4b8bbe", shell: "#6cc070", perl: "#e6a23c",
+                 ruby: "#d94f5c", javascript: "#e5c07b", elf: "#e07a5f", library: "#a78bfa",
+                 module: "#b48ead",
+                 lua: "#8b7ec8", typescript: "#3178c6", c: "#599eff",
+                 interface: "#56b6c2", type: "#98c379",
+                 function: "#f4b942", import: "#7ad1c2",
                  unknown: "#8a94a8" };
   var NS = "http://www.w3.org/2000/svg";
   var svg = document.getElementById("svg");
@@ -101,7 +114,7 @@ _TEMPLATE = r"""<!doctype html>
   if (data.metadata.truncated) document.getElementById("notice").hidden = false;
 
   var legend = document.getElementById("legend");
-  Object.keys(COLORS).slice(0, 6).forEach(function (kind) {
+  Object.keys(COLORS).forEach(function (kind) {
     var item = document.createElement("span");
     item.innerHTML = '<i class="dot" style="background:' + COLORS[kind] + '"></i>' + kind;
     legend.appendChild(item);
@@ -344,6 +357,7 @@ _TEMPLATE = r"""<!doctype html>
     panel.innerHTML =
       "<h2>" + esc(n.hollow ? n.label : n.id) + "</h2>" +
       "<p>kind: " + esc(n.hollow ? "not found" : n.kind) + "<br>" +
+      "language: " + esc(info.language || "none") + "<br>" +
       "package: " + esc(info.package || "none") + "<br>" +
       "symbols: " + esc(info.symbol_count == null ? 0 : info.symbol_count) + "</p>" +
       summary(n) +

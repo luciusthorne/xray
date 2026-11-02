@@ -96,7 +96,7 @@ def test_overview_lists_functions(tmp_path, monkeypatch):
         overview_module, "scan_elf", lambda path: ElfScan(imports=("a",))
     )
     monkeypatch.setattr(
-        overview_module, "read_minidebuginfo", lambda path: ("f1", "f2")
+        overview_module, "read_function_table", lambda path: ((1, 2, "f1"), (3, 4, "f2"))
     )
 
     lines = overview_lines(binary)
@@ -111,7 +111,7 @@ def test_overview_caps_functions(tmp_path, monkeypatch):
         overview_module, "scan_elf", lambda path: ElfScan(imports=("a",))
     )
     monkeypatch.setattr(
-        overview_module, "read_minidebuginfo", lambda path: names
+        overview_module, "read_function_table", lambda path: tuple((i, 1, name) for i, name in enumerate(names))
     )
 
     lines = overview_lines(binary)
@@ -126,7 +126,7 @@ def test_analyzer_symbols_are_functions(tmp_path, monkeypatch):
     import xray.command_analyzers as analyzers_module
 
     monkeypatch.setattr(
-        analyzers_module, "read_minidebuginfo", lambda path: ("f1",)
+        analyzers_module, "read_function_table", lambda path: ((1, 1, "f1"),)
     )
 
     symbols = ELFAnalyzer().symbols(binary)

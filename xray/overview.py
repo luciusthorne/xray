@@ -1,15 +1,16 @@
 from pathlib import Path
 
+from .analyze import analyze_python
 from .calls import calls_lines
 from .chain import chain_lines
 from .elfscan import ElfScan, scan_elf
 from .entrypoints import command_kind
-from .libresolve import find_library, ldconfig_cache
-from .minidebug import read_minidebuginfo
-from .provenance import package_of
-from .uses import uses_summary
 from .launchgraph import launch_lines
+from .libresolve import find_library, ldconfig_cache
+from .minidebug import read_function_table
+from .provenance import package_of
 from .shellscan import scan_shell
+from .uses import uses_summary
 
 NO_COMMANDS_NOTE = (
     "Note: no external commands found by static reading "
@@ -19,6 +20,7 @@ NO_COMMANDS_NOTE = (
 
 MAX_LIBRARIES = 15
 MAX_FUNCTIONS = 15
+MAX_PYTHON_ITEMS = 15
 
 
 def _elf_overview(path):
@@ -62,7 +64,7 @@ def _elf_overview(path):
     if summary:
         lines.append(summary)
 
-    functions = read_minidebuginfo(path)
+    functions = tuple(entry[2] for entry in read_function_table(path))
 
     if functions:
         lines.append(f"Functions ({len(functions)}):")
@@ -78,10 +80,12 @@ def _elf_overview(path):
 def overview_lines(path):
     """Return lines that describe what a command is made of.
 
-    Shell scripts and ELF binaries show what they run or link to.
+    Python source files show statically detected structure; shell scripts
+    and ELF binaries show what they run or link to.
     A shell script with no visible external commands gets a note, so
     "none" is not mistaken for "runs nothing". Python commands without
-    a .py suffix (launchers) show the installed code they import.
+    a .py suffix (launchers) show the installed code they import. Static
+    call names are not runtime traces.
     Other files give an empty list.
     """
 
@@ -103,7 +107,7 @@ def overview_lines(path):
 
         return lines
 
-    if kind == "perl":
+    if kind in {"perl", "ruby", "javascript", "lua", "typescript", "c"}:
         lines = calls_lines(path)
         chain = chain_lines(path, max_depth=2, max_files=15)
 
@@ -115,7 +119,54 @@ def overview_lines(path):
     if kind == "elf":
         return _elf_overview(path)
 
-    if kind == "python" and path.suffix != ".py":
-        return ["Launcher code:", *launch_lines(path)]
+    if kind == "python":
+        if path.suffix != ".py":
+            return ["Launcher code:", *launch_lines(path)]
+
+        analysis = analyze_python(path)
+        functions = [item["name"] for item in analysis["functions"]]
+        classes = [item["name"] for item in analysis["classes"]]
+        imports = analysis["dependencies"]
+        calls = analysis["calls"]
+        lines = [
+            "Static Python source summary (does not execute the file):",
+            f"Functions: {len(functions)}",
+        ]
+
+        if functions:
+            lines.extend(f"- {name}" for name in functions[:MAX_PYTHON_ITEMS])
+            hidden = len(functions) - MAX_PYTHON_ITEMS
+
+            if hidden > 0:
+                lines.append(f"- ... and {hidden} more")
+
+        lines.append(f"Classes: {len(classes)}")
+
+        if classes:
+            lines.extend(f"- {name}" for name in classes[:MAX_PYTHON_ITEMS])
+            hidden = len(classes) - MAX_PYTHON_ITEMS
+
+            if hidden > 0:
+                lines.append(f"- ... and {hidden} more")
+
+        lines.append(f"Imports: {len(imports)}")
+
+        if imports:
+            for dependency in imports[:MAX_PYTHON_ITEMS]:
+                name = dependency["module"]
+
+                if dependency["name"]:
+                    name = f"{name}.{dependency['name']}" if name else dependency["name"]
+
+                lines.append(f"- {name or '(relative import)'} [{dependency['type']}]")
+
+            hidden = len(imports) - MAX_PYTHON_ITEMS
+
+            if hidden > 0:
+                lines.append(f"- ... and {hidden} more")
+
+        lines.append(f"Call sites: {len(calls)}")
+        lines.append("Note: static call names do not prove which code runs at runtime.")
+        return lines
 
     return []

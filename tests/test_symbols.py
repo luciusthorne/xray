@@ -30,8 +30,11 @@ def test_known_kinds():
     assert SYMBOL_KINDS == (
         "function",
         "class",
+        "module",
         "method",
         "variable",
+        "interface",
+        "type",
     )
 
 
@@ -55,7 +58,7 @@ def test_qualified_name_method():
 
 def test_unknown_kind_is_rejected():
     with pytest.raises(ValueError, match="Unknown symbol kind"):
-        Symbol("x", "module", "example.py", 1)
+        Symbol("x", "unknown", "example.py", 1)
 
 
 def test_symbol_is_immutable():

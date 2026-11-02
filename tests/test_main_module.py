@@ -28,11 +28,14 @@ def test_bad_option_exits_2(tmp_path):
     assert result.stdout == ""
 
 
-def test_no_arguments_exits_2(tmp_path):
+def test_no_arguments_shows_self_overview(tmp_path):
     result = run_module(tmp_path)
 
-    assert result.returncode == 2
-    assert result.stdout == ""
+    assert result.returncode == 0
+    assert result.stderr == ""
+    assert "Overview" in result.stdout
+    assert "Explore this command" in result.stdout
+    assert "--cycles" in result.stdout
 
 
 def test_missing_target_exits_3(tmp_path):

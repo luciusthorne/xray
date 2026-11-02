@@ -1,5 +1,4 @@
 import shutil
-from pathlib import Path
 
 import pytest
 
@@ -104,10 +103,10 @@ def test_resolve_module_looks_through_the_include_paths(tmp_path):
 
 
 @pytest.mark.skipif(
-    not Path("/usr/bin/pod2man").is_file(), reason="pod2man not installed"
+    shutil.which("pod2man") is None, reason="pod2man not installed"
 )
 def test_real_pod2man():
-    scan = scan_perl("/usr/bin/pod2man")
+    scan = scan_perl(shutil.which("pod2man"))
     names = [name for name, _ in scan.modules]
 
     assert "Pod::Man" in names

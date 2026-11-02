@@ -54,6 +54,11 @@ def test_asks_rpm_about_the_resolved_path(tmp_path, monkeypatch):
     link.symlink_to(target)
     run = fake_run(0, "pkg-1-1.noarch\n")
     monkeypatch.setattr(provenance_module.subprocess, "run", run)
+    monkeypatch.setattr(
+        provenance_module.shutil,
+        "which",
+        lambda name: "/usr/bin/rpm" if name == "rpm" else None,
+    )
 
     package_of(link)
 
