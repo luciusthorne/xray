@@ -4,7 +4,7 @@ import json
 import os
 import shutil
 import subprocess
-from functools import lru_cache
+from functools import cache, lru_cache
 from pathlib import Path
 
 from .analyzers import Analyzer, registry
@@ -15,9 +15,11 @@ from .symbols import Symbol
 
 _NVIM_READER = r"""
 local lang = vim.env.XRAY_PARSE_LANGUAGE
-local ok, parser = pcall(vim.treesitter.get_parser, 0, lang)
-if not ok then
-  print(vim.json.encode({error = 'Tree-sitter parser unavailable for ' .. lang .. ': ' .. tostring(parser)}))
+local ok, parser, reason = pcall(vim.treesitter.get_parser, 0, lang, {error = false})
+if not ok or not parser then
+  -- Neovim 0.12 returns nil instead of raising when the grammar is not installed.
+  local detail = (not ok and parser) or reason or 'no parser is installed'
+  print(vim.json.encode({error = 'Tree-sitter parser unavailable for ' .. lang .. ': ' .. tostring(detail)}))
   return
 end
 local parsed_ok, trees = pcall(parser.parse, parser)
@@ -202,6 +204,34 @@ def _json_payload(lines):
     return None
 
 
+@cache
+def parser_available(language):
+    """True if Neovim can load the Tree-sitter grammar for language."""
+    nvim = shutil.which("nvim")
+
+    if nvim is None:
+        return False
+
+    probe = (
+        "lua local ok, found = pcall(vim.treesitter.language.add, '"
+        + language + "') io.stdout:write((ok and found) and 'yes' or 'no')"
+    )
+
+    try:
+        result = subprocess.run(
+            [nvim, "--headless", "-u", "NONE", "-i", "NONE", "--noplugin",
+             "-c", probe, "-c", "qa!"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+    return result.stdout.strip().endswith("yes")
+
+
 def _language(path, kind):
     if kind == "typescript" and path.suffix == ".tsx":
         return "tsx"
@@ -267,7 +297,9 @@ def _read_snapshot(path_text, kind, language, _mtime_ns, _ctime_ns, _size):
 
     data = _json_payload(lines)
     if data is None:
-        raise AnalysisError(f"Tree-sitter returned invalid data for {path}")
+        detail = result.stderr.strip().splitlines()
+        suffix = f": {detail[0]}" if detail else ""
+        raise AnalysisError(f"Tree-sitter returned invalid data for {path}{suffix}")
 
     if "error" in data:
         raise AnalysisError(f"Unable to analyze {path}: {data['error']}")

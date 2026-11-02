@@ -6,7 +6,7 @@ from pathlib import Path
 from xray.entrypoints import command_kind
 from xray.minidebug import read_function_table
 
-INSTALL_HINT = "rizin not found: install it with: sudo dnf install rizin"
+INSTALL_HINT = "rizin not found: install the rizin package to use --disasm-function"
 
 
 def function_lines(path, name, timeout=30, max_lines=200):
@@ -42,17 +42,17 @@ def function_lines(path, name, timeout=30, max_lines=200):
 
         return lines
 
-    address = found[0][0]
+    address, size = found[0][0], found[0][1]
 
     try:
-        result = subprocess.run(
-            ["rizin", "-q", "-c", f"aa; s 0x{address:x}; af; pdf", str(path)],
-            capture_output=True,
-            text=True,
-            errors="replace",
-            timeout=timeout,
-            check=False,
-        )
+        result = _rizin(path, f"aa; s 0x{address:x}; af; pdf", timeout)
+        lines = result.stdout.rstrip("\n").splitlines()
+
+        # pdf refuses functions whose blocks are not contiguous ("Linear size
+        # differs too much from the bbsum"); print the symbol's exact range.
+        if not lines and size:
+            result = _rizin(path, f"s 0x{address:x}; pD {size}", timeout)
+            lines = result.stdout.rstrip("\n").splitlines()
     except FileNotFoundError:
         return [INSTALL_HINT]
     except subprocess.TimeoutExpired:
@@ -60,13 +60,25 @@ def function_lines(path, name, timeout=30, max_lines=200):
     except OSError as error:
         return [f"Unable to run rizin: {error}"]
 
-    lines = result.stdout.rstrip("\n").splitlines()
-
     if not lines:
-        return ["rizin printed nothing for this function"]
+        reason = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", result.stderr).strip()
+        message = "rizin printed nothing for this function"
+
+        return [f"{message}: {reason.splitlines()[0]}" if reason else message]
 
     if len(lines) > max_lines:
         hidden = len(lines) - max_lines
         lines = lines[:max_lines] + [f"... and {hidden} more lines"]
 
     return lines
+
+
+def _rizin(path, commands, timeout):
+    return subprocess.run(
+        ["rizin", "-q", "-e", "scr.color=0", "-c", commands, str(path)],
+        capture_output=True,
+        text=True,
+        errors="replace",
+        timeout=timeout,
+        check=False,
+    )

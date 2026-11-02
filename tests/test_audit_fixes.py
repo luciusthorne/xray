@@ -48,6 +48,8 @@ from xray.treesitter_analyzers import (
     LuaAnalyzer,
     TypeScriptAnalyzer,
     _json_payload,
+    _read_snapshot,
+    parser_available,
 )
 
 
@@ -218,8 +220,8 @@ class AuditFixTests(unittest.TestCase):
         self.assertEqual(lines, ["0x401020  safe_func", "  401020: ret"])
         command = run.call_args.args[0]
         self.assertEqual(command[0], "rizin")
-        self.assertEqual(command[3], "aa; s 0x401020; af; pdf")
-        self.assertNotIn("safe_func", command[3])
+        self.assertEqual(command[-2], "aa; s 0x401020; af; pdf")
+        self.assertNotIn("safe_func", command[-2])
 
     def test_rizin_disassembly_does_not_invoke_unknown_function_name(self):
         with (
@@ -313,14 +315,13 @@ class AuditFixTests(unittest.TestCase):
             cases.append(("sample.js", "function target() { return 1; }\n"))
         if shutil.which("ruby"):
             cases.append(("sample.rb", "def target\n  1\nend\n"))
-        if shutil.which("nvim"):
-            cases.extend(
-                (
-                    ("sample.lua", "function target() return 1 end\n"),
-                    ("sample.ts", "function target(): number { return 1; }\n"),
-                    ("sample.c", "int target(void) { return 1; }\n"),
-                )
-            )
+        for language, case in (
+            ("lua", ("sample.lua", "function target() return 1 end\n")),
+            ("typescript", ("sample.ts", "function target(): number { return 1; }\n")),
+            ("c", ("sample.c", "int target(void) { return 1; }\n")),
+        ):
+            if parser_available(language):
+                cases.append(case)
 
         with tempfile.TemporaryDirectory() as directory:
             for filename, source in cases:
@@ -795,12 +796,12 @@ class AuditFixTests(unittest.TestCase):
                 cases.append(("javascript", "target.js", f'require("node:fs").writeFileSync("{marker_text}", "ran");\nfunction target() {{}}\n', JavaScriptAnalyzer().symbols))
             if shutil.which("ruby"):
                 cases.append(("ruby", "target.rb", f'File.write("{marker_text}", "ran")\ndef target; end\n', RubyAnalyzer().symbols))
-            if shutil.which("nvim"):
-                cases.extend([
-                    ("lua", "target.lua", f'os.execute("touch {marker_text}")\nfunction target() end\n', LuaAnalyzer().symbols),
-                    ("typescript", "target.ts", f'import fs from "node:fs"; fs.writeFileSync("{marker_text}", "ran"); class Store {{ target() {{}} }}\n', TypeScriptAnalyzer().symbols),
-                    ("c", "target.c", f'void target(void) __attribute__((constructor));\nvoid target(void) {{ system("touch {marker_text}"); }}\n', CAnalyzer().symbols),
-                ])
+            parser_cases = [
+                ("lua", "target.lua", f'os.execute("touch {marker_text}")\nfunction target() end\n', LuaAnalyzer().symbols),
+                ("typescript", "target.ts", f'import fs from "node:fs"; fs.writeFileSync("{marker_text}", "ran"); class Store {{ target() {{}} }}\n', TypeScriptAnalyzer().symbols),
+                ("c", "target.c", f'void target(void) __attribute__((constructor));\nvoid target(void) {{ system("touch {marker_text}"); }}\n', CAnalyzer().symbols),
+            ]
+            cases.extend(case for case in parser_cases if parser_available(case[0]))
 
             self.assertGreaterEqual(len(cases), 3)
             for name, filename, source, analyze in cases:
@@ -904,6 +905,23 @@ class AuditFixTests(unittest.TestCase):
         ])
 
         self.assertEqual(data, response)
+
+    @unittest.skipUnless(shutil.which("nvim"), "Neovim is required for Tree-sitter analysis")
+    def test_treesitter_reports_missing_grammar_clearly(self):
+        self.assertFalse(parser_available("xray_missing_grammar"))
+
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "sample.txt"
+            target.write_text("anything\n", encoding="utf-8")
+            stat = target.stat()
+
+            with self.assertRaises(AnalysisError) as raised:
+                _read_snapshot(
+                    str(target), "typescript", "xray_missing_grammar",
+                    stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size,
+                )
+
+        self.assertIn("Tree-sitter parser unavailable for xray_missing_grammar", str(raised.exception))
 
     def test_query_error_does_not_leak_banner_to_stdout(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1062,7 +1080,7 @@ class AuditFixTests(unittest.TestCase):
         self.assertEqual(by_name["run"].parent, "Box")
         self.assertEqual(by_name["inside"].parent, "Box.run")
 
-    @unittest.skipUnless(shutil.which("nvim"), "Neovim is required for Tree-sitter analysis")
+    @unittest.skipUnless(parser_available("typescript"), "Neovim's TypeScript Tree-sitter parser is required")
     def test_typescript_methods_keep_class_and_interface_owners(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "sample.ts"
@@ -1071,24 +1089,18 @@ class AuditFixTests(unittest.TestCase):
                 "class Store { save() { function inside() {} } }\n",
                 encoding="utf-8",
             )
-            try:
-                symbols = TypeScriptAnalyzer().symbols(target)
-            except AnalysisError as error:
-                self.skipTest(str(error))
+            symbols = TypeScriptAnalyzer().symbols(target)
 
         by_name = {(symbol.name, symbol.kind): symbol for symbol in symbols}
         self.assertEqual(by_name[("save", "method")].parent, "Store")
         self.assertEqual(by_name[("inside", "function")].parent, "Store.save")
 
-    @unittest.skipUnless(shutil.which("nvim"), "Neovim is required for Tree-sitter analysis")
+    @unittest.skipUnless(parser_available("lua"), "Neovim's Lua Tree-sitter parser is required")
     def test_lua_colon_methods_keep_table_owner(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "sample.lua"
             target.write_text("Person = {}\nfunction Person:walk() end\n", encoding="utf-8")
-            try:
-                symbols = LuaAnalyzer().symbols(target)
-            except AnalysisError as error:
-                self.skipTest(str(error))
+            symbols = LuaAnalyzer().symbols(target)
 
         method = next(symbol for symbol in symbols if symbol.name == "walk")
         self.assertEqual(method.kind, "method")

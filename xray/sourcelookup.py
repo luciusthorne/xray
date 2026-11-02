@@ -118,14 +118,36 @@ def _top_level_lines(lines):
             depth = max(0, depth + line.count("{") - line.count("}"))
 
 
-def find_definition(root, name, max_lines=120):
+_TEST_DIRS = {"test", "tests", "testsuite", "gnulib-tests", "examples", "demos", "doc"}
+
+
+def binary_stems(path):
+    """Source file stems that most likely hold a binary's own code."""
+    stem = Path(path).name.split(".", 1)[0]
+    stems = {stem}
+
+    if stem.startswith("lib") and len(stem) > 3:
+        stems.add(stem[3:])
+
+    return stems
+
+
+def _definition_rank(root, path, prefer):
+    """Sort key: the binary's own file first, test and example code last."""
+    parts = set(path.relative_to(root).parts[:-1])
+
+    return (path.stem not in prefer, bool(parts & _TEST_DIRS))
+
+
+def find_definition(root, name, max_lines=120, prefer=()):
     """Find a C function definition under root.
 
     Returns (file, first line number, lines, others) or None. Matches a
     function name in its declaration and requires a body brace before
     a terminating semicolon, so prototypes are skipped. The line above
     is included when it holds the return type. others counts further
-    matches in other places.
+    matches in other places. When several files define the name, a file
+    whose stem is in prefer wins, and test or example folders lose.
     """
 
     pattern = re.compile(rf"\b{re.escape(name)}\s*\(")
@@ -158,6 +180,7 @@ def find_definition(root, name, max_lines=120):
     if not found:
         return find_macro_definition(root, name, max_lines)
 
+    found.sort(key=lambda item: _definition_rank(root, item[0], prefer))
     path, index, end, lines = found[0]
     start = index
 
@@ -525,9 +548,9 @@ def _source_lines_locked(path, name, say, max_lines):
 
     for root in local_source_roots():
         alias = elf_alias(root, plain, known) if known else None
-        result = find_definition(root, plain, max_lines)
+        result = find_definition(root, plain, max_lines, binary_stems(path))
         if result is None and alias:
-            result = find_definition(root, alias, max_lines)
+            result = find_definition(root, alias, max_lines, binary_stems(path))
         if result is not None:
             file, line, shown, others = result
             header = [f"{file.relative_to(root)}:{line}", "(local source tree)"]
@@ -536,7 +559,7 @@ def _source_lines_locked(path, name, say, max_lines):
             if alias:
                 header.append(f"({plain} is exported as {alias})")
             if others:
-                header.append(f"({others} more match(es) elsewhere; showing the first)")
+                header.append(f"({others} more match(es) elsewhere; showing the most likely)")
             return header + shown
 
     try:
@@ -581,7 +604,7 @@ def _source_lines_locked(path, name, say, max_lines):
     if known and plain not in known:
         alias = elf_alias(root, plain, known)
 
-    result = find_definition(root, plain, max_lines)
+    result = find_definition(root, plain, max_lines, binary_stems(path.resolve()))
 
     if result is None:
         message = f"No definition of {plain} found in the source of {nvr}"
@@ -601,7 +624,7 @@ def _source_lines_locked(path, name, say, max_lines):
         header.append(f"({plain} is exported as {alias})")
 
     if others:
-        header.append(f"({others} more match(es) elsewhere; showing the first)")
+        header.append(f"({others} more match(es) elsewhere; showing the most likely)")
 
     return header + shown
 

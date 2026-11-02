@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from xray import sourcelookup
-from xray.sourcelookup import base_name, find_definition
+from xray.sourcelookup import base_name, binary_stems, find_definition
 
 C = """static bool
 dev_ino_compare (void const *x, void const *y);
@@ -169,3 +169,24 @@ def test_source_cache_size_limit_prunes_oldest_but_keeps_active(tmp_path, monkey
 
     assert not old.exists()
     assert active.exists()
+
+
+def test_definition_prefers_the_binarys_own_file(tmp_path):
+    (tmp_path / "gl" / "lib").mkdir(parents=True)
+    (tmp_path / "src").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "gl" / "lib" / "randint.c").write_text("int\nmain (void)\n{\n  return 1;\n}\n")
+    (tmp_path / "src" / "cat.c").write_text("int\nmain (void)\n{\n  return 2;\n}\n")
+    (tmp_path / "src" / "ls.c").write_text("int\nmain (void)\n{\n  return 3;\n}\n")
+    (tmp_path / "tests" / "ls.c").write_text("int\nmain (void)\n{\n  return 4;\n}\n")
+
+    file, _line, shown, others = find_definition(tmp_path, "main", prefer=binary_stems("/usr/bin/ls"))
+
+    assert file == tmp_path / "src" / "ls.c"
+    assert "  return 3;" in shown
+    assert others == 3
+
+
+def test_binary_stems_include_library_name_without_prefix():
+    assert binary_stems("/usr/lib64/libgmp.so.10.5.0") == {"libgmp", "gmp"}
+    assert binary_stems("/usr/bin/ls") == {"ls"}

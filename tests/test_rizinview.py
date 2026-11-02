@@ -39,6 +39,37 @@ def test_known_name_runs_rizin_with_its_address(tmp_path, monkeypatch):
     assert "aa; s 0x3a00; af; pdf" in calls[0]
 
 
+def test_empty_pdf_falls_back_to_the_symbol_range(tmp_path, monkeypatch):
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        stdout = "" if command[-2].endswith("pdf") else "RANGE\n"
+
+        return subprocess.CompletedProcess(command, 0, stdout, "ERROR: use pdr")
+
+    monkeypatch.setattr(rv.subprocess, "run", run)
+    monkeypatch.setattr(rv, "read_function_table", lambda p: TABLE)
+
+    assert function_lines(elf(tmp_path), "dev_ino_compare") == ["RANGE"]
+    assert "s 0x3a10; pD 41" in calls[1]
+    assert "scr.color=0" in calls[1]
+
+
+def test_rizin_error_is_reported_when_nothing_prints(tmp_path, monkeypatch):
+    def run(command, **kwargs):
+        return subprocess.CompletedProcess(
+            command, 0, "", "\x1b[2KERROR: Cannot find function\n"
+        )
+
+    monkeypatch.setattr(rv.subprocess, "run", run)
+    monkeypatch.setattr(rv, "read_function_table", lambda p: TABLE)
+
+    assert function_lines(elf(tmp_path), "dev_ino_hash") == [
+        "rizin printed nothing for this function: ERROR: Cannot find function"
+    ]
+
+
 def test_unknown_name_never_reaches_rizin(tmp_path, monkeypatch):
     calls = patch(monkeypatch)
 
@@ -74,7 +105,7 @@ def test_missing_rizin_gives_a_message(tmp_path, monkeypatch):
     monkeypatch.setattr(rv.subprocess, "run", run)
 
     assert function_lines(elf(tmp_path), "dev_ino_hash") == [
-        "rizin not found: install it with: sudo dnf install rizin"
+        "rizin not found: install the rizin package to use --disasm-function"
     ]
 
 
