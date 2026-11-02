@@ -57,6 +57,7 @@ def print_help():
     print("  --disasm               Show which functions an ELF binary calls (reads objdump)")
     print("  --trace                Run the command and show what it executes and opens")
     print("  --package              Show the package that owns a command")
+    print("  --toolchain            Show the language, compiler, and bundled modules of an ELF binary")
     print("  --serve                Open a local page: click a function for its source and disassembly")
     print()
     print("Scripts:")
@@ -668,6 +669,24 @@ def query_package(context):
 
 
 QUERIES["--package"] = query_package
+
+
+def query_toolchain(context):
+    from xray.entrypoints import command_kind
+    from xray.fingerprint import toolchain_lines
+
+    if command_kind(context.path) != "elf":
+        raise CLIError("--toolchain requires an ELF binary target")
+
+    print()
+    print(f"Toolchain of {context.source_node}")
+    print("────────────────────────────")
+
+    for line in toolchain_lines(context.path):
+        print(line)
+
+
+QUERIES["--toolchain"] = query_toolchain
 
 
 def query_trace(context):

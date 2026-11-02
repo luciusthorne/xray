@@ -54,7 +54,7 @@ For packages whose source XRAY cannot retrieve automatically, set `XRAY_SOURCE_P
 
 Run `xray --help` for descriptions and argument forms. The options are grouped here by purpose:
 
-- Inspection: `--report`, `--inspect`, `--md`, `--code`, `--asm`, `--source`, `--source-cache-list`, `--source-cache-remove`, `--source-cache-clear`, `--disasm-function`, `--package`, `--serve`.
+- Inspection: `--report`, `--inspect`, `--md`, `--code`, `--asm`, `--source`, `--source-cache-list`, `--source-cache-remove`, `--source-cache-clear`, `--disasm-function`, `--package`, `--toolchain`, `--serve`.
 - Commands and binaries: `--calls`, `--chain`, `--launch`, `--launch-depth`, `--launch-limit`, `--shell-metrics`, `--uses`, `--disasm`, `--trace`.
 - Graph queries: `--deps`, `--dependents`, `--tree`, `--impact`, `--cycles`, `--depth`, `--project`, `--components`, `--reachable`, `--reverse-reachable`, `--path`, `--changes`.
 - Source analysis: `--symbols`, `--references`, `--relationships`, `--unused`, `--complexity`, `--callgraph`, `--unused-symbols`, `--coupling`, `--call-coupling`.
@@ -69,6 +69,8 @@ Project dependency queries use the registered analyzers to include supported Pyt
 Downloaded RPM source trees can be listed with `xray --source-cache-list`, removed individually with `xray --source-cache-remove <package>`, or cleared with `xray --source-cache-clear`. These commands operate only on `src/`; parser results under `analysis/` are separate. Set `XRAY_SOURCE_CACHE_MAX_MIB` to a non-negative integer to prune least-recently-used cached trees after a successful download; unset it for no size limit. The currently requested tree is kept even if it alone exceeds the limit. Extraction is staged before becoming visible, and cache mutation and source reads are serialized between XRAY processes.
 
 ## JSON contracts
+
+`--toolchain` reads an ELF binary without running it and names the language that built it: Go (toolchain, main module, dependencies with replacements, and build settings from `.go.buildinfo`), Rust (rustc version from `.comment` and crate versions from retained registry paths; distributions that remap paths keep no crate list), C++, C, or a PyInstaller bundle, plus the compilers recorded in `.comment`. `--report` and `--inspect` show the same language on their Identity line.
 
 Any text query also accepts a trailing `--json` (for example `xray ls --inspect --json` or `xray tool.sh --calls --json`). The output has `schema_version`, `query`, `target`, `title`, and `sections`; each section has a `heading` (null for text before the first heading), `fields` (`Key: value` lines, with lists for keys followed by `- item` lines), `items` (other `- item` lines), and `lines` (anything else). It cannot be combined with `--md`, `--html`, `--serve`, or `--graph-json`. Errors still go to stderr with the usual exit codes.
 
@@ -108,6 +110,7 @@ xray/
 ├── entrypoints.py
 ├── errors.py
 ├── export.py
+├── fingerprint.py
 ├── graph.py
 ├── graphjson.py
 ├── git_analysis.py

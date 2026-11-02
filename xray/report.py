@@ -17,6 +17,25 @@ def _code_span(value):
     return f"{fence}{padding}{value}{padding}{fence}"
 
 
+def _language_lines(path, kind, bullet):
+    """The language and toolchain line of a binary, when it can be told."""
+    if kind != "elf":
+        return []
+
+    from xray.fingerprint import fingerprint
+
+    try:
+        found = fingerprint(path)
+    except OSError:
+        return []
+
+    if found.language == "unknown":
+        return []
+
+    detail = f" ({found.toolchain})" if found.toolchain else ""
+    return [f"{bullet}Language: {found.language}{detail}"]
+
+
 def report_lines(path, markdown=False):
     """Return one report about a command: identity, overview, source files.
 
@@ -39,6 +58,7 @@ def report_lines(path, markdown=False):
         f"{bullet}Path: {_code_span(str(path)) if markdown else path}",
         f"{bullet}Kind: {kind}",
         f"{bullet}Package: {package or 'not owned by an installed package'}",
+        *_language_lines(path, kind, bullet),
         "",
         f"{head}Overview",
     ]
