@@ -55,7 +55,7 @@ jobs:
           import tarfile
           from pathlib import Path
 
-          archive = next(Path("dist").glob("xray-*.tar.gz"))
+          archive = next(Path("dist").glob("xray_trust-*.tar.gz"))
           with tarfile.open(archive) as source:
               names = source.getnames()
 
@@ -63,6 +63,7 @@ jobs:
           expected = (
               "README.md",
               "CHANGELOG.md",
+              "LICENSE",
               "pyproject.toml",
               "tests/test_audit_fixes.py",
               "tests/test_calls.py",
@@ -79,13 +80,13 @@ jobs:
           PY
 
       - name: Install source distribution
-        run: python -m pip install --no-cache-dir --no-deps --force-reinstall dist/xray-*.tar.gz
+        run: python -m pip install --no-cache-dir --no-deps --force-reinstall dist/xray_trust-*.tar.gz
 
       - name: Verify installed distribution outside checkout
         working-directory: ${{ runner.temp }}
         run: |
           xray --version
-          python -c "import importlib.metadata as metadata; import xray; assert metadata.version('xray') == xray.__version__"
+          python -c "import importlib.metadata as metadata; import xray; assert metadata.version('xray-trust') == xray.__version__"
 
   fedora-integration:
     name: Fedora integrations (rpm, dnf, strace, rizin, Neovim)

@@ -153,3 +153,7 @@ xray/
 ## Testing
 
 The full suite uses pytest and includes upstream regression tests plus audit regressions. Install it with `python -m pip install '.[test]'`, then run `python -m pytest`. Some integration tests skip when optional system tools are unavailable. CI runs Ruff across the package and test tree, and runs the full suite across Python 3.10–3.15 and a Fedora integration job.
+
+## License
+
+Apache-2.0. See `LICENSE`.
