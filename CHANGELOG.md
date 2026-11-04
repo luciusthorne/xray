@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.0.0
+
+- Publish as `xray-trust` on PyPI (the `xray` name is taken); the command is still `xray`.
 
 - Add `--toolchain`: the language that built an ELF binary (Go module, dependencies and build settings; Rust compiler and crates; C++, Fortran, D, Haskell, Swift, Objective-C runtimes; C, inferred when `.comment` is stripped; PyInstaller) and the compilers in `.comment`. `--report` and `--inspect` show the language on their Identity line.
 - Add a trailing `--json` modifier that prints any text query as a versioned JSON document (title, sections, fields, items, lines).

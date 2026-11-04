@@ -4,12 +4,14 @@ XRAY inspects local commands, source files, and ELF binaries. It combines static
 
 ## Install
 
-Requires Python 3.10 or newer. The Python package has no third-party runtime dependencies.
+Requires Python 3.10 or newer. The Python package has no third-party runtime dependencies. The package is named `xray-trust`; the command it installs is `xray`.
 
 ```sh
-python -m pip install .
+pipx install xray-trust    # or: python -m pip install xray-trust
 xray --help
 ```
+
+From a checkout: `python -m pip install .`
 
 Install test dependencies and run the full suite:
 
@@ -150,4 +152,4 @@ xray/
 
 ## Testing
 
-The full suite uses pytest and includes upstream regression tests plus audit regressions. Install it with `python -m pip install '.[test]'`, then run `python -m pytest`. Some integration tests skip when optional system tools are unavailable. CI runs Ruff across the package and test tree, and runs the full suite across Python 3.10–3.14.
+The full suite uses pytest and includes upstream regression tests plus audit regressions. Install it with `python -m pip install '.[test]'`, then run `python -m pytest`. Some integration tests skip when optional system tools are unavailable. CI runs Ruff across the package and test tree, and runs the full suite across Python 3.10–3.15 and a Fedora integration job.
