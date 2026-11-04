@@ -81,3 +81,86 @@ def package_manager(path):
     if _pacman_package(resolved):
         return "pacman"
     return None
+
+
+def packages_of(paths):
+    """Return {path: (manager, "name version")} for files owned by a package.
+
+    One package-manager call covers every path. Paths are used as
+    given (resolve them first). Unowned files, and systems without rpm
+    or pacman, are simply left out.
+    """
+
+    paths = [str(path) for path in paths]
+    if not paths:
+        return {}
+
+    if shutil.which("rpm") is not None:
+        owned = _rpm_owners(paths)
+        if owned:
+            return owned
+
+    if shutil.which("pacman") is not None:
+        return _pacman_owners(paths)
+
+    return {}
+
+
+_OWNER_FORMAT = "%{NAME} %{VERSION}-%{RELEASE}.%{ARCH}\n"
+
+
+def _rpm_owners(paths):
+    """Ask rpm once; it prints one line per path, in order."""
+
+    try:
+        result = subprocess.run(
+            ["rpm", "-qf", "--qf", _OWNER_FORMAT, "--", *paths],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=False,
+        )
+    except OSError:
+        return {}
+
+    lines = result.stdout.splitlines()
+    if len(lines) != len(paths):
+        # A file owned by several packages prints several lines: ask one by one.
+        lines = []
+        for path in paths:
+            single = subprocess.run(
+                ["rpm", "-qf", "--qf", _OWNER_FORMAT, "--", path],
+                capture_output=True,
+                text=True,
+                errors="replace",
+                check=False,
+            )
+            lines.append(single.stdout.splitlines()[0] if single.returncode == 0 and single.stdout else "")
+
+    owned = {}
+    for path, line in zip(paths, lines):
+        line = line.strip()
+        if line and " is not owned by " not in line and not line.startswith("error:"):
+            owned[path] = ("rpm", line)
+    return owned
+
+
+def _pacman_owners(paths):
+    try:
+        result = subprocess.run(
+            ["pacman", "-Qo", "--", *paths],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=False,
+        )
+    except OSError:
+        return {}
+
+    owned = {}
+    wanted = set(paths)
+    for line in result.stdout.splitlines():
+        file, separator, owner = line.rpartition(" is owned by ")
+        if separator and file in wanted and owner.strip():
+            owned[file] = ("pacman", owner.strip())
+    return owned

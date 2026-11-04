@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Add the evidence graph and two verbs. `xray inspect <command>` shows what a command reaches (commands, sourced files, Python and Perl imports, interpreters, shared libraries, owning packages) with the proof for every link — method, file and line, and a basis of observed, declared, inferred or guessed — plus its blind spots; `--trace` merges a real run and lists what static reading missed. `xray why <command> <target>` prints the proof chains to a file, command, library or package.
+- The shell reader no longer reports a command named `_` when a command substitution is itself run (`$(printf "$cmd")`); it counts as a command built at runtime.
+- Python import resolution keeps the line of each import; package ownership can be looked up for many files in one pacman call.
+
 ## 1.0.0
 
 - Publish as `xray-trust` on PyPI (the `xray` name is taken); the command is still `xray`.

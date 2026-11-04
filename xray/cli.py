@@ -29,10 +29,18 @@ from .identify import get_file_metadata, identify_file
 from .overview import overview_lines
 from .shellmetrics import shell_metrics_lines
 from .sourcelookup import remove_source_cache, source_cache_entries
+from .verbs import is_verb, run_verb
 
 
 def print_help():
     print("Usage: xray <target> [option] [option arguments]")
+    print("       xray inspect <command> [--trace] [--json]")
+    print("       xray why <command> <file, command, library or package> [--json]")
+    print()
+    print("Evidence graph (every link shows its proof: observed, declared, inferred, guessed):")
+    print("  xray inspect <command>        What it reaches: commands, libraries, packages, blind spots")
+    print("  xray inspect <command> --trace -- <args>  Also run it and show what static reading missed")
+    print("  xray why <command> <target>   The proof chain from the command to a target")
     print()
     print("Start with a command overview, then inspect its code or execution chain:")
     print("  xray <command> --report")
@@ -1420,6 +1428,8 @@ def run_json():
 
 def main():
     try:
+        if is_verb(sys.argv[1:]):
+            return run_verb(sys.argv[1:])
         if _json_modifier():
             run_json()
         else:

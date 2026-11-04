@@ -315,8 +315,11 @@ def _scan_words(words, commands, sources, dynamic=None):
         _collect(" ".join(words[index + 1:]), commands, sources, dynamic)
         return
 
-    if dynamic is not None and (first == "eval" or _DYNAMIC.match(first)):
-        dynamic.append(first)
+    # "_" is _extract's placeholder for a command substitution: in command
+    # position it runs whatever the substitution prints.
+    if first == "_" or (dynamic is not None and (first == "eval" or _DYNAMIC.match(first))):
+        if dynamic is not None:
+            dynamic.append(first)
         return
 
     if first in ("source", "."):
@@ -420,3 +423,70 @@ def scan_shell(path):
         tuple(sorted(commands)),
         len(dynamic),
     )
+
+
+def command_lines(path):
+    """Return {name: line} for the first line each command or source appears on.
+
+    Each logical line (backslash continuations joined, here-documents
+    skipped) is read on its own with the same rules as scan_shell. A
+    command that only shows up when lines are read together, such as
+    one inside a multi-line subshell, falls back to the first
+    non-comment line holding the word. Names never found have no entry.
+    """
+
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return {}
+
+    numbered = _numbered_lines(text)
+    found = {}
+    logical = []
+    start = None
+
+    for number, line in numbered:
+        if start is None:
+            start = number
+        if line.endswith("\\"):
+            logical.append(line[:-1])
+            continue
+        logical.append(line)
+        joined = " ".join(logical)
+        logical = []
+        stripped = joined.lstrip()
+        if stripped and not stripped.startswith("#"):
+            commands, sources = set(), set()
+            try:
+                _collect(_CASE_PATTERN.sub("", joined, count=1), commands, sources, [])
+            except (ValueError, IndexError):
+                commands = sources = set()
+            for name in commands | sources:
+                found.setdefault(name, start)
+        start = None
+
+    scan = scan_shell(path)
+    for name in (*scan.commands, *scan.sources):
+        if name in found:
+            continue
+        word = re.compile(r"(?<![\w./-])" + re.escape(name) + r"(?![\w.-])")
+        for number, line in numbered:
+            stripped = line.lstrip()
+            if stripped.startswith("#"):
+                continue
+            if word.search(line):
+                found[name] = number
+                break
+
+    return found
+
+
+def changes_path(path):
+    """Return True when a shell script assigns PATH, so lookups made now may differ."""
+
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+
+    return re.search(r"(?m)^\s*(?:export\s+)?PATH\+?=", text) is not None
