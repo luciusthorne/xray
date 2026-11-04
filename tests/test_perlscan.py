@@ -1,4 +1,5 @@
 import shutil
+from pathlib import Path
 
 import pytest
 
@@ -113,4 +114,7 @@ def test_real_pod2man():
     assert "Getopt::Long" in names
     assert "strict" not in names
     assert "warnings" not in names
-    assert "format_file" in [name for name, _ in scan.subs]
+    # Older podlators (e.g. Ubuntu 24.04) ship pod2man without helper subs.
+    text = Path(shutil.which("pod2man")).read_text(encoding="utf-8", errors="replace")
+    if "sub format_file" in text:
+        assert "format_file" in [name for name, _ in scan.subs]

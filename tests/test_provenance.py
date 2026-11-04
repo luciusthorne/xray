@@ -66,7 +66,18 @@ def test_asks_rpm_about_the_resolved_path(tmp_path, monkeypatch):
     assert run.args[-1] == str(target.resolve())
 
 
-@pytest.mark.skipif(shutil.which("rpm") is None, reason="rpm not installed")
+def _rpm_owns_ls():
+    rpm, ls = shutil.which("rpm"), shutil.which("ls")
+    if rpm is None or ls is None:
+        return False
+    # Debian/Ubuntu can install the rpm tool without an RPM database.
+    probe = subprocess.run(
+        [rpm, "-qf", str(Path(ls).resolve())], capture_output=True, text=True
+    )
+    return probe.returncode == 0
+
+
+@pytest.mark.skipif(not _rpm_owns_ls(), reason="ls is not owned by an RPM package")
 def test_real_system_owner_of_ls():
     ls = shutil.which("ls")
 
