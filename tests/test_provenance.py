@@ -72,7 +72,10 @@ def _rpm_owns_ls():
         return False
     # Debian/Ubuntu can install the rpm tool without an RPM database.
     probe = subprocess.run(
-        [rpm, "-qf", str(Path(ls).resolve())], capture_output=True, text=True
+        [rpm, "-qf", str(Path(ls).resolve())],
+        check=False,
+        capture_output=True,
+        text=True,
     )
     return probe.returncode == 0
 
