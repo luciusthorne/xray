@@ -5,121 +5,31 @@ from xray.libresolve import find_library, ldconfig_cache
 from xray.provenance import package_of
 
 GROUPS = {
-    "files": (
-        "open openat creat close read write pread pwrite lseek fsync fdatasync "
-        "ftruncate truncate unlink unlinkat rename renameat link symlink "
-        "readlink readlinkat stat lstat fstat fstatat newfstatat statx "
-        "chmod fchmod chown fchown lchown fchmodat fchownat utimensat futimens "
-        "access faccessat fcntl dup dup2 dup3 pipe pipe2 ioctl mmap munmap "
-        "mkstemp mkdtemp realpath fopen fdopen fclose fread fgets fileno "
-        "flock getxattr lgetxattr fgetxattr listxattr llistxattr "
-        "posix_fadvise fallocate sendfile copy_file_range"
-    ).split(),
-    "directories": (
-        "opendir fdopendir readdir closedir rewinddir mkdir mkdirat rmdir "
-        "chdir fchdir getcwd fts_open fts_read fts_close fts_set scandir "
-        "glob globfree"
-    ).split(),
-    "memory": (
-        "malloc calloc realloc reallocarray free memcpy memmove mempcpy memset "
-        "memcmp memchr memrchr posix_memalign aligned_alloc mprotect madvise "
-        "mremap brk sbrk alloca obstack_free _obstack_begin _obstack_newchunk"
-    ).split(),
-    "strings": (
-        "strlen strnlen strcmp strncmp strcasecmp strncasecmp strcoll strcpy "
-        "strncpy stpcpy strcat strncat strchr strrchr strstr strchrnul strdup "
-        "strndup strtol strtoul strtoll strtoull strtoimax strtoumax strtod "
-        "atoi atol strtok strtok_r strspn strcspn strpbrk strerror strerror_r "
-        "strsignal strxfrm qsort bsearch mbrtowc mbstowcs wcwidth mbsinit "
-        "mbrlen wcrtomb iswprint towlower towupper tolower toupper isalpha "
-        "isdigit isspace isprint iswalnum iswcntrl iswspace btowc wctob"
-    ).split(),
-    "stdio": (
-        "printf fprintf sprintf snprintf vprintf vfprintf vsprintf vsnprintf "
-        "dprintf vdprintf asprintf vasprintf puts fputs putc fputc putchar "
-        "fwrite fflush getc fgetc getchar ungetc scanf sscanf fscanf getline "
-        "getdelim setvbuf perror error error_at_line __fpending ferror feof "
-        "clearerr fseek ftell rewind __overflow __uflow putc_unlocked "
-        "fputc_unlocked fwrite_unlocked"
-    ).split(),
-    "time": (
-        "time clock_gettime clock_getres gettimeofday localtime localtime_r "
-        "gmtime gmtime_r mktime timegm strftime strptime nanosleep sleep "
-        "usleep clock difftime tzset timer_create timer_settime timerfd_create"
-    ).split(),
-    "locale": (
-        "setlocale localeconv nl_langinfo textdomain bindtextdomain gettext "
-        "dcgettext dgettext dcngettext ngettext bind_textdomain_codeset "
-        "iconv iconv_open iconv_close newlocale uselocale freelocale "
-        "__ctype_b_loc __ctype_tolower_loc __ctype_toupper_loc "
-        "__ctype_get_mb_cur_max"
-    ).split(),
-    "signals": (
-        "signal sigaction sigprocmask sigemptyset sigfillset sigaddset "
-        "sigdelset sigismember sigsuspend sigpending raise kill killpg "
-        "alarm pause sigaltstack sigwait"
-    ).split(),
-    "processes": (
-        "fork vfork execve execv execvp execl execlp execle posix_spawn "
-        "posix_spawnp wait waitpid wait4 system popen pclose getpid getppid "
-        "setsid setpgid getpgid getuid geteuid getgid getegid setuid setgid "
-        "getgroups setgroups getpwnam getpwuid getgrnam getgrgid getlogin "
-        "prctl sched_yield sched_getaffinity getrlimit setrlimit getpriority "
-        "setpriority umask isatty ttyname tcgetattr tcsetattr tcgetpgrp "
-        "getrandom getentropy"
-    ).split(),
-    "environment": (
-        "getenv setenv unsetenv putenv clearenv secure_getenv environ "
-        "__progname program_invocation_name program_invocation_short_name "
-        "getopt getopt_long getopt_long_only optarg optind opterr optopt "
-        "gethostname sysconf pathconf confstr uname"
-    ).split(),
-    "network": (
-        "socket connect bind listen accept accept4 send sendto sendmsg recv "
-        "recvfrom recvmsg getsockopt setsockopt getsockname getpeername "
-        "shutdown socketpair poll ppoll select pselect epoll_create "
-        "epoll_create1 epoll_ctl epoll_wait getaddrinfo freeaddrinfo "
-        "gai_strerror gethostbyname getservbyname getnameinfo inet_ntop "
-        "inet_pton inet_addr htons ntohs htonl ntohl if_nametoindex"
-    ).split(),
-    "threads": (
-        "pthread_create pthread_join pthread_self pthread_mutex_lock "
-        "pthread_mutex_unlock pthread_mutex_init pthread_mutex_destroy "
-        "pthread_cond_wait pthread_cond_signal pthread_cond_broadcast "
-        "pthread_once pthread_key_create pthread_getspecific "
-        "pthread_setspecific pthread_attr_init pthread_detach sem_init "
-        "sem_wait sem_post thrd_create call_once"
-    ).split(),
-    "security": (
-        "getfilecon lgetfilecon fgetfilecon setfilecon lsetfilecon "
-        "fsetfilecon freecon getcon setcon matchpathcon "
-        "is_selinux_enabled is_selinux_mls_enabled selabel_open "
-        "selabel_lookup selabel_close security_check_context "
-        "getprevcon setexeccon setfscreatecon"
-    ).split(),
-    "runtime": (
-        "__libc_start_main __cxa_atexit __cxa_finalize __gmon_start__ "
-        "__stack_chk_fail __assert_fail abort exit _exit atexit "
-        "_ITM_deregisterTMCloneTable _ITM_registerTMCloneTable "
-        "__errno_location _Unwind_Resume __gxx_personality_v0 dlopen "
-        "dlsym dlclose dlerror dl_iterate_phdr __tls_get_addr "
-        "__register_atfork __libc_single_threaded"
-    ).split(),
+    "files": ["open", "openat", "creat", "close", "read", "write", "pread", "pwrite", "lseek", "fsync", "fdatasync", "ftruncate", "truncate", "unlink", "unlinkat", "rename", "renameat", "link", "symlink", "readlink", "readlinkat", "stat", "lstat", "fstat", "fstatat", "newfstatat", "statx", "chmod", "fchmod", "chown", "fchown", "lchown", "fchmodat", "fchownat", "utimensat", "futimens", "access", "faccessat", "fcntl", "dup", "dup2", "dup3", "pipe", "pipe2", "ioctl", "mmap", "munmap", "mkstemp", "mkdtemp", "realpath", "fopen", "fdopen", "fclose", "fread", "fgets", "fileno", "flock", "getxattr", "lgetxattr", "fgetxattr", "listxattr", "llistxattr", "posix_fadvise", "fallocate", "sendfile", "copy_file_range"],
+    "directories": ["opendir", "fdopendir", "readdir", "closedir", "rewinddir", "mkdir", "mkdirat", "rmdir", "chdir", "fchdir", "getcwd", "fts_open", "fts_read", "fts_close", "fts_set", "scandir", "glob", "globfree"],
+    "memory": ["malloc", "calloc", "realloc", "reallocarray", "free", "memcpy", "memmove", "mempcpy", "memset", "memcmp", "memchr", "memrchr", "posix_memalign", "aligned_alloc", "mprotect", "madvise", "mremap", "brk", "sbrk", "alloca", "obstack_free", "_obstack_begin", "_obstack_newchunk"],
+    "strings": ["strlen", "strnlen", "strcmp", "strncmp", "strcasecmp", "strncasecmp", "strcoll", "strcpy", "strncpy", "stpcpy", "strcat", "strncat", "strchr", "strrchr", "strstr", "strchrnul", "strdup", "strndup", "strtol", "strtoul", "strtoll", "strtoull", "strtoimax", "strtoumax", "strtod", "atoi", "atol", "strtok", "strtok_r", "strspn", "strcspn", "strpbrk", "strerror", "strerror_r", "strsignal", "strxfrm", "qsort", "bsearch", "mbrtowc", "mbstowcs", "wcwidth", "mbsinit", "mbrlen", "wcrtomb", "iswprint", "towlower", "towupper", "tolower", "toupper", "isalpha", "isdigit", "isspace", "isprint", "iswalnum", "iswcntrl", "iswspace", "btowc", "wctob"],
+    "stdio": ["printf", "fprintf", "sprintf", "snprintf", "vprintf", "vfprintf", "vsprintf", "vsnprintf", "dprintf", "vdprintf", "asprintf", "vasprintf", "puts", "fputs", "putc", "fputc", "putchar", "fwrite", "fflush", "getc", "fgetc", "getchar", "ungetc", "scanf", "sscanf", "fscanf", "getline", "getdelim", "setvbuf", "perror", "error", "error_at_line", "__fpending", "ferror", "feof", "clearerr", "fseek", "ftell", "rewind", "__overflow", "__uflow", "putc_unlocked", "fputc_unlocked", "fwrite_unlocked"],
+    "time": ["time", "clock_gettime", "clock_getres", "gettimeofday", "localtime", "localtime_r", "gmtime", "gmtime_r", "mktime", "timegm", "strftime", "strptime", "nanosleep", "sleep", "usleep", "clock", "difftime", "tzset", "timer_create", "timer_settime", "timerfd_create"],
+    "locale": ["setlocale", "localeconv", "nl_langinfo", "textdomain", "bindtextdomain", "gettext", "dcgettext", "dgettext", "dcngettext", "ngettext", "bind_textdomain_codeset", "iconv", "iconv_open", "iconv_close", "newlocale", "uselocale", "freelocale", "__ctype_b_loc", "__ctype_tolower_loc", "__ctype_toupper_loc", "__ctype_get_mb_cur_max"],
+    "signals": ["signal", "sigaction", "sigprocmask", "sigemptyset", "sigfillset", "sigaddset", "sigdelset", "sigismember", "sigsuspend", "sigpending", "raise", "kill", "killpg", "alarm", "pause", "sigaltstack", "sigwait"],
+    "processes": ["fork", "vfork", "execve", "execv", "execvp", "execl", "execlp", "execle", "posix_spawn", "posix_spawnp", "wait", "waitpid", "wait4", "system", "popen", "pclose", "getpid", "getppid", "setsid", "setpgid", "getpgid", "getuid", "geteuid", "getgid", "getegid", "setuid", "setgid", "getgroups", "setgroups", "getpwnam", "getpwuid", "getgrnam", "getgrgid", "getlogin", "prctl", "sched_yield", "sched_getaffinity", "getrlimit", "setrlimit", "getpriority", "setpriority", "umask", "isatty", "ttyname", "tcgetattr", "tcsetattr", "tcgetpgrp", "getrandom", "getentropy"],
+    "environment": ["getenv", "setenv", "unsetenv", "putenv", "clearenv", "secure_getenv", "environ", "__progname", "program_invocation_name", "program_invocation_short_name", "getopt", "getopt_long", "getopt_long_only", "optarg", "optind", "opterr", "optopt", "gethostname", "sysconf", "pathconf", "confstr", "uname"],
+    "network": ["socket", "connect", "bind", "listen", "accept", "accept4", "send", "sendto", "sendmsg", "recv", "recvfrom", "recvmsg", "getsockopt", "setsockopt", "getsockname", "getpeername", "shutdown", "socketpair", "poll", "ppoll", "select", "pselect", "epoll_create", "epoll_create1", "epoll_ctl", "epoll_wait", "getaddrinfo", "freeaddrinfo", "gai_strerror", "gethostbyname", "getservbyname", "getnameinfo", "inet_ntop", "inet_pton", "inet_addr", "htons", "ntohs", "htonl", "ntohl", "if_nametoindex"],
+    "threads": ["pthread_create", "pthread_join", "pthread_self", "pthread_mutex_lock", "pthread_mutex_unlock", "pthread_mutex_init", "pthread_mutex_destroy", "pthread_cond_wait", "pthread_cond_signal", "pthread_cond_broadcast", "pthread_once", "pthread_key_create", "pthread_getspecific", "pthread_setspecific", "pthread_attr_init", "pthread_detach", "sem_init", "sem_wait", "sem_post", "thrd_create", "call_once"],
+    "security": ["getfilecon", "lgetfilecon", "fgetfilecon", "setfilecon", "lsetfilecon", "fsetfilecon", "freecon", "getcon", "setcon", "matchpathcon", "is_selinux_enabled", "is_selinux_mls_enabled", "selabel_open", "selabel_lookup", "selabel_close", "security_check_context", "getprevcon", "setexeccon", "setfscreatecon"],
+    "runtime": ["__libc_start_main", "__cxa_atexit", "__cxa_finalize", "__gmon_start__", "__stack_chk_fail", "__assert_fail", "abort", "exit", "_exit", "atexit", "_ITM_deregisterTMCloneTable", "_ITM_registerTMCloneTable", "__errno_location", "_Unwind_Resume", "__gxx_personality_v0", "dlopen", "dlsym", "dlclose", "dlerror", "dl_iterate_phdr", "__tls_get_addr", "__register_atfork", "__libc_single_threaded"],
 }
 
 for _group, _names in {
-    "strings": (
-        "isalnum isblank iscntrl isgraph islower ispunct isupper isxdigit "
-        "regcomp regexec regfree re_search re_compile_pattern re_set_syntax "
-        "strverscmp rawmemchr mbrtoc32"
-    ).split(),
-    "stdio": "stdout stderr stdin __fwriting".split(),
-    "directories": "dirfd fnmatch".split(),
-    "files": "utimes futimesat mkostemp".split(),
-    "security": "getfscreatecon".split(),
-    "locale": "nl_langinfo_l".split(),
-    "environment": "__progname_full".split(),
-    "runtime": "_setjmp setjmp longjmp".split(),
+    "strings": ["isalnum", "isblank", "iscntrl", "isgraph", "islower", "ispunct", "isupper", "isxdigit", "regcomp", "regexec", "regfree", "re_search", "re_compile_pattern", "re_set_syntax", "strverscmp", "rawmemchr", "mbrtoc32"],
+    "stdio": ["stdout", "stderr", "stdin", "__fwriting"],
+    "directories": ["dirfd", "fnmatch"],
+    "files": ["utimes", "futimesat", "mkostemp"],
+    "security": ["getfscreatecon"],
+    "locale": ["nl_langinfo_l"],
+    "environment": ["__progname_full"],
+    "runtime": ["_setjmp", "setjmp", "longjmp"],
 }.items():
     GROUPS.setdefault(_group, []).extend(_names)
 

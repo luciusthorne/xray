@@ -74,8 +74,10 @@ def test_calls_lines_for_python_script(tmp_path):
     script = write(tmp_path / "tool", "#!/usr/bin/env python3\n")
 
     assert calls_lines(script) == [
-        "Not a shell script or binary (python): "
-        "--calls reads shell scripts and ELF binaries only"
+        (
+            "Not a supported command type (python): "
+            "--calls reads shell, Perl, Ruby, JavaScript, Lua, TypeScript, C and ELF commands"
+        )
     ]
 
 
@@ -103,7 +105,7 @@ def run_xray(cwd, bindir, *args):
 
 
 def test_cli_calls_on_a_shell_script(tmp_path):
-    bindir, a, b = make_bin(tmp_path)
+    bindir, _a, b = make_bin(tmp_path)
     script = write(tmp_path / "tool", SCRIPT)
 
     result = run_xray(tmp_path, bindir, str(script), "--calls")
@@ -115,13 +117,14 @@ def test_cli_calls_on_a_shell_script(tmp_path):
 
 
 def test_cli_calls_on_a_python_script(tmp_path):
-    bindir, a, b = make_bin(tmp_path)
+    bindir, _a, _b = make_bin(tmp_path)
     script = write(tmp_path / "tool", "#!/usr/bin/env python3\n")
 
     result = run_xray(tmp_path, bindir, str(script), "--calls")
 
     assert result.returncode == 0
-    assert "Not a shell script or binary (python)" in result.stdout
+    assert "Not a supported command type (python)" in result.stdout
+    assert "Ruby, JavaScript, Lua, TypeScript, C and ELF" in result.stdout
 
 
 def test_help_mentions_calls(tmp_path):

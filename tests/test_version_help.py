@@ -1,10 +1,14 @@
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
 
 import xray
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -39,11 +43,10 @@ def test_short_version_option():
 
 
 def test_version_matches_pyproject():
-    text = (REPO / "pyproject.toml").read_text(encoding="utf-8")
-    match = re.search(r'^version = "([^"]+)"', text, re.MULTILINE)
+    project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
 
-    assert match is not None
-    assert match.group(1) == xray.__version__
+    assert "version" in project["project"]["dynamic"]
+    assert project["tool"]["setuptools"]["dynamic"]["version"]["attr"] == "xray.__version__"
 
 
 def test_help_documents_exit_codes():

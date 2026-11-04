@@ -1,7 +1,7 @@
 import ast
 
 from .dependencies import classify_dependency, discover_local_modules
-from .errors import FileError, AnalysisError
+from .errors import AnalysisError, FileError
 
 
 def analyze_python(path, project_root=None):

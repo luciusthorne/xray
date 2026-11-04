@@ -5,7 +5,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import xray.graphjson as graphjson_module
 from xray.html import render_html
 
 REPO = Path(__file__).resolve().parent.parent

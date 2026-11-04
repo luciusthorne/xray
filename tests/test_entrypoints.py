@@ -68,6 +68,13 @@ def test_plain_text_is_unknown(tmp_path):
     assert command_kind(path) == "unknown"
 
 
+def test_shell_source_suffix_is_recognized_without_shebang(tmp_path):
+    path = tmp_path / "lib.sh"
+    path.write_text("helper() { :; }\n", encoding="utf-8")
+
+    assert command_kind(path) == "shell"
+
+
 def test_missing_file_is_unknown(tmp_path):
     assert command_kind(tmp_path / "nope") == "unknown"
 

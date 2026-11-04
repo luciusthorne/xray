@@ -1,4 +1,3 @@
-import subprocess
 
 import xray.command_analyzers as analyzers_module
 import xray.perlscan as perlscan_module

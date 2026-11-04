@@ -29,7 +29,7 @@ def test_libraries_can_be_hidden(tmp_path, monkeypatch):
         "scan_elf",
         lambda path: ElfScan(needed=("libfoo.so.1",)),
     )
-    monkeypatch.setattr(analyzers_module, "ldconfig_cache", lambda: {})
+    monkeypatch.setattr(analyzers_module, "ldconfig_cache", dict)
 
     assert chain_lines(binary, include_libraries=False) == [
         f"{binary.resolve()} [elf]"

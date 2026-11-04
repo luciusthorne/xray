@@ -8,7 +8,6 @@ import pytest
 REPO = Path(__file__).resolve().parent.parent
 
 PYTHON_ONLY = [
-    "--symbols",
     "--references",
     "--relationships",
     "--unused",
@@ -44,7 +43,17 @@ def test_symbols_option(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert "Symbols in a.py" in result.stdout
-    assert "- function: hello (line 1)" in result.stdout
+    assert "- 1: function hello" in result.stdout
+
+
+def test_symbols_option_uses_the_selected_language_analyzer(tmp_path):
+    script = write(tmp_path / "tool", "#!/bin/sh\nhello() { echo hi; }\n")
+
+    result = run_xray(tmp_path, str(script), "--symbols")
+
+    assert result.returncode == 0, result.stderr
+    assert "Symbols in tool" in result.stdout
+    assert "hello" in result.stdout
 
 
 def test_unused_option(tmp_path):

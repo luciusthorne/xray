@@ -3,6 +3,9 @@ from pathlib import Path
 from . import command_analyzers, python_analyzer  # noqa: F401  (register analyzers)
 from .analyzers import registry
 from .entrypoints import command_kind
+from .identify import get_file_metadata
+from .model import AnalysisDocument, FileInfo
+from .provenance import package_of
 from .shellscan import scan_shell
 
 
@@ -15,29 +18,16 @@ def export_data(path):
 
     path = Path(path).resolve()
     analyzer = registry.analyzer_for(path)
-    symbols = []
-    edges = []
     notes = []
 
     if analyzer is not None:
-        symbols = [
-            {
-                "name": symbol.name,
-                "kind": symbol.kind,
-                "line": symbol.line,
-                "parent": symbol.parent,
-            }
-            for symbol in analyzer.symbols(path)
-        ]
-        edges = [
-            {
-                "source": edge.source,
-                "target": edge.target,
-                "kind": edge.kind,
-                "status": edge.status,
-            }
-            for edge in analyzer.edges(path)
-        ]
+        result = analyzer.analyze(path)
+    else:
+        kind = command_kind(path)
+        result = AnalysisDocument(
+            file=FileInfo(str(path), kind),
+            analyzer=None,
+        )
 
     if analyzer is not None and analyzer.name == "shell":
         scan = scan_shell(path)
@@ -59,11 +49,28 @@ def export_data(path):
         if dynamic_note:
             notes.append(dynamic_note)
 
-    return {
-        "file": str(path),
-        "kind": command_kind(path),
-        "analyzer": analyzer.name if analyzer else None,
-        "symbols": symbols,
-        "edges": edges,
-        "notes": notes,
-    }
+    if notes:
+        result = AnalysisDocument(
+            file=result.file,
+            analyzer=result.analyzer,
+            symbols=result.symbols,
+            relationships=result.relationships,
+            notes=tuple(notes),
+        )
+
+    result = AnalysisDocument(
+        file=FileInfo(
+            result.file.path,
+            result.file.kind,
+            result.file.language,
+            {
+                "filesystem": get_file_metadata(path),
+                "package": package_of(path),
+            },
+        ),
+        analyzer=result.analyzer,
+        symbols=result.symbols,
+        relationships=result.relationships,
+        notes=result.notes,
+    )
+    return result.to_dict()

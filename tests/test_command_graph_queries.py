@@ -73,7 +73,7 @@ def test_cli_tree_for_a_command(tmp_path):
 
 
 def test_cli_deps_for_a_command(tmp_path):
-    bindir, tool, b, c = setup(tmp_path)
+    bindir, tool, b, _c = setup(tmp_path)
 
     result = run_xray(tmp_path, bindir, str(tool), "--deps")
 
@@ -82,7 +82,7 @@ def test_cli_deps_for_a_command(tmp_path):
 
 
 def test_cli_impact_for_a_command(tmp_path):
-    bindir, tool, b, c = setup(tmp_path)
+    bindir, _tool, _b, c = setup(tmp_path)
 
     result = run_xray(tmp_path, bindir, str(c), "--impact")
 

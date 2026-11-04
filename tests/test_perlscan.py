@@ -104,14 +104,17 @@ def test_resolve_module_looks_through_the_include_paths(tmp_path):
 
 
 @pytest.mark.skipif(
-    not Path("/usr/bin/pod2man").is_file(), reason="pod2man not installed"
+    shutil.which("pod2man") is None, reason="pod2man not installed"
 )
 def test_real_pod2man():
-    scan = scan_perl("/usr/bin/pod2man")
+    scan = scan_perl(shutil.which("pod2man"))
     names = [name for name, _ in scan.modules]
 
     assert "Pod::Man" in names
     assert "Getopt::Long" in names
     assert "strict" not in names
     assert "warnings" not in names
-    assert "format_file" in [name for name, _ in scan.subs]
+    # Older podlators (e.g. Ubuntu 24.04) ship pod2man without helper subs.
+    text = Path(shutil.which("pod2man")).read_text(encoding="utf-8", errors="replace")
+    if "sub format_file" in text:
+        assert "format_file" in [name for name, _ in scan.subs]

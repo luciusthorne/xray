@@ -70,7 +70,7 @@ def test_library_list_is_capped(tmp_path, monkeypatch):
     monkeypatch.setattr(
         overview_module, "scan_elf", lambda path: ElfScan(needed=names)
     )
-    monkeypatch.setattr(overview_module, "ldconfig_cache", lambda: {})
+    monkeypatch.setattr(overview_module, "ldconfig_cache", dict)
     monkeypatch.setattr(overview_module, "package_of", lambda path: None)
 
     lines = overview_lines(binary)

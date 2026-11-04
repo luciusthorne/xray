@@ -1,31 +1,41 @@
 from collections import deque
 from pathlib import Path
 
-from . import __version__
-from . import command_analyzers, python_analyzer  # noqa: F401  (register analyzers)
+from . import __version__, command_analyzers, python_analyzer  # noqa: F401  (register analyzers)
 from .analyzers import registry
 from .disasm import disasm_result
-from .entrypoints import command_kind, import_files
+from .entrypoints import command_kind
 from .errors import XRAYError
 from .graph import DependencyGraph
+from .identify import get_file_metadata
+from .model import (
+    LANGUAGE_NAMES,
+    MODEL_SCHEMA_VERSION,
+    Edge,
+    FileInfo,
+    edge_data,
+    symbol_data,
+)
 from .provenance import package_of
 
-EXPANDABLE = ("python", "shell", "elf", "perl")
+EXPANDABLE = (
+    "python", "shell", "elf", "perl", "ruby", "javascript", "lua", "typescript", "c"
+)
 
 
-def _symbol_count(path, kind):
-    if kind not in ("python", "shell"):
-        return 0
+def _symbols(path, kind):
+    if kind not in ("python", "shell", "ruby", "javascript", "lua", "typescript", "c"):
+        return []
 
     analyzer = registry.analyzer_for(path)
 
     if analyzer is None:
-        return 0
+        return []
 
     try:
-        return len(analyzer.symbols(path))
+        return analyzer.symbols(path)
     except XRAYError:
-        return 0
+        return []
 
 
 def _children(path, kind):
@@ -36,20 +46,12 @@ def _children(path, kind):
 
     found = []
 
-    if kind == "python":
-        for target in import_files(path):
-            found.append(
-                ("imports", target, target.name, "resolved", command_kind(target))
-            )
-
-        return found
-
     analyzer = registry.analyzer_for(path)
 
     if analyzer is None:
         return found
 
-    for edge in analyzer.edges(path):
+    for edge in analyzer.command_edges(path):
         if edge.status != "resolved" or edge.target is None:
             found.append((edge.kind, None, edge.name, edge.status, None))
             continue
@@ -101,11 +103,20 @@ def graph_data(
     truncated = False
 
     def add_node(node_path, kind):
-        nodes[str(node_path)] = {
-            "id": str(node_path),
-            "kind": kind,
-            "package": package_of(node_path),
-            "symbol_count": _symbol_count(node_path, kind),
+        info = FileInfo(str(node_path), kind, LANGUAGE_NAMES.get(kind))
+        symbols = _symbols(node_path, kind)
+        package = package_of(node_path)
+        nodes[info.path] = {
+            "id": info.path,
+            "kind": info.kind,
+            "language": info.language,
+            "package": package,
+            "symbol_count": len(symbols),
+            "symbols": [symbol_data(symbol) for symbol in symbols],
+            "metadata": {
+                "filesystem": get_file_metadata(node_path),
+                "package": package,
+            },
         }
 
     add_node(root, root_kind)
@@ -161,8 +172,11 @@ def graph_data(
             nodes[key] = {
                 "id": key,
                 "kind": "function",
+                "language": "ELF",
                 "package": None,
                 "symbol_count": 0,
+                "symbols": [],
+                "metadata": {"package": None},
             }
 
             return key
@@ -182,8 +196,11 @@ def graph_data(
                         {
                             "id": target,
                             "kind": "import",
+                            "language": "ELF",
                             "package": None,
                             "symbol_count": 0,
+                            "symbols": [],
+                            "metadata": {"package": None},
                         },
                     )
                 else:
@@ -203,19 +220,15 @@ def graph_data(
         "root": str(root),
         "nodes": [nodes[key] for key in sorted(nodes)],
         "edges": [
-            {
-                "source": source,
-                "target": target,
-                "kind": kind,
-                "status": status,
-                "name": name,
-            }
+            edge_data(Edge(source, target, kind, status, name))
             for source, target, kind, status, name in ordered
         ],
         "metadata": {
+            "schema_version": MODEL_SCHEMA_VERSION,
             "xray_version": __version__,
             "max_depth": max_depth,
             "max_files": max_files,
+            "max_functions": max_functions,
             "truncated": truncated,
         },
     }

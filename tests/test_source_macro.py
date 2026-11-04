@@ -32,7 +32,7 @@ def test_macro_generated_add_definition_is_found(tmp_path):
     result = find_definition(tmp_path, "mpz_add")
 
     assert result is not None
-    path, line, shown, others = result
+    path, _line, shown, others = result
     assert path.name == "aors.h"
     assert "FUNCTION (int operation)" in shown
     assert shown[-1] == "}"
@@ -45,7 +45,7 @@ def test_macro_generated_sub_definition_is_found(tmp_path):
     result = find_definition(tmp_path, "mpz_sub")
 
     assert result is not None
-    path, line, shown, others = result
+    path, _line, shown, others = result
     assert path.name == "aors.h"
     assert "FUNCTION (int operation)" in shown
     assert shown[-1] == "}"
@@ -74,36 +74,6 @@ def test_literal_definition_still_works(tmp_path):
 
     assert result is not None
     assert "ordinary_function (void)" in result[2]
-
-
-def test_macro_lookup_identifies_the_requested_definition(tmp_path):
-    write(tmp_path, "mpz/aors.h", GMP_PATTERN)
-
-    add = find_definition(tmp_path, "mpz_add")
-    sub = find_definition(tmp_path, "mpz_sub")
-
-    assert add is not None and sub is not None
-
-    # Both names share a template, but the matching macro definitions differ.
-    assert "#define FUNCTION mpz_add" in add[2]
-    assert "#define FUNCTION mpz_sub" not in add[2]
-    assert "#define FUNCTION mpz_sub" in sub[2]
-    assert "#define FUNCTION mpz_add" not in sub[2]
-
-
-def test_macro_lookup_identifies_the_requested_definition(tmp_path):
-    write(tmp_path, "mpz/aors.h", GMP_PATTERN)
-
-    add = find_definition(tmp_path, "mpz_add")
-    sub = find_definition(tmp_path, "mpz_sub")
-
-    assert add is not None and sub is not None
-
-    # Both names share a template, but the matching macro definitions differ.
-    assert "#define FUNCTION mpz_add" in add[2]
-    assert "#define FUNCTION mpz_sub" not in add[2]
-    assert "#define FUNCTION mpz_sub" in sub[2]
-    assert "#define FUNCTION mpz_add" not in sub[2]
 
 
 def test_macro_lookup_identifies_the_requested_definition(tmp_path):

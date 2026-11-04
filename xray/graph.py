@@ -8,6 +8,8 @@ class DependencyGraph:
     def __init__(self):
         self.nodes = set()
         self.edges = []
+        self.external_edges = []
+        self.unresolved_edges = []
 
     def add_node(self, node):
         self.nodes.add(node)

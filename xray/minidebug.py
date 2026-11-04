@@ -54,7 +54,7 @@ def parse_function_table(text):
 
 
 def _symbol_text(path, timeout):
-    """Return readelf -s text of the .gnu_debugdata table, or "" on any failure."""
+    """Return readelf -s text from .gnu_debugdata, or "" on any failure."""
 
     path = Path(path)
 
@@ -121,10 +121,36 @@ def read_minidebuginfo(path, timeout=10):
 
 
 def read_function_table(path, timeout=10):
-    """Return (address, size, name) of the functions in .gnu_debugdata.
+    """Return (address, size, name) from mini-debuginfo or the ELF symbol table.
 
-    Same source and failure behavior as read_minidebuginfo. The
-    addresses let calls found in disassembly be matched to functions.
+    Some stripped binaries contain .gnu_debugdata; otherwise an unstripped
+    binary may retain a regular symbol table. The addresses let calls found
+    in disassembly be matched to functions. A stripped binary with neither
+    source returns an empty tuple.
     """
 
-    return parse_function_table(_symbol_text(path, timeout))
+    path = Path(path)
+    if command_kind(path) != "elf":
+        return ()
+
+    table = parse_function_table(_symbol_text(path, timeout))
+    if table:
+        return table
+
+    env = dict(os.environ)
+    env["LC_ALL"] = "C"
+    try:
+        result = subprocess.run(
+            ["readelf", "-sW", str(path)],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            env=env,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ()
+    if result.returncode != 0:
+        return ()
+    return parse_function_table(result.stdout)

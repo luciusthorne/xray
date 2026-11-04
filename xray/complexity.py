@@ -4,7 +4,6 @@ from pathlib import Path
 
 from .errors import AnalysisError, FileError, XRAYError
 
-
 _TRY_NODES = tuple(
     node
     for node in (ast.Try, getattr(ast, "TryStar", None))
@@ -165,9 +164,8 @@ def _complexity(function):
             elif isinstance(node, ast.comprehension):
                 total += 1 + len(node.ifs)
 
-            elif isinstance(node, ast.match_case):
-                if not _is_irrefutable(node):
-                    total += 1
+            elif isinstance(node, ast.match_case) and not _is_irrefutable(node):
+                total += 1
 
     return total
 

@@ -1,244 +1,159 @@
-# xray
+# XRAY
 
-xray is a lightweight static-analysis tool for Python projects and for the commands installed on your system.
+XRAY inspects local commands, source files, and ELF binaries. It combines static language analyzers, dependency and call graphs, source lookup, and an interactive graph viewer. Results describe what the files and metadata show; they are not proof of runtime behavior.
 
-It builds a dependency graph of a Python project, reads the code inside it, and can follow a command such as `pytest` into the code it launches.
+## Install
 
-Think of it as a small X-ray machine for your codebase.
+Requires Python 3.10 or newer. The Python package has no third-party runtime dependencies. The package is named `xray-trust`; the command it installs is `xray`.
 
-## What it can do
-
-- **Dependency graph:** dependencies, dependents, trees, impact analysis, cycles, depth, reachability, paths and strongly connected components.
-- **Commands:** follow a launcher into the installed code it runs, and show the tree of what a script or binary runs.
-- **Static analysis of Python:** symbols, references, relationships, unused imports, unused symbols and complexity.
-- **Architecture metrics:** a static call graph, module coupling and call coupling.
-- **Command overview:** `xray <command>` shows what a shell script runs, what an ELF binary links to, and the installed code behind a Python launcher.
-- **Shell scripts:** approximate complexity metrics with `--shell-metrics`.
-- **JSON export:** `--json` prints the symbols and edges of a file as data.
-
-## Installation
-
-From the project directory:
-
-```
-pip install -e .
+```sh
+pipx install xray-trust    # or: python -m pip install xray-trust
+xray --help
 ```
 
-## Usage
+From a checkout: `python -m pip install .`
 
-```
-xray <target> [option]
-```
+Install test dependencies and run the full suite:
 
-The target is a file path or the name of a command found on your `PATH`. Without an option, xray prints the file type and size. Python files get a short summary. Shell scripts, ELF binaries and Python launchers get an **Overview** section:
-
-- a shell script lists its functions, the files it sources and the external commands it runs, with where each resolves to
-- an ELF binary lists its interpreter, the shared libraries it links to and the symbols it imports
-- a Python launcher (a Python command without a `.py` suffix, such as `pytest`) lists the installed file it runs
-
-If a shell script has no external commands that static reading can see, the overview says so, because commands run through variables or `eval` are not visible.
-
-You can also run it as a module:
-
-```
-python -m xray <target> [option]
+```sh
+python -m pip install '.[test]'
+python -m pytest
 ```
 
-Other flags:
+## Quick start
 
-```
-xray --help       # or -h
-xray --version    # or -V
-```
-
-## Dependency-graph options
-
-| Option | Shows |
-|---|---|
-| `--deps` | what the file depends on |
-| `--dependents` | which files depend on it |
-| `--tree` | the dependency tree |
-| `--impact` | directly and indirectly affected files, and impact chains |
-| `--cycles` | circular dependencies involving the file |
-| `--depth` | the maximum dependency depth |
-| `--project` | file count, dependency edges, leaf files, cycles and hotspots |
-| `--components` | strongly connected components |
-| `--reachable` | everything reachable from the file |
-| `--reverse-reachable` | everything that can reach the file |
-| `--path <target>` | the shortest dependency path to another file, or `No path found` |
-| `--inspect [--md]` | unified inspection combining command identity, overview and source information; `--md` prints Markdown |
-
-Example:
-
-```
-xray test_programs/cycle_a.py --path test_programs/cycle_c.py
-cycle_a.py → cycle_b.py → cycle_c.py
+```sh
+xray
+xray pytest
+xray pytest --report
+xray pytest --inspect --md > pytest.md
+xray pytest --chain
+xray pytest --graph-json > pytest-graph.json
+xray pytest --html > pytest-graph.html
+xray ls --code
+xray ls --code main
 ```
 
-## Command options
+Running `xray` by itself reads XRAY's own CLI source and suggests follow-up commands. Running `xray <command>` gives that command's overview and suggests code, calls, chains, dependency, cycle, path, and JSON queries. For ELF commands with configured debuginfod, `xray <command> --code` lists function names, and `--code <function>` reads the matching C source.
 
-These work on scripts and binaries, including commands found on `PATH`.
+## What it reads
 
-| Option | Shows |
-|---|---|
-| `--launch` | the installed code a Python launcher runs |
-| `--launch-depth` | the same, following imports further down |
-| `--launch-limit` | the same, with a cap on how many files are listed |
-| `--calls` | what a script or binary runs |
-| `--chain` | the tree of what a command runs |
-| `--package` | the installed package that owns the file (uses rpm) |
-| `--html` | one self-contained HTML page that draws the same graph as `--graph-json`, with zoom, pan, dragging, click-to-inspect, a search box, kind filters, cycle highlighting, shift-click shortest paths, impact highlighting and a per-node summary of reach, impact and cycles; save it with `xray tool --html > graph.html` and open it in a browser; works offline |
-| `--graph-json` | the whole graph of what a command runs, sources, imports or links to, as JSON: nodes (kind, package, symbol count), edges (with names) and metadata; stops at depth 5 and 100 files and says when it did |
-| `--uses` | the symbols an ELF binary imports, grouped by purpose (files, memory, network, ...); a name means the binary can call it, not that it does at run time; the default view shows a one-line summary |
-| `--disasm-function <name>` | one function of an ELF binary as annotated disassembly (arguments, cross-references), read through rizin; the name must be one of the function names from `.gnu_debugdata`, and the binary is never run |
-| `--report [--md]` | one report about a command: identity, package, overview and source files (listed only when the source package is already cached, so it never downloads); `--md` prints Markdown you can save with `>` |
-| `--code [name] [--asm]` | the code of any command: for an ELF binary the source files, or the C source of a function (with `--asm`, its disassembly too); for a shell or Perl script the text with line numbers, or one function from its line |
-| `--source <function>` | the C source of a function of an installed binary: the source package is downloaded once into `~/.cache/xray`, and the definition is found by name; it is upstream code, so Fedora patches may make it differ from what is installed |
-| `--serve` | starts a local page on 127.0.0.1 for an ELF binary: click a function node to load its C source and annotated disassembly; stop it with Ctrl+C |
-| `--disasm` | which functions an ELF binary calls directly, read from `objdump -d` without running it, with function names from `.gnu_debugdata` when the binary has them; imports are marked, and indirect calls and calls into the middle of a function are counted but not resolved |
-| `--trace` | **runs the command** under strace and shows the programs it executes and the files it opens; pass its arguments after `--`, as in `xray tool --trace -- arg` (needs strace, stops after 10 seconds) |
+| Input | Analysis | Requirements and limits |
+| --- | --- | --- |
+| Python | AST symbols, imports, references, relationships, call graph, complexity, unused checks, module coupling, and named source spans | Python 3.10+; static analysis only |
+| Shell | Commands, sourced files, functions, metrics, and command chains | Static line/token analysis; dynamic commands and `eval` may be unresolved |
+| Perl | Literal `use`/`require`, subroutines, and command chains | Perl interpreter improves module resolution |
+| JavaScript | Symbols and literal imports/`require` | Node.js with bundled Acorn parser; target source is parsed, not evaluated |
+| Ruby | Symbols, methods, and literal imports | Ruby standard-library Ripper; target source is parsed, not evaluated |
+| Lua, TypeScript, C | Symbols and imports/includes | Neovim with the relevant Tree-sitter parsers installed |
+| ELF | Linked libraries, dynamic symbols, imports, exports, retained function symbols, and command graph | `readelf`; `objdump` for disassembly; `rizin` for annotated function disassembly; configured debuginfod can supply DWARF names and source for stripped binaries |
 
-`--chain` expands shell scripts into the commands they run, Python launchers into the installed files they import, and ELF binaries into the libraries they need. Each line reads `name -> resolved path [kind]`. A file that appears again is marked `(seen)` and is not expanded again, and a name that cannot be found is marked `(not found)`. The tree has a depth limit and a file limit, and a final `Truncated:` line says when something was left out.
+Package ownership lookup supports RPM and pacman. Named ELF source lookup checks configured local trees, then `libdebuginfod` when `DEBUGINFOD_URLS` is configured, then RPM/DNF source packages. The debuginfod client uses the system cache and limits an individual lookup to 20 seconds and 128 MiB by default; elfutils, a client library, and server-side source data are required. If none provide source, `--code` falls back to labeled machine-code disassembly. Optional system tools include `file`, `strace`, `objdump`, `rizin`, `rpm`, `dnf`, and elfutils.
 
-## Static-analysis options
+For packages whose source XRAY cannot retrieve automatically, set `XRAY_SOURCE_PATH` to one or more existing source-tree directories (separated with `:` on Linux). `xray <command> --code <function>` and `--source` search those trees first; `--code` and `--inspect` can list files and functions matched to the binary's available symbols. XRAY reads these directories without executing their build scripts. On systems with configured debuginfod servers, XRAY can also use ELF build IDs and DWARF line tables to fetch the exact source file for a named function, without running package scripts.
 
-These analyze Python code. On a target that is not a Python file they exit with code 3.
+## CLI reference
 
-| Option | Scope | Shows |
-|---|---|---|
-| `--symbols` | the file | functions, classes and methods |
-| `--references` | the file | where imported names are used and what they resolve to |
-| `--relationships` | the file | calls and inheritance |
-| `--unused` | the file | imports that appear unused |
-| `--complexity` | the file | lines, functions, cyclomatic complexity and nesting |
-| `--callgraph` | the file | which functions each function calls |
-| `--unused-symbols` | the whole folder | definitions that appear to have no references |
-| `--coupling` | the whole folder | fan-in, fan-out, density and the most coupled modules |
-| `--call-coupling` | the whole folder | calls in and out of each module |
-| `--shell-metrics` | a shell script | functions, approximate complexity and nesting |
-| `--json` | the file | symbols and edges as JSON (Python, shell, ELF), with no banner |
+Run `xray --help` for descriptions and argument forms. The options are grouped here by purpose:
 
-## JSON export
+- Inspection: `--report`, `--inspect`, `--md`, `--code`, `--browse`, `--asm`, `--source`, `--source-cache-list`, `--source-cache-remove`, `--source-cache-clear`, `--disasm-function`, `--package`, `--toolchain`, `--serve`.
+- Commands and binaries: `--calls`, `--chain`, `--launch`, `--launch-depth`, `--launch-limit`, `--shell-metrics`, `--uses`, `--disasm`, `--trace`.
+- Graph queries: `--deps`, `--dependents`, `--tree`, `--impact`, `--cycles`, `--depth`, `--project`, `--components`, `--reachable`, `--reverse-reachable`, `--path`, `--changes`.
+- Source analysis: `--symbols`, `--references`, `--relationships`, `--unused`, `--complexity`, `--callgraph`, `--unused-symbols`, `--coupling`, `--call-coupling`.
+- Exports and help: `--json`, `--graph-json`, `--html`, `--version`, `--help`.
 
-`xray <target> --json` prints one JSON object and nothing else (no banner), so it can be piped into tools such as `jq`:
+`--report` and `--inspect` show command identity, overview, and available source files. Add `--md` for Markdown. `--json` exports one file; `--graph-json` exports a bounded command graph. `--html` writes a self-contained viewer. `--serve` binds to loopback and rejects non-loopback `Host` headers.
 
-```
-xray ldd --json
-```
+Project dependency queries use the registered analyzers to include supported Python, shell, Perl, Ruby, JavaScript, Lua, TypeScript, and C source files. Resolved imports and locally sourced files connect nodes in the project graph; external and unresolved dependencies are listed separately from file-to-file counts.
 
-| Field | Meaning |
-|---|---|
-| `file` | the resolved path |
-| `kind` | `python`, `shell`, `elf`, `perl`, `script` or `unknown` |
-| `analyzer` | the analyzer that read the file, or `null` |
-| `symbols` | name, kind, line and parent (Python only) |
-| `edges` | source, target, kind and status |
-| `notes` | caveats, such as no visible shell commands |
+`xray <file-in-repo> --changes [<base-ref>]` compares the working tree, including staged, unstaged, and untracked files, with a Git commit or ref (default `HEAD`). It lists current in-project dependents of changed source files when the project graph can resolve them.
 
-Edge kinds include `imports`, `calls`, `inherits`, `references`, `runs`, `sources` and `links`. The status is `resolved`, `unresolved` or `external`.
+Downloaded RPM source trees can be listed with `xray --source-cache-list`, removed individually with `xray --source-cache-remove <package>`, or cleared with `xray --source-cache-clear`. These commands operate only on `src/`; parser results under `analysis/` are separate. Set `XRAY_SOURCE_CACHE_MAX_MIB` to a non-negative integer to prune least-recently-used cached trees after a successful download; unset it for no size limit. The currently requested tree is kept even if it alone exceeds the limit. Extraction is staged before becoming visible, and cache mutation and source reads are serialized between XRAY processes.
 
-## Output and exit codes
+## JSON contracts
 
-Normal results go to stdout. Errors are written to stderr as `Error: ...`.
+`--browse` is a terminal menu over the same views: overview, functions (pick one by number or name to read its code), calls, chain, and for ELF binaries toolchain and uses. It needs an interactive terminal; `--serve` is the browser equivalent.
 
-| Code | Meaning |
-|---|---|
-| 0 | success |
-| 1 | general error or unexpected crash |
-| 2 | invalid command-line usage |
-| 3 | target or file error |
-| 4 | analysis error |
+`--toolchain` reads an ELF binary without running it and names the language that built it: Go (toolchain, main module, dependencies with replacements, and build settings from `.go.buildinfo`), Rust (rustc version from `.comment` and crate versions from retained registry paths; distributions that remap paths keep no crate list), C++, Fortran, D, Haskell, Swift, Objective-C (by their runtime libraries), C, or a PyInstaller bundle, plus the compilers recorded in `.comment`. When `.comment` was stripped and only the C library is linked, the result is labelled `C (inferred)` with the reason. `--report` and `--inspect` show the same language on their Identity line.
 
-## Limitations
+Any text query also accepts a trailing `--json` (for example `xray ls --inspect --json` or `xray tool.sh --calls --json`). The output has `schema_version`, `query`, `target`, `title`, and `sections`; each section has a `heading` (null for text before the first heading), `fields` (`Key: value` lines, with lists for keys followed by `- item` lines), `items` (other `- item` lines), and `lines` (anything else). It cannot be combined with `--md`, `--html`, `--serve`, or `--graph-json`. Errors still go to stderr with the usual exit codes.
 
-Python is dynamic, so xray reports what static analysis can see and does not claim perfect accuracy.
+Single-file `--json` includes `schema_version`, file identity, analyzer, symbols, edges, notes, and metadata. `--graph-json` includes a root, nodes, edges, and traversal limits and truncation metadata. External and unresolved edges preserve their written name and use a null target when no file resolves.
 
-- Dynamic imports, `getattr` and names built from strings are not seen. The unused-import and unused-symbol results are hints, not proof.
-- `--unused-symbols` cannot see use from outside the analyzed folder, such as a public API.
-- The call graph is conservative: only calls that resolve to a definition become `->` edges, and calls it recorded but could not resolve are marked `?`.
-- Calls through a project module (`utils.calculate()` after `import utils`, `import utils as u`, `import pkg.sub` or `from pkg import sub`) are resolved. Calls into external modules, such as `os.getcwd()`, are not recorded.
-- For ELF binaries, xray lists the libraries and symbols they use. It does not read the machine code.
-- Shell metrics are approximate. Keywords are counted after removing comments, quoted text and heredocs.
-- Perl and other scripts are recognized but not read yet.
+## Safety and limits
 
-The count of shell commands run through variables or `eval` can overstate hidden commands: a test such as `if $flag` runs a variable as a command, so it is counted even when the variable only holds `true` or `false`.
+Static analyzers read source without executing it. For ELF binaries, `--code` lists available function names from configured debuginfod when possible; request a name to read its source. Without source data, it displays bounded `objdump` machine code. `--trace` runs the selected command under `strace`, discards its output, and stops it after ten seconds; use it only when running that command is appropriate. `--uses` reports symbols a binary may call, not proof that it calls them at runtime.
 
-## How it works
-
-At its core, xray builds a directed dependency graph. A dependency such as `a.py → b.py` means that `a.py` depends on `b.py`. Cycle detection, reachability, path finding, impact analysis and the other graph options all run on that one representation. The static-analysis options read the Python AST and combine the results with the graph.
+Named Python functions, async functions, classes, and qualified methods use AST spans including decorators, capped at 400 lines. Other script analyzers show the whole definition, using the end line reported by their parser (JavaScript, TypeScript, Ruby, Lua, C) or the matching closing brace (shell, Perl), capped at 400 lines; when no end is found, up to 60 lines are shown and labelled as such. ELF source lookup uses available debug/source data; when source is unavailable, `--code` displays bounded `objdump` disassembly and labels it as machine code rather than source.
 
 ## Project structure
 
-```
+```text
 xray/
-├── __init__.py         package version
-├── __main__.py         python -m xray entry point
-├── cli.py              command-line interface and query dispatch
-├── errors.py           error types and exit codes
-├── graph.py            dependency graph engine
-├── analyze.py          Python source analysis
-├── discover.py         target resolution
-├── identify.py         file identification
-├── classify.py         shebang and file classification
-├── dependencies.py     dependency extraction
-├── symbols.py          functions, classes and methods
-├── references.py       references and their targets
-├── relationships.py    calls and inheritance
-├── callgraph.py        static call graph
-├── unused.py           unused imports
-├── unused_symbols.py   unused definitions
-├── complexity.py       complexity and nesting metrics
-├── coupling.py         module and call coupling
-├── analysis_views.py   text output for the analyses above
-├── entrypoints.py      command kinds and the modules a command imports
-├── launchgraph.py      launcher to installed code
-├── shellscan.py        shell script reader
-├── elfscan.py          ELF binary reader
-├── libresolve.py       shared library resolution
-├── calls.py            what a script or binary runs
-├── chain.py            tree of what a command runs
-├── model.py            common types: FileInfo and Edge
-├── analyzers.py        analyzer base class and registry
-├── python_analyzer.py  Python files as symbols and edges
-├── command_analyzers.py  shell scripts and ELF binaries as edges
-├── overview.py         the Overview section of the default view
-├── shellmetrics.py     approximate shell script metrics
-├── export.py           the data behind --json
-├── locate.py           command name to file
-├── provenance.py       the package that owns a file (rpm)
-├── trace.py            run a command under strace
-├── minidebug.py        function names kept in stripped ELF files
-├── disasm.py           direct calls inside an ELF binary (objdump)
-├── uses.py             imports grouped by purpose and by library
-├── graphjson.py        the whole graph of a command as data
-├── html.py             the interactive graph page
-├── rizinview.py        one function as annotated disassembly (rizin)
-├── perlscan.py         Perl scripts: modules and subs
-├── sourcelookup.py     C source of a function from the source package
-├── serve.py            local server behind --serve
-├── codeview.py         the code of any command, behind --code
-├── report.py           one report about a command, behind --report
-└── commandproject.py   --path and --project for commands
+├── __init__.py
+├── __main__.py
+├── analysis_cache.py
+├── analysis_views.py
+├── analyze.py
+├── analyzers.py
+├── browse.py
+├── callgraph.py
+├── calls.py
+├── chain.py
+├── classify.py
+├── cli.py
+├── codeview.py
+├── command_analyzers.py
+├── commandproject.py
+├── complexity.py
+├── coupling.py
+├── dependencies.py
+├── debuginfod.py
+├── disasm.py
+├── discover.py
+├── elfscan.py
+├── entrypoints.py
+├── errors.py
+├── export.py
+├── fingerprint.py
+├── graph.py
+├── graphjson.py
+├── git_analysis.py
+├── html.py
+├── identify.py
+├── javascript_analyzer.py
+├── launchgraph.py
+├── libresolve.py
+├── locate.py
+├── minidebug.py
+├── model.py
+├── overview.py
+├── perlscan.py
+├── provenance.py
+├── project_graph.py
+├── python_analyzer.py
+├── references.py
+├── relationships.py
+├── report.py
+├── rizinview.py
+├── ruby_analyzer.py
+├── serve.py
+├── shellmetrics.py
+├── shellscan.py
+├── sourcelookup.py
+├── symbols.py
+├── textjson.py
+├── trace.py
+├── treesitter_analyzers.py
+├── unused.py
+├── unused_symbols.py
+└── uses.py
 ```
 
 ## Testing
 
-Run the complete test suite with:
-
-```
-pytest -q
-```
-
-You can also check Python syntax with `python3 -m py_compile xray/*.py` and whitespace errors with `git diff --check`.
-
-## Status
-
-xray is under active development. The 0.8 series added error handling, exit codes and static analysis of Python. The 0.9 series adds a common model and analyzer registry, a command overview for shell scripts, ELF binaries and Python launchers, shell metrics and JSON export. Next planned: reading Perl and other scripts, more languages, and a visual graph viewer.
-
-## Changelog
-
-See `CHANGELOG.md` for what changed in each release.
+The full suite uses pytest and includes upstream regression tests plus audit regressions. Install it with `python -m pip install '.[test]'`, then run `python -m pytest`. Some integration tests skip when optional system tools are unavailable. CI runs Ruff across the package and test tree, and runs the full suite across Python 3.10–3.15 and a Fedora integration job.
 
 ## License
 
-See the repository for licensing information.
+Apache-2.0. See `LICENSE`.

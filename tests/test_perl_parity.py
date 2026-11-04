@@ -43,7 +43,7 @@ def test_calls_lists_subs_and_modules(tmp_path, monkeypatch):
 
 
 def test_chain_follows_modules_and_ends_on_cycles(tmp_path, monkeypatch):
-    lib = libs(tmp_path, monkeypatch)
+    libs(tmp_path, monkeypatch)
     tool = perl(tmp_path / "tool", "use Foo::Bar;\n")
 
     lines = chain_lines(tool)

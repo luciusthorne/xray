@@ -233,8 +233,7 @@ def find_relationships(path, project_root=None):
                         else:
                             outcome = (
                                 "resolved",
-                                f"{_location(module_file, project_root)}"
-                                f":{symbol.name}",
+                                f"{_location(module_file, project_root)}:{symbol.name}",
                             )
 
                         add(

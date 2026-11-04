@@ -2,13 +2,16 @@ from pathlib import Path
 
 from .analyzers import Analyzer, registry
 from .elfscan import scan_elf
+from .javascript_analyzer import JavaScriptAnalyzer
 from .libresolve import find_library, ldconfig_cache
 from .locate import locate
-from .minidebug import read_minidebuginfo
+from .minidebug import read_function_table
 from .model import Edge
 from .perlscan import perl_inc, resolve_module, scan_perl
+from .ruby_analyzer import RubyAnalyzer
 from .shellscan import function_lines, scan_shell
 from .symbols import Symbol
+from .treesitter_analyzers import CAnalyzer, LuaAnalyzer, TypeScriptAnalyzer
 
 
 class ShellAnalyzer(Analyzer):
@@ -102,7 +105,7 @@ class ELFAnalyzer(Analyzer):
 
         return [
             Symbol(name, "function", str(path), 1)
-            for name in read_minidebuginfo(path)
+            for _address, _size, name in read_function_table(path)
         ]
 
     def edges(self, path):
@@ -182,6 +185,15 @@ class PerlAnalyzer(Analyzer):
         return found
 
 
-for _analyzer in (ShellAnalyzer(), ELFAnalyzer(), PerlAnalyzer()):
+for _analyzer in (
+    ShellAnalyzer(),
+    ELFAnalyzer(),
+    PerlAnalyzer(),
+    RubyAnalyzer(),
+    JavaScriptAnalyzer(),
+    LuaAnalyzer(),
+    TypeScriptAnalyzer(),
+    CAnalyzer(),
+):
     if _analyzer.name not in registry.names():
         registry.register(_analyzer)

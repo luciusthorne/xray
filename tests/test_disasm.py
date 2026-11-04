@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 import xray.disasm as disasm_module
-from xray.disasm import disasm_lines, parse_calls
+from xray.disasm import assembly_lines, disasm_lines, parse_calls
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -33,6 +33,28 @@ SLICE = """
     1220:\tcall   fffff0 <x@@Base+0x1>
     1500:\tcall   *%rax
 """
+
+
+def test_named_disassembly_rejects_nearest_symbol_offsets(tmp_path, monkeypatch):
+    binary = tmp_path / "tool"
+    binary.write_bytes(b"\x7fELF" + bytes(60))
+    output = """tool: file format elf64-x86-64
+00001000 <error@@Base-0x20>:
+    1000: ret
+00002000 <error@@Base>:
+    2000: ret
+00003000 <error_at_line@@Base>:
+    3000: ret
+"""
+    monkeypatch.setattr(
+        disasm_module.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, output, ""),
+    )
+
+    assert assembly_lines(binary, "error")[-2:] == [
+        "00002000 <error@@Base>:", "    2000: ret"
+    ]
 
 
 def test_calls_are_resolved_by_address():

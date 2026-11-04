@@ -39,7 +39,7 @@ def run_xray(cwd, bindir, *args):
 
 
 def test_name_resolves_through_path(tmp_path, monkeypatch):
-    bindir, tool, c = setup(tmp_path)
+    bindir, _tool, c = setup(tmp_path)
     monkeypatch.setenv("PATH", str(bindir))
 
     assert resolve_target_node("cpc") == str(c.resolve())

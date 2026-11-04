@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 import xray.calls as calls_module
+import xray.command_analyzers as analyzer_module
 from xray.calls import calls_lines
 from xray.elfscan import ElfScan
 
@@ -44,9 +45,8 @@ def test_elf_lines(tmp_path, monkeypatch):
         imports=("a", "b", "c"),
     )
     monkeypatch.setattr(calls_module, "scan_elf", lambda path: scan)
-    monkeypatch.setattr(
-        calls_module, "ldconfig_cache", lambda: {"libfoo.so.1": str(lib)}
-    )
+    monkeypatch.setattr(analyzer_module, "scan_elf", lambda path: scan)
+    monkeypatch.setattr(analyzer_module, "ldconfig_cache", lambda: {"libfoo.so.1": str(lib)})
 
     assert calls_lines(fake_elf(tmp_path)) == [
         "Interpreter:",
@@ -64,7 +64,8 @@ def test_elf_lines(tmp_path, monkeypatch):
 def test_static_binary(tmp_path, monkeypatch):
     scan = ElfScan(imports=("x",))
     monkeypatch.setattr(calls_module, "scan_elf", lambda path: scan)
-    monkeypatch.setattr(calls_module, "ldconfig_cache", lambda: {})
+    monkeypatch.setattr(analyzer_module, "scan_elf", lambda path: scan)
+    monkeypatch.setattr(analyzer_module, "ldconfig_cache", dict)
 
     assert calls_lines(fake_elf(tmp_path)) == [
         "Interpreter:",
@@ -80,7 +81,8 @@ def test_imports_are_capped(tmp_path, monkeypatch):
     names = tuple(f"sym{i}" for i in range(5))
     scan = ElfScan(interpreter="/ld.so", imports=names)
     monkeypatch.setattr(calls_module, "scan_elf", lambda path: scan)
-    monkeypatch.setattr(calls_module, "ldconfig_cache", lambda: {})
+    monkeypatch.setattr(analyzer_module, "scan_elf", lambda path: scan)
+    monkeypatch.setattr(analyzer_module, "ldconfig_cache", dict)
 
     lines = calls_lines(fake_elf(tmp_path), max_imports=2)
 

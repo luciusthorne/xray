@@ -46,9 +46,7 @@ def project_lines(graph):
     cycles = 0
 
     for component in graph.strongly_connected_components():
-        if len(component) > 1:
-            cycles += 1
-        elif component and component[0] in graph.dependencies_of(component[0]):
+        if len(component) > 1 or component and component[0] in graph.dependencies_of(component[0]):
             cycles += 1
 
     leaves = sum(1 for node in graph.nodes if not graph.dependencies_of(node))

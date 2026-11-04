@@ -1,20 +1,13 @@
 import json
+import shlex
 import sys
+from contextlib import redirect_stdout
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .discover import resolve_target
-from .overview import overview_lines
-from .export import export_data
-from .entrypoints import command_kind
-from .shellmetrics import shell_metrics_lines
-from .identify import identify_file, get_file_metadata
-from .classify import detect_shebang
-from .analyze import analyze_python
-from .graph import DependencyGraph
-from .errors import XRAYError, CLIError, TargetError
 from .analysis_views import (
     call_coupling_lines,
     callgraph_lines,
@@ -22,22 +15,42 @@ from .analysis_views import (
     coupling_lines,
     references_lines,
     relationships_lines,
-    symbols_lines,
     unused_lines,
     unused_symbols_lines,
 )
-
+from .analyze import analyze_python
+from .classify import detect_shebang
+from .discover import resolve_target
+from .entrypoints import command_kind
+from .errors import CLIError, TargetError, XRAYError
+from .export import export_data
+from .graph import DependencyGraph
+from .identify import get_file_metadata, identify_file
+from .overview import overview_lines
+from .shellmetrics import shell_metrics_lines
+from .sourcelookup import remove_source_cache, source_cache_entries
 
 
 def print_help():
-    print("Usage: xray <target> [options]")
+    print("Usage: xray <target> [option] [option arguments]")
+    print()
+    print("Start with a command overview, then inspect its code or execution chain:")
+    print("  xray <command> --report")
+    print("  xray <command> --chain")
+    print("  xray <command> --code")
     print()
     print("Options by topic:")
     print("Code:")
-    print("  --report [--md]        Everything useful about a command in one report")
-    print("  --inspect [--md]       Unified inspection: identity, overview, and source")
-    print("  --code [name] [--asm]  Show the code of any command: source files, a function, or a script")
-    print("  --source <function>    Show the C source of a function (downloads the source package once)")
+    print("  --report [--md]        Identity, overview, and available source files")
+    print("  --inspect [--md]       Same unified command inspection as --report")
+    print("  --code [name] [--asm]  Read source; ELF lists DWARF names or disassembles")
+    print("  --browse               Terminal menu: overview, functions and their code, calls, chain")
+    print("  --source <function>    Show C source via local tree, debuginfod, or RPM/DNF")
+    print("                         XRAY_SOURCE_PATH searches existing source trees first")
+    print("  --source-cache-list    List cached source packages and their sizes")
+    print("  --source-cache-remove <package>  Remove one cached source package")
+    print("  --source-cache-clear   Remove all cached source packages")
+    print("                         XRAY_SOURCE_CACHE_MAX_MIB sets an optional size limit")
     print("  --disasm-function <n>  Show one function of an ELF binary, annotated (needs rizin)")
     print()
     print("Binaries:")
@@ -45,15 +58,17 @@ def print_help():
     print("  --disasm               Show which functions an ELF binary calls (reads objdump)")
     print("  --trace                Run the command and show what it executes and opens")
     print("  --package              Show the package that owns a command")
+    print("  --toolchain            Show the language, compiler, and bundled modules of an ELF binary")
     print("  --serve                Open a local page: click a function for its source and disassembly")
     print()
     print("Scripts:")
-    print("  --calls                Show what a script or binary runs")
+    print("  --calls                Show what a script or binary runs or imports")
     print("  --chain                Show the tree of what a command runs")
     print("  --launch               Show installed code a launcher runs")
     print("  --launch-depth <n>     Same, following imports n levels deep")
     print("  --launch-limit <n>     Same, 3 levels deep, at most n files")
     print("  --shell-metrics        Show shell script functions and complexity")
+    print("                         Python, Ruby, JavaScript, Lua, TypeScript and C summaries are in --report")
     print()
     print("Graph:")
     print("  --deps                 Show dependencies")
@@ -67,9 +82,10 @@ def print_help():
     print("  --reachable            Show reachable dependencies")
     print("  --reverse-reachable    Show reverse reachable dependents")
     print("  --path <target>        Show dependency path to target")
+    print("  --changes [<base>]     Show Git changes and affected project files")
     print()
     print("Python:")
-    print("  --symbols              Show functions, classes and methods")
+    print("  --symbols              Show symbols recognized by the file's analyzer")
     print("  --references           Show where names are used and what they resolve to")
     print("  --relationships        Show calls and other symbol relationships")
     print("  --unused               Show imports that appear unused")
@@ -80,9 +96,10 @@ def print_help():
     print("  --call-coupling        Show calls in and out of each module")
     print()
     print("Export:")
-    print("  --json                 Print symbols and edges of the file as JSON")
-    print("  --graph-json           Print the whole graph of a command as JSON")
+    print("  --json                 Export file metadata, symbols, and relationships as JSON")
+    print("  --graph-json           Export graph nodes, symbols, metadata, and edges as JSON")
     print("  --html                 Print an interactive graph page (save it with >)")
+    print("  <query> ... --json     Print any text query as structured JSON")
     print()
     print("Other:")
     print("  --version, -V          Show the version")
@@ -94,31 +111,24 @@ def print_help():
     print("  2  invalid command-line usage")
     print("  3  target or file error")
     print("  4  analysis error")
+    print()
+    print("Ruby/JavaScript parser results and downloaded source packages are cached.")
+    print("Set XRAY_CACHE or XDG_CACHE_HOME to choose the cache location.")
+    print()
+    print("Examples:")
+    print("  xray pytest --report --md > pytest.md")
+    print("  xray pytest --chain")
+    print("  xray pytest --code")
+    print("  xray pytest --trace -- --version")
+    print("  xray pytest --graph-json > pytest-graph.json")
 
 
 def build_graph(workspace_root, path):
-    graph = DependencyGraph()
-
     path = Path(path).resolve()
     project_root = path.parent
+    from .project_graph import build_project_graph
 
-    graph.build_project(
-        project_root,
-        analyze_python,
-        workspace_root,
-    )
-
-    shebang = detect_shebang(path)
-
-    if path.suffix != ".py" and shebang:
-        if "python" in shebang.lower():
-            graph.build_from(
-                path,
-                analyze_python,
-                project_root,
-                workspace_root,
-            )
-    return graph
+    return build_project_graph(project_root, workspace_root)
 
 
 def dependency_depth(graph, node):
@@ -428,7 +438,15 @@ def query_project(context):
     print("Project")
     print("────────────────────────────")
 
-    python_files = len(graph.nodes)
+    from collections import Counter
+
+    from .entrypoints import command_kind as _kind
+    from .model import LANGUAGE_NAMES
+
+    languages = Counter(
+        _kind(context.workspace_root / node)
+        for node in graph.nodes
+    )
     dependency_edges = len(graph.edges)
 
     components = graph.strongly_connected_components()
@@ -451,8 +469,25 @@ def query_project(context):
         if not graph.dependencies_of(node)
     )
 
-    print(f"Python files:      {python_files}")
+    if set(languages) <= {"python"}:
+        print(f"Python files:      {len(graph.nodes)}")
+    else:
+        print(f"Source files:      {len(graph.nodes)}")
+        print("Languages:         " + ", ".join(
+            f"{LANGUAGE_NAMES.get(kind, kind)} {count}"
+            for kind, count in sorted(languages.items())
+        ))
     print(f"Dependency edges:  {dependency_edges}")
+    for title, references in (
+        ("External dependencies", graph.external_edges),
+        ("Unresolved dependencies", graph.unresolved_edges),
+    ):
+        if references:
+            print(f"{title}: {len(references)}")
+            for source, kind, name in references[:10]:
+                print(f"- {source}: {name} [{kind}]")
+            if len(references) > 10:
+                print(f"- ... and {len(references) - 10} more")
     print(f"Leaf files:        {leaf_files}")
     print(f"Cycles:            {cycle_count}")
 
@@ -482,7 +517,54 @@ def query_project(context):
         print("- none")
 
 
+def query_changes(context):
+    from .git_analysis import changes_since
+    from .project_graph import build_project_graph
+
+    base = sys.argv[3] if len(sys.argv) > 3 else "HEAD"
+    try:
+        root, changes = changes_since(context.path, base)
+    except (OSError, ValueError) as error:
+        raise TargetError(f"Git change analysis failed: {error}") from error
+
+    print()
+    print(f"Git changes in {root} compared with {base}")
+    print("────────────────────────────")
+
+    if not changes:
+        print("No changed or untracked files.")
+        return
+
+    for change in changes:
+        if change.previous_path:
+            print(f"{change.status:>4}  {change.previous_path} → {change.path}")
+        else:
+            print(f"{change.status:>4}  {change.path}")
+
+    graph = build_project_graph(root, root)
+    changed_nodes = {change.path for change in changes}
+    affected_by = {}
+
+    for change in changes:
+        for dependent in graph.reverse_reachable_from(change.path):
+            if dependent not in changed_nodes:
+                affected_by.setdefault(dependent, set()).add(change.path)
+
+    print()
+    print("Affected project files")
+    print("────────────────────────────")
+    if affected_by:
+        for path in sorted(affected_by)[:30]:
+            causes = ", ".join(sorted(affected_by[path]))
+            print(f"- {path} (depends on {causes})")
+        if len(affected_by) > 30:
+            print(f"- ... and {len(affected_by) - 30} more")
+    else:
+        print("No current in-project dependents found.")
+
+
 QUERIES["--project"] = query_project
+QUERIES["--changes"] = query_changes
 
 
 def query_cycles(context):
@@ -590,6 +672,24 @@ def query_package(context):
 QUERIES["--package"] = query_package
 
 
+def query_toolchain(context):
+    from xray.entrypoints import command_kind
+    from xray.fingerprint import toolchain_lines
+
+    if command_kind(context.path) != "elf":
+        raise CLIError("--toolchain requires an ELF binary target")
+
+    print()
+    print(f"Toolchain of {context.source_node}")
+    print("────────────────────────────")
+
+    for line in toolchain_lines(context.path):
+        print(line)
+
+
+QUERIES["--toolchain"] = query_toolchain
+
+
 def query_trace(context):
     path = context.path
     source_node = context.source_node
@@ -610,7 +710,13 @@ def query_trace(context):
 QUERIES["--trace"] = query_trace
 
 
+def _require_elf(context, option):
+    if command_kind(context.path) != "elf":
+        raise CLIError(f"{option} requires an ELF binary target")
+
+
 def query_disasm(context):
+    _require_elf(context, "--disasm")
     from xray.disasm import disasm_lines
 
     print()
@@ -669,7 +775,7 @@ def query_code(context):
     names = [a for a in args if a != "--asm"]
     name = names[0] if names else None
     print()
-    print(f"Code of {name or 'all files'} in {context.source_node}")
+    print(f"Code view of {name or 'available code'} in {context.source_node}")
     print("────────────────────────────")
     for line in code_lines(
         context.path, name, asm, say=lambda t: print(t, file=sys.stderr)
@@ -681,12 +787,13 @@ QUERIES["--code"] = query_code
 
 
 def query_source(context):
+    _require_elf(context, "--source")
     from xray.sourcelookup import files_lines, source_lines
 
     name = sys.argv[3] if len(sys.argv) > 3 else None
     say = lambda t: print(t, file=sys.stderr)
     print()
-    print(f"Source of {name or "all files"} in {context.source_node}")
+    print(f"Source of {name or 'all files'} in {context.source_node}")
     print("────────────────────────────")
     if name and not name.endswith((".c", ".h")):
         lines = source_lines(context.path, name, say=say)
@@ -700,6 +807,7 @@ QUERIES["--source"] = query_source
 
 
 def query_disasm_function(context):
+    _require_elf(context, "--disasm-function")
     from xray.rizinview import function_lines
 
     name = sys.argv[3]
@@ -716,6 +824,7 @@ QUERIES["--disasm-function"] = query_disasm_function
 
 
 def query_uses(context):
+    _require_elf(context, "--uses")
     from xray.uses import uses_lines
 
     print()
@@ -832,6 +941,19 @@ def query_default(context):
         for line in lines:
             print(line)
 
+    print()
+    print("Explore this command")
+    print("────────────────────────────")
+    target = shlex.quote(context.command)
+    print(f"  xray {target} --report       Full overview and source files")
+    print(f"  xray {target} --code          Read source code")
+    print(f"  xray {target} --calls         Imports and commands it references")
+    print(f"  xray {target} --chain         Follow its command or import chain")
+    print(f"  xray {target} --deps          Show project dependencies")
+    print(f"  xray {target} --cycles        Find dependency cycles")
+    print(f"  xray {target} --path <target> Find a dependency path")
+    print(f"  xray {target} --json          Export structured analysis")
+
 
 QUERIES[None] = query_default
 
@@ -846,10 +968,20 @@ def print_view(title, lines):
 
 
 def query_symbols(context):
-    print_view(
-        f"Symbols in {context.source_node}",
-        symbols_lines(context.path),
-    )
+    from . import command_analyzers, python_analyzer  # noqa: F401
+    from .analyzers import registry
+
+    analyzer = registry.analyzer_for(context.path)
+
+    if analyzer is None:
+        raise TargetError(f"No symbol analyzer for {context.file_type}: {context.path}")
+
+    symbols = analyzer.symbols(context.path)
+    lines = [
+        f"- {symbol.line}: {symbol.kind} {symbol.qualified_name}"
+        for symbol in symbols
+    ]
+    print_view(f"Symbols in {context.source_node}", lines or ["none"])
 
 
 def query_references(context):
@@ -887,7 +1019,6 @@ QUERIES["--unused"] = query_unused
 QUERIES["--complexity"] = query_complexity
 
 PYTHON_ONLY_QUERIES = {
-    "--symbols",
     "--references",
     "--relationships",
     "--unused",
@@ -981,12 +1112,28 @@ def query_html(context):
 QUERIES["--html"] = query_html
 
 
+def query_browse(context):
+    from xray.browse import browse
+
+    if not sys.stdin.isatty():
+        raise CLIError(
+            "--browse needs an interactive terminal; use --inspect, --code, or --serve"
+        )
+
+    browse(context.path)
+
+
+QUERIES["--browse"] = query_browse
+
+
 def query_serve(context):
     from xray.entrypoints import command_kind
     from xray.serve import serve
 
-    if command_kind(context.path) not in ("elf", "shell", "perl", "python"):
-        raise TargetError("--serve reads ELF, shell, Perl and Python commands")
+    if command_kind(context.path) not in (
+        "elf", "shell", "perl", "ruby", "javascript", "lua", "typescript", "c", "python"
+    ):
+        raise TargetError("--serve reads ELF, shell, Perl, Ruby, JavaScript, Lua, TypeScript, C and Python commands")
 
     serve(context.path)
 
@@ -1010,13 +1157,50 @@ COMMAND_GRAPH_QUERIES = frozenset(
         "--reverse-reachable",
         "--path",
         "--project",
+        "--coupling",
     )
 )
 
 
 def run():
-    if len(sys.argv) == 1:
-        raise CLIError("missing target")
+    self_target = len(sys.argv) == 1
+
+    if self_target:
+        # With no target, inspect XRAY's own CLI implementation. This gives
+        # the user a useful self-overview instead of an error.
+        sys.argv.append("xray")
+
+    if sys.argv[1] == "--source-cache-list":
+        if len(sys.argv) != 2:
+            raise CLIError("--source-cache-list takes no arguments")
+        entries = source_cache_entries()
+        if not entries:
+            print("No downloaded source packages are cached.")
+        else:
+            for name, size in entries:
+                print(f"{name}\t{size} bytes")
+            print(f"Total: {sum(size for _, size in entries)} bytes")
+        return
+
+    if sys.argv[1] == "--source-cache-remove":
+        if len(sys.argv) != 3:
+            raise CLIError("usage: xray --source-cache-remove <package>")
+        try:
+            remove_source_cache(sys.argv[2])
+        except (OSError, ValueError) as error:
+            raise CLIError(str(error)) from error
+        print(f"Removed cached source package: {sys.argv[2]}")
+        return
+
+    if sys.argv[1] == "--source-cache-clear":
+        if len(sys.argv) != 2:
+            raise CLIError("--source-cache-clear takes no arguments")
+        try:
+            removed = remove_source_cache()
+        except (OSError, ValueError) as error:
+            raise CLIError(str(error)) from error
+        print(f"Removed {removed} cached source package(s).")
+        return
 
     if sys.argv[1] in ("--help", "-h"):
         print_help()
@@ -1070,6 +1254,10 @@ def run():
         if len(sys.argv) not in (3, 4):
             raise CLIError("Usage: xray <command> --source [<function or file>]")
 
+    elif query == "--changes":
+        if len(sys.argv) > 4 or (len(sys.argv) == 4 and sys.argv[3].startswith("-")):
+            raise CLIError("Usage: xray <file in repo> --changes [<base-ref>]")
+
     elif query == "--code":
         rest = [a for a in sys.argv[3:] if a != "--asm"]
         if len(rest) > 1 or len(sys.argv) > 5:
@@ -1091,6 +1279,13 @@ def run():
         )
 
     path = resolve_target(command)
+
+    if self_target and (path is None or path.is_dir()):
+        path = Path(__file__).resolve()
+        try:
+            command = str(path.relative_to(Path.cwd().resolve()))
+        except ValueError:
+            command = str(path)
 
     if path is None:
         raise TargetError(
@@ -1121,18 +1316,27 @@ def run():
 
     on_command = (
         query in COMMAND_GRAPH_QUERIES
-        and _kind(path) in ("shell", "elf", "perl")
+        and not (
+            query == "--project"
+            and _kind(path) not in ("shell", "elf", "perl")
+        )
+        and (
+            _kind(path) in ("shell", "elf", "perl", "ruby", "javascript", "lua", "typescript", "c")
+            or (_kind(path) == "python" and path.suffix != ".py")
+        )
     )
 
     if on_command:
         from .graphjson import command_graph
 
         graph = command_graph(path)
-    else:
+    elif query in COMMAND_GRAPH_QUERIES:
         graph = build_graph(
             workspace_root,
             path,
         )
+    else:
+        graph = DependencyGraph()
 
     source_node = str(
         Path(path).resolve().relative_to(workspace_root)
@@ -1144,11 +1348,9 @@ def run():
     if query in PYTHON_ONLY_QUERIES and analysis is None:
         raise TargetError(f"Not a Python file: {path}")
 
-    if query not in ("--json", "--graph-json", "--html", "--serve") and not (
+    show_banner = query not in ("--json", "--graph-json", "--html", "--serve", "--browse") and not (
         query in ("--report", "--inspect") and len(sys.argv) == 4
-    ):
-        print("XRAY")
-        print("────────────────────────────")
+    )
 
     context = QueryContext(
         command=command,
@@ -1164,56 +1366,64 @@ def run():
         source_node=source_node,
     )
 
-    QUERIES[query](context)
+    if show_banner:
+        output = StringIO()
+        with redirect_stdout(output):
+            QUERIES[query](context)
+        print("XRAY")
+        print("────────────────────────────")
+        sys.stdout.write(output.getvalue())
+    else:
+        QUERIES[query](context)
 
-    # ---------------------------------------------------------
-    # --deps
-    # ---------------------------------------------------------
+# Queries whose output is already a document; --json cannot follow them.
+NOT_JSON_CONVERTIBLE = frozenset(["--json", "--graph-json", "--html", "--serve", "--browse"])
 
-    # ---------------------------------------------------------
-    # --dependents
-    # ---------------------------------------------------------
 
-    # ---------------------------------------------------------
-    # --tree
-    # ---------------------------------------------------------
+def _json_modifier():
+    """True when argv ends with --json after a text query."""
 
-    # ---------------------------------------------------------
-    # --impact
-    # ---------------------------------------------------------
+    args = sys.argv
 
-    # ---------------------------------------------------------
-    # --cycles
-    # ---------------------------------------------------------
+    if len(args) < 4 or args[-1] != "--json" or args[2] not in QUERIES:
+        return False
 
-    # ---------------------------------------------------------
-    # --depth
-    # ---------------------------------------------------------
+    if "--" in args[3:-1]:
+        return False  # --json belongs to the traced command's arguments
 
-    # ---------------------------------------------------------
-    # --project
-    # ---------------------------------------------------------
+    if args[2] in NOT_JSON_CONVERTIBLE:
+        raise CLIError(f"{args[2]} cannot be combined with --json")
 
-    # ---------------------------------------------------------
-    # --components
-    # ---------------------------------------------------------
+    if "--md" in args:
+        raise CLIError("--md and --json cannot be combined")
 
-    # ---------------------------------------------------------
-    # --reachable
-    # ---------------------------------------------------------
+    return True
 
-    # ---------------------------------------------------------
-    # --reverse-reachable
-    # ---------------------------------------------------------
 
-    # ---------------------------------------------------------
-    # --path
-    # ---------------------------------------------------------
+def run_json():
+    """Run a text query and print its output as structured JSON."""
+
+    import json
+
+    from .textjson import text_to_data
+
+    query, target = sys.argv[2], sys.argv[1]
+    sys.argv.pop()
+    output = StringIO()
+
+    with redirect_stdout(output):
+        run()
+
+    data = text_to_data(output.getvalue().splitlines(), query, target)
+    print(json.dumps(data, indent=2, ensure_ascii=False))
 
 
 def main():
     try:
-        run()
+        if _json_modifier():
+            run_json()
+        else:
+            run()
     except XRAYError as error:
         print(f"Error: {error}", file=sys.stderr)
         return error.exit_code

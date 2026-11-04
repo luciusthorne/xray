@@ -3,7 +3,6 @@ import pytest
 from xray.errors import AnalysisError, FileError
 from xray.references import Reference, find_references
 
-
 UTILS = "def calculate():\n    return 1\n"
 
 

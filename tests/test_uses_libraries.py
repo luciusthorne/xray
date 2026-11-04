@@ -64,7 +64,7 @@ def test_missing_library_leaves_names_as_other(tmp_path, monkeypatch):
     binary = elf(tmp_path)
     scans = {str(binary): ElfScan(needed=("libgone.so.1",), imports=("gone_fn",))}
     monkeypatch.setattr(uses_module, "scan_elf", fake_scan(scans))
-    monkeypatch.setattr(uses_module, "ldconfig_cache", lambda: {})
+    monkeypatch.setattr(uses_module, "ldconfig_cache", dict)
 
     lines = uses_lines(binary)
 

@@ -65,7 +65,7 @@ def test_overview_shows_a_uses_line(tmp_path, monkeypatch):
         "scan_elf",
         lambda p: ElfScan(imports=("open", "malloc")),
     )
-    monkeypatch.setattr(overview_module, "read_minidebuginfo", lambda p: ())
+    monkeypatch.setattr(overview_module, "read_function_table", lambda p: ())
 
     lines = overview_lines(elf(tmp_path))
 
@@ -76,7 +76,7 @@ def test_overview_has_no_uses_line_for_unknown_names(tmp_path, monkeypatch):
     monkeypatch.setattr(
         overview_module, "scan_elf", lambda p: ElfScan(imports=("a", "b"))
     )
-    monkeypatch.setattr(overview_module, "read_minidebuginfo", lambda p: ())
+    monkeypatch.setattr(overview_module, "read_function_table", lambda p: ())
 
     assert not any(
         line.startswith("Uses:") for line in overview_lines(elf(tmp_path))

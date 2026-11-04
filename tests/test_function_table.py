@@ -55,10 +55,13 @@ def test_reads_the_table_from_the_compressed_section(tmp_path, monkeypatch):
     )
 
 
-def test_no_section_gives_an_empty_table(tmp_path, monkeypatch):
+def test_no_mini_debug_section_falls_back_to_regular_symbol_table(tmp_path, monkeypatch):
     binary = elf(tmp_path / "prog")
     monkeypatch.setattr(
         minidebug_module.subprocess, "run", fake_run(None, TABLE)
     )
 
-    assert read_function_table(binary) == ()
+    assert read_function_table(binary) == (
+        (0x3A00, 16, "dev_ino_hash"),
+        (0x3A10, 41, "main"),
+    )

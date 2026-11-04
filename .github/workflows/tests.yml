@@ -1,0 +1,119 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Install Ruff
+        run: python -m pip install --no-cache-dir ruff==0.17.1
+
+      - name: Lint package and tests
+        run: ruff check xray tests
+
+  python-tests:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+
+      - name: Install test dependencies and run full regression suite
+        run: |
+          python -m pip install --no-cache-dir '.[test]'
+          python -m pytest -q
+
+      - name: Build wheel and source distribution
+        run: |
+          python -m pip install --no-cache-dir build
+          python -m build
+
+      - name: Verify source archive contents
+        run: |
+          python - <<'PY'
+          import tarfile
+          from pathlib import Path
+
+          archive = next(Path("dist").glob("xray_trust-*.tar.gz"))
+          with tarfile.open(archive) as source:
+              names = source.getnames()
+
+          relative = ["/".join(name.split("/")[1:]) for name in names]
+          expected = (
+              "README.md",
+              "CHANGELOG.md",
+              "LICENSE",
+              "pyproject.toml",
+              "tests/test_audit_fixes.py",
+              "tests/test_calls.py",
+              "test_programs/cycle_a.py",
+              "xray/cli.py",
+          )
+          for item in expected:
+              assert item in relative, f"missing from sdist: {item}"
+
+          excluded = ("MyProject", "Calibre Library", "code", "bin", ".github", ".ruff_cache")
+          for item in excluded:
+              assert not any(path == item or path.startswith(item + "/") for path in relative), item
+          assert not any("__pycache__" in path or path.endswith((".pyc", ".pyo")) for path in relative)
+          PY
+
+      - name: Install source distribution
+        run: python -m pip install --no-cache-dir --no-deps --force-reinstall dist/xray_trust-*.tar.gz
+
+      - name: Verify installed distribution outside checkout
+        working-directory: ${{ runner.temp }}
+        run: |
+          xray --version
+          python -c "import importlib.metadata as metadata; import xray; assert metadata.version('xray-trust') == xray.__version__"
+
+  fedora-integration:
+    name: Fedora integrations (rpm, dnf, strace, rizin, Neovim)
+    runs-on: ubuntu-latest
+    container:
+      image: registry.fedoraproject.org/fedora:45
+      options: --cap-add=SYS_PTRACE --security-opt seccomp=unconfined
+    steps:
+      - name: Install integration tools
+        run: |
+          dnf -y install git python3 python3-pip strace rizin rpm dnf-plugins-core \
+            binutils elfutils-debuginfod-client gcc gcc-c++ golang rust neovim \
+            nodejs ruby lua perl-podlators cpio file which findutils util-linux-script
+
+      - uses: actions/checkout@v7
+
+      - name: Run full regression suite
+        run: |
+          python3 -m venv /tmp/venv
+          /tmp/venv/bin/pip install --no-cache-dir '.[test]'
+          /tmp/venv/bin/python -m pytest -q -rs
+
+      - name: Exercise real tool integrations
+        run: |
+          xray() { /tmp/venv/bin/python -m xray "$@"; }
+          xray /usr/bin/ls --inspect | grep -q "Package: coreutils"
+          xray /usr/bin/true --trace | grep -q "Executed:"
+          xray /usr/bin/ls --disasm-function main | grep -q "main"
+          xray /usr/bin/ls --toolchain | grep -q "Language: C"
+          echo y | xray libgmp.so.10 --source mpz_add | grep -q "FUNCTION (mpz_ptr w"

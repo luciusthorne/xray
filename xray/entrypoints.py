@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 SHELLS = {"sh", "bash", "dash", "zsh", "ksh", "ash"}
+SHELL_SUFFIXES = {".sh", ".bash", ".zsh", ".ksh"}
 
 
 @dataclass(frozen=True)
@@ -53,9 +54,10 @@ def _interpreter(first_line):
 
 
 def command_kind(path):
-    """Classify a file from its contents, not its extension.
+    """Classify source from its contents and established source suffixes.
 
-    Returns "elf", "python", "shell", "perl", "script" (a shebang
+    Returns "elf", "python", "shell", "perl", "ruby", "javascript", "lua",
+    "typescript", "c", "script" (a shebang
     for some other interpreter) or "unknown".
     """
 
@@ -68,8 +70,26 @@ def command_kind(path):
     if path.suffix in (".pm", ".pl") and not start.startswith((b"#!", b"\x7fELF")):
         return "perl"
 
+    if path.suffix == ".rb" and not start.startswith((b"#!", b"\x7fELF")):
+        return "ruby"
+
+    if path.suffix in {".js", ".mjs", ".cjs"} and not start.startswith((b"#!", b"\x7fELF")):
+        return "javascript"
+
+    if path.suffix == ".lua" and not start.startswith((b"#!", b"\x7fELF")):
+        return "lua"
+
+    if path.suffix in {".ts", ".tsx", ".mts", ".cts"} and not start.startswith((b"#!", b"\x7fELF")):
+        return "typescript"
+
+    if path.suffix in {".c", ".h"} and not start.startswith((b"#!", b"\x7fELF")):
+        return "c"
+
     if start.startswith(b"\x7fELF"):
         return "elf"
+
+    if path.suffix.lower() in SHELL_SUFFIXES:
+        return "shell"
 
     if start.startswith(b"#!"):
         line = start.splitlines()[0].decode("utf-8", errors="replace")
@@ -83,6 +103,15 @@ def command_kind(path):
 
         if name.startswith("perl"):
             return "perl"
+
+        if name.startswith("ruby"):
+            return "ruby"
+
+        if name in {"node", "nodejs"}:
+            return "javascript"
+
+        if name.startswith(("lua", "luajit")):
+            return "lua"
 
         return "script"
 
@@ -110,14 +139,13 @@ def python_imports(path):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 modules.add(alias.name)
-        elif isinstance(node, ast.ImportFrom):
-            if node.level == 0 and node.module:
-                modules.add(node.module)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            modules.add(node.module)
 
     return tuple(sorted(modules))
 
 
-def find_module_file(name):
+def find_module_file(name, search_paths=()):
     """Return the file a module lives in, or None.
 
     Only the top-level name goes through importlib, which never runs
@@ -126,6 +154,15 @@ def find_module_file(name):
     """
 
     top, _, rest = name.partition(".")
+
+    for root in search_paths:
+        root = Path(root)
+        target = root.joinpath(*name.split("."))
+        candidates = (target.with_suffix(".py"), target / "__init__.py")
+
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
 
     try:
         spec = importlib.util.find_spec(top)
@@ -171,11 +208,13 @@ def resolve_launcher(path):
 
         if top in sys.stdlib_module_names:
             result.append(
-                CommandImport(module, "stdlib", find_module_file(module))
+                CommandImport(
+                    module, "stdlib", find_module_file(module, (Path(path).parent,))
+                )
             )
             continue
 
-        origin = find_module_file(module)
+        origin = find_module_file(module, (Path(path).parent,))
         kind = "found" if origin is not None else "missing"
         result.append(CommandImport(module, kind, origin))
 
@@ -238,7 +277,7 @@ def import_files(path):
             if module.partition(".")[0] in sys.stdlib_module_names:
                 continue
 
-            origin = find_module_file(module)
+            origin = find_module_file(module, (path.parent,))
 
             if origin is not None:
                 found[origin.resolve()] = None
@@ -247,7 +286,7 @@ def import_files(path):
                 if name == "*":
                     continue
 
-                origin = find_module_file(f"{module}.{name}")
+                origin = find_module_file(f"{module}.{name}", (path.parent,))
 
                 if origin is not None and _is_module_named(origin, name):
                     found[origin.resolve()] = None
