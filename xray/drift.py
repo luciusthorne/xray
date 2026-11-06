@@ -22,14 +22,58 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from .errors import CLIError
-from .profile import interesting, profile
+from .profile import interesting, loader_hook, profile
 
-ARCHIVE_SUFFIXES = (".pkg.tar.zst", ".pkg.tar.xz", ".pkg.tar.gz", ".pkg.tar", ".rpm", ".tar.gz", ".tgz",
+ARCHIVE_SUFFIXES = (".pkg.tar.zst", ".pkg.tar.xz", ".pkg.tar.gz", ".pkg.tar", ".rpm", ".deb", ".tar.gz", ".tgz",
                     ".tar.xz", ".tar.zst", ".tar")
+
+
+LOADER_HOOK = ("links the dynamic loader and has IFUNC resolvers: code that runs inside the loader before main, "
+               "the hook of the 2024 xz backdoor (outside glibc this combination is otherwise unseen)")
 
 
 def is_archive(path):
     return str(path).endswith(ARCHIVE_SUFFIXES)
+
+
+def read_deb_control(text):
+    """pkgname/pkgver/arch from a Debian control file."""
+
+    fields = {}
+    for line in text.splitlines():
+        key, sep, value = line.partition(":")
+        if sep and not line.startswith(" "):
+            fields[key.strip()] = value.strip()
+    info = {}
+    for key, name in (("Package", "pkgname"), ("Version", "pkgver"), ("Architecture", "arch"), ("Maintainer", "packager")):
+        if fields.get(key):
+            info[name] = fields[key]
+    return info
+
+
+def _extract_deb(path, folder):
+    """Unpack a .deb (an ar archive) into folder; return its control metadata."""
+
+    outer = Path(folder) / ".deb"
+    outer.mkdir()
+    done = subprocess.run(["bsdtar", "-xf", str(path), "-C", str(outer)], capture_output=True, text=True, check=False)
+    if done.returncode != 0:
+        raise CLIError(f"cannot extract {path}: {done.stderr.strip()[:200]}")
+    data = sorted(outer.glob("data.tar*"))
+    control = sorted(outer.glob("control.tar*"))
+    if not data:
+        raise CLIError(f"{path} has no data.tar member")
+    subprocess.run(["bsdtar", "-xf", str(data[0]), "-C", str(folder)], check=True, capture_output=True)
+    meta = {}
+    if control:
+        target = outer / "control"
+        target.mkdir()
+        subprocess.run(["bsdtar", "-xf", str(control[0]), "-C", str(target)], check=True, capture_output=True)
+        control_file = target / "control"
+        if control_file.is_file():
+            meta = read_deb_control(control_file.read_text(encoding="utf-8", errors="replace"))
+    shutil.rmtree(outer)
+    return meta
 
 
 def read_pkginfo(root):
@@ -62,6 +106,10 @@ def opened(source):
         if shutil.which("bsdtar") is None:
             raise CLIError("bsdtar (libarchive) is needed to read package archives")
         with tempfile.TemporaryDirectory(prefix="xray-drift-") as folder:
+            if str(path).endswith(".deb"):
+                meta = _extract_deb(path, folder)
+                yield str(path), folder, _walk(folder), meta
+                return
             done = subprocess.run(["bsdtar", "-xf", str(path), "-C", folder], capture_output=True, text=True,
                                   check=False)
             if done.returncode != 0:
@@ -216,9 +264,15 @@ def drift(old_profiles, new_profiles):
             same += 1
             continue
         changes = compare(old, new)
+        entry = {"path": path, "changes": changes}
         if before != path:
             changes.insert(0, {"kind": "change", "field": "path", "detail": f"renamed from {before}"})
-        changed.append({"path": path, "changes": changes})
+            entry["renamed_from"] = before
+        changed.append(entry)
+    for item in changed:
+        before = item.get("renamed_from") or item["path"]
+        if loader_hook(new_profiles[item["path"]], item["path"]) and not loader_hook(old_profiles[before], before):
+            item["changes"].insert(0, {"kind": "gain", "field": "loader-hook", "detail": LOADER_HOOK})
     gains = [
         {"path": item["path"], **change} for item in changed for change in item["changes"] if change["kind"] == "gain"
     ]
@@ -229,6 +283,8 @@ def drift(old_profiles, new_profiles):
                           "detail": f"new file uses {cls}: {', '.join(names)}"})
         if new_profiles[path].get("setuid"):
             gains.append({"path": path, "kind": "gain", "field": "setuid", "detail": "new setuid file"})
+        if loader_hook(new_profiles[path], path):
+            gains.insert(0, {"path": path, "kind": "gain", "field": "loader-hook", "detail": LOADER_HOOK})
     return {
         "added": [{"path": path, "kind": new_profiles[path]["kind"]} for path in added],
         "removed": [{"path": path, "kind": old_profiles[path]["kind"]} for path in removed],

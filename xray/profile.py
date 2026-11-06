@@ -54,6 +54,30 @@ PYTHON_CLASSES = {
     "dynload": ("ctypes", "cffi", "importlib"),
 }
 
+# The dynamic loader and the C library it ships with: they link each other and use IFUNCs by design.
+LOADER_FAMILY = re.compile(r"^(ld-linux[^/]*|ld64\.so\.\d+|ld-musl[^/]*|libc\.so\.\d+|libm\.so\.\d+|libmvec\.so\.\d+)$")
+LOADER_NAMES = re.compile(r"^(ld-linux[^/]*|ld64\.so\.\d+|ld-musl[^/]*)$")
+
+
+def loader_hook(data, name):
+    """True for a library outside the loader's own family that links the dynamic loader and has IFUNC resolvers.
+
+    Its IFUNC resolvers run inside the loader while it relocates the
+    program, before main and before any constructor: the hook the 2024 xz
+    backdoor used. On the 500 most popular Arch packages and every
+    library of a full desktop install, only glibc itself does this.
+    """
+
+    return (
+        data.get("kind") == "elf"
+        and bool(data.get("soname") or ".so" in name)
+        and not LOADER_FAMILY.match(Path(name).name)
+        and not LOADER_FAMILY.match(data.get("soname") or "")
+        and any(LOADER_NAMES.match(item) for item in data.get("needed") or ())
+        and (data.get("ifuncs") or 0) > 0
+    )
+
+
 _SYMBOL = re.compile(r"^\s*\d+:\s+[0-9a-fA-F]+\s+\d+\s+(\w+)\s+(\w+)\s+\w+\s+(\S+)\s+(\S+)")
 _NEEDED = re.compile(r"\(NEEDED\)\s+Shared library: \[(.+?)\]")
 _SONAME = re.compile(r"\(SONAME\)\s+Library soname: \[(.+?)\]")
