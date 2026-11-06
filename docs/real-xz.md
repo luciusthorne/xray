@@ -23,6 +23,29 @@ The malicious build step only ran in Debian and RPM builds, so Arch's 5.6.0
 and 5.6.1-1, built from the same release tarballs, contain the release's new
 code but not the payload. That makes them the control.
 
+## Fedora Rawhide, a second independent test
+
+Fedora's build system (Koji) still serves Rawhide's xz builds from March 2024.
+None of them were used while designing the rule:
+
+| Fedora xz-libs | links the loader | IFUNC resolvers | XRAY loader hook |
+| --- | --- | --- | --- |
+| 5.4.6-3.fc41 | no | 0 | not flagged |
+| **5.6.0-2.fc41** | **yes** | 2 | **flagged** |
+| 5.6.0-3.fc41 | no | 0 | not flagged |
+| **5.6.1-1.fc41** | **yes** | 2 | **flagged** |
+
+5.6.0-3 is the rebuild that disabled IFUNC after Valgrind errors, the errors
+that helped expose the backdoor. With IFUNC off the hook was not there, and
+XRAY does not flag it. `xray drift` shows the hook arriving in 5.6.0-2,
+leaving in 5.6.0-3 and returning in 5.6.1-1, and `xray compare` of Arch's
+clean 5.6.1-1 with Fedora's 5.6.1-1 is a strong difference.
+
+**Two of three distributions carried the payload** (Debian and Fedora; the
+attacker targeted .deb and .rpm builds). Comparing builds across
+distributions therefore works as "any disagreement is a lead", not as a
+majority vote: a vote would have called Arch's clean build the odd one out.
+
 ## What the files show
 
 | liblzma build | DT_NEEDED | new import | IFUNC resolvers |
@@ -74,6 +97,7 @@ common in optimized code. Together:
 | --- | --- |
 | Debian liblzma5, 7 builds | the 2 backdoored ones |
 | Arch xz, 5 builds | 0 |
+| Fedora xz-libs, 4 builds | the 2 backdoored ones |
 | 1,019 archives of the 500 most popular Arch packages (`tools/arch_capability_log.py`) | only glibc's libc, libm and libmvec, which the rule excludes |
 | Every library on a full Arch desktop (`/usr/lib`) | only glibc |
 | `xray scan` of the same machine: 4,130 programs, 5,662 files | 0 findings |

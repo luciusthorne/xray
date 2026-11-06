@@ -22,8 +22,18 @@ fetch "liblzma5_5.6.1+really5.4.5-1_amd64.deb" https://snapshot.debian.org/file/
 fetch xz-5.4.6-1-x86_64.pkg.tar.zst https://archive.archlinux.org/packages/x/xz/xz-5.4.6-1-x86_64.pkg.tar.zst 8362a5e440748420043c354d519d6ef44862985c9f57ab6f05db6967abdd4f9f
 fetch xz-5.6.1-1-x86_64.pkg.tar.zst https://archive.archlinux.org/packages/x/xz/xz-5.6.1-1-x86_64.pkg.tar.zst 63b219db0b2f0b6215cc4e4ca64f3fa59b914e7b15bde17c36bf2b21e459c13e
 
+K=https://kojipkgs.fedoraproject.org/packages/xz
+fetch xz-libs-5.4.6-3.fc41.x86_64.rpm $K/5.4.6/3.fc41/x86_64/xz-libs-5.4.6-3.fc41.x86_64.rpm 407e6ea4224de4b22bccfafffed073d1cad4fa2931851059ae47bc6e5915f1bc
+fetch xz-libs-5.6.0-2.fc41.x86_64.rpm $K/5.6.0/2.fc41/x86_64/xz-libs-5.6.0-2.fc41.x86_64.rpm 1fc026cd85f17b01a4aefa52deb82802e08af005a9d9e090ed3cb54766ca6e13
+fetch xz-libs-5.6.0-3.fc41.x86_64.rpm $K/5.6.0/3.fc41/x86_64/xz-libs-5.6.0-3.fc41.x86_64.rpm d5f234717189826cbcb75dbce39c6a59d28c393ca23bf26bd80a25c5d2f4ad54
+fetch xz-libs-5.6.1-1.fc41.x86_64.rpm $K/5.6.1/1.fc41/x86_64/xz-libs-5.6.1-1.fc41.x86_64.rpm 6c4a1e1b7a776f9666eccfb0fb397576300c32f72090685c3b9bd61b534c8553
+
 show() { printf '\n\033[1;36m== %s\033[0m\n' "$1"; shift; printf '\033[1m$ xray %s\033[0m\n' "$*"; "${xray[@]}" "$@" || true; }
 show "Debian: clean 5.4.5 -> backdoored 5.6.0" drift liblzma5_5.4.5-0.3_amd64.deb liblzma5_5.6.0-0.2_amd64.deb
 show "Debian: clean 5.4.5 -> backdoored 5.6.1" drift liblzma5_5.4.5-0.3_amd64.deb liblzma5_5.6.1-1_amd64.deb
 show "Debian: backdoored 5.6.1 -> the revert (5.6.1+really5.4.5)" drift liblzma5_5.6.1-1_amd64.deb "liblzma5_5.6.1+really5.4.5-1_amd64.deb"
 show "Control, Arch: 5.4.6 -> 5.6.1 built from the same release, payload not injected" drift xz-5.4.6-1-x86_64.pkg.tar.zst xz-5.6.1-1-x86_64.pkg.tar.zst
+show "Fedora Rawhide: 5.4.6 -> 5.6.0-2 (backdoored)" drift xz-libs-5.4.6-3.fc41.x86_64.rpm xz-libs-5.6.0-2.fc41.x86_64.rpm
+show "Fedora Rawhide: 5.6.0-2 -> 5.6.0-3 (rebuilt with IFUNC disabled: no hook)" drift xz-libs-5.6.0-2.fc41.x86_64.rpm xz-libs-5.6.0-3.fc41.x86_64.rpm
+show "Fedora Rawhide: 5.6.0-3 -> 5.6.1-1 (backdoored again)" drift xz-libs-5.6.0-3.fc41.x86_64.rpm xz-libs-5.6.1-1.fc41.x86_64.rpm
+show "Same release, two distributions: Arch 5.6.1-1 vs Fedora 5.6.1-1" compare xz-5.6.1-1-x86_64.pkg.tar.zst xz-libs-5.6.1-1.fc41.x86_64.rpm
