@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `xray inspect CMD --html`: the evidence graph as a self-contained interactive page with edges styled by basis, per-link evidence, the strongest path to any node, blind spots and findings; `#node=NAME` deep links.
 - Add `xray taint COMMAND` and `xray taint --scan`: untrusted input (arguments, stdin, network downloads, web request data, environment) followed to code-running sinks in shell and Python, through variables, arrays, loops, functions and returns, and across programs that pass tainted arguments or exported variables to each other. Severity follows trust boundaries (network or setuid: high; arguments into eval or a shell: medium).
 - The shell parser records which function each command belongs to, every assignment site, and for/select loops.
 - Add capability profiles (`xray/profile.py`) and `xray drift OLD NEW` for files, directories, package archives and installed packages: imported call classes, libraries, search paths, IFUNC resolvers, constructors, setuid bits and script commands, with rebuilt or renamed libraries paired instead of reported as new.
