@@ -191,7 +191,7 @@ def test_landlock_rules_map_sections_to_rights():
 
     assert rules["/usr/bin/grep"] & landlock.EXECUTE
     assert not rules["/usr/lib/libc.so.6"] & landlock.EXECUTE
-    assert rules["/etc/tool"] == landlock.READ
+    assert "/etc/tool" not in rules  # /etc/tool/*.conf grants matching files only (none exist here)
     assert rules["/home/u/.config/tool"] == landlock.READ
     assert rules["/tmp"] & landlock.MAKE_REG
     net = landlock_rules(contract)["net"]
@@ -312,3 +312,15 @@ def test_listing_a_broad_directory_does_not_grant_everything_beneath_it(tmp_path
     assert contract.values("read") == ["~/.config/tool.conf"]
     assert any("listed /;" in note for note in contract.notes)
     assert not contract.allows("read", "/etc/shadow")
+
+
+def test_glob_read_entries_grant_only_matching_files(tmp_path):
+    (tmp_path / "a.conf").write_text("x")
+    (tmp_path / "b.conf").write_text("x")
+    (tmp_path / "secret.key").write_text("x")
+    contract = parse_contract(f"xray-contract 1\nprogram /usr/bin/tool\n[read]\n{tmp_path}/*.conf\n")
+
+    rules = {path for path, _bits in landlock_rules(contract)["fs"]}
+
+    assert {str(tmp_path / "a.conf"), str(tmp_path / "b.conf")} <= rules
+    assert str(tmp_path) not in rules and str(tmp_path / "secret.key") not in rules

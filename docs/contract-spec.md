@@ -131,9 +131,11 @@ namespace (bubblewrap), which removes UDP and every other protocol as well.
 
 Known differences between the contract and its enforcement:
 
-- Landlock grants rights per file or per directory tree, so `dir/*.conf` is
-  enforced as `dir`, and writing a file that does not exist yet is enforced as
-  write access to its directory.
+- Landlock grants rights per file or per directory tree. A `[read]`,
+  `[exec]` or `[load]` entry such as `dir/*.conf` is enforced as the files that
+  match when the program starts (files created later are not readable); a
+  `[write]` glob, and writing a file that does not exist yet, are enforced as
+  write access to the directory.
 - UDP ports are not limited by Landlock: a contract with any network entry
   allows UDP.
 - Connecting to a unix socket file is not limited by Landlock on every kernel.
