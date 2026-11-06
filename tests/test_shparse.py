@@ -186,3 +186,24 @@ def test_evidence_for_variable_command_is_guessed(tmp_path):
     assert link.basis == "guessed"
     assert link.evidence[0].line == 3
     assert "$CMD" in link.evidence[0].detail
+
+
+def test_inspect_tree_shows_each_link_with_its_basis(tmp_path, monkeypatch):
+    from xray.verbs import tree_lines
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    helper = bin_dir / "helper"
+    helper.write_text("#!/bin/sh\nhelper\n")
+    helper.chmod(0o755)
+    tool = tmp_path / "tool"
+    tool.write_text("#!/bin/sh\nhelper\nmissing-cmd\n")
+    tool.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir))
+
+    lines = tree_lines(build_evidence_graph(str(tool), packages=False))
+
+    assert lines[0] == f"{tool.resolve()} [shell]"
+    assert any(line.endswith(f"runs helper -> {helper.resolve()} [shell]  inferred line 2") for line in lines)
+    assert any(line.endswith(f"runs helper -> {helper.resolve()} [shell]  inferred line 2 (seen)") for line in lines)
+    assert any("runs missing-cmd (not found)  inferred line 3" in line for line in lines)

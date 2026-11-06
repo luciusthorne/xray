@@ -10,6 +10,7 @@
 - Resolve shared libraries in the dynamic loader's order (`DT_RPATH` with inheritance, `LD_LIBRARY_PATH` except for setuid programs, `DT_RUNPATH`, ldconfig cache entries for the binary's word size, default directories; `$ORIGIN`, `$LIB`, `$PLATFORM`, `-z nodefaultlib`). Each link names the step that found the library. Empty, relative, world-writable or foreign-owned search path entries are reported under "Worth a look".
 - Follow commands Python files start (`subprocess`, `os.system`, `os.popen`, `os.exec*`, `os.spawn*`, `posix_spawn`, `asyncio`, `pty`), through import aliases; shell strings are parsed.
 - The evidence graph follows Ruby, JavaScript, TypeScript and Lua imports, C `#include`s, and literal command starts in Ruby, Node and Lua.
+- Add `xray inspect --tree`, the evidence graph as a tree with each link's basis and line; it supersedes `--chain` and `--launch`.
 - Add `xray scan`, which reads every command on PATH into a cached evidence store keyed by file signature, SHA-256 and machine state, and `xray reach <target>`, which lists the programs that reach a file, library, command or package with a proof chain for each.
 
 ## 1.0.0
