@@ -234,3 +234,16 @@ def test_a_library_that_hooks_the_loader_is_flagged_by_drift_and_inspect(tmp_pat
 
     assert gains[0]["field"] == "loader-hook"
     assert any("xz backdoor" in risk["message"] for risk in graph.risks)
+
+
+def test_files_moving_between_version_directories_are_paired():
+    old = {"usr/lib/perl5/5.42/core_perl/CORE/libperl.so": elf(classes={"net": ["socket"]})}
+    new = {"usr/lib/perl5/5.44/core_perl/CORE/libperl.so": elf(sha256="b", classes={"net": ["socket"]}),
+           "usr/lib/other/libnew.so": elf(classes={"exec": ["execve"]})}
+
+    report = drift(old, new)
+
+    assert report["removed"] == []
+    assert [item["path"] for item in report["added"]] == ["usr/lib/other/libnew.so"]
+    assert report["changed"][0]["changes"][0]["detail"] == "renamed from usr/lib/perl5/5.42/core_perl/CORE/libperl.so"
+    assert [gain["detail"] for gain in report["gains"]] == ["new file uses exec: execve"]

@@ -171,6 +171,10 @@ def stem(name):
     return "-".join(kept)
 
 
+def _version_free(directory):
+    return re.sub(r"\d+(?:\.\d+)*", "#", directory)
+
+
 def _paired(added, removed):
     """Pairs (removed, added) whose stems match one to one; the rest stay unpaired."""
 
@@ -266,6 +270,15 @@ def drift(old_profiles, new_profiles):
     ]
     added = [path for path in added if path not in {after for _, after in renamed}]
     removed = [path for path in removed if path not in {before for before, _ in renamed}]
+    # Files that moved into a versioned directory (usr/lib/perl5/5.42/... -> 5.44/...) pair by directory
+    # pattern and name stem.
+    moved = [
+        (before, after) for before, after in _paired(added, removed)
+        if _version_free(str(Path(before).parent)) == _version_free(str(Path(after).parent))
+    ]
+    renamed += moved
+    added = [path for path in added if path not in {after for _, after in moved}]
+    removed = [path for path in removed if path not in {before for before, _ in moved}]
     changed, same = [], 0
     pairs = [(path, path) for path in sorted(set(old_profiles) & set(new_profiles))] + renamed
     for before, path in pairs:
