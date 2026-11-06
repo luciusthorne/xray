@@ -145,6 +145,14 @@ xray feed timer --install   # a systemd user timer that runs the update hourly
 
 Each run reads the `core` and `extra` databases from the mirror in `/etc/pacman.d/mirrorlist`, finds the packages whose version changed, downloads each new archive, checks it against the packager signature embedded in the database (with the pacman keyring) and its SHA-256, profiles it into the capability log, fetches the previous version from archive.archlinux.org when the log does not hold it, and records what the update gained in `~/.local/share/xray/feed.jsonl`. Strong gains — a new call class, a loader hook, IFUNC resolvers, constructors, setuid — are marked. Arch does not sign its databases, so trust rests on the per-package signatures.
 
+### The pacman hook: see what an upgrade gains before it is installed
+
+```sh
+xray hook install     # prints the commands that install the hook (needs root)
+```
+
+pacman runs the hook after downloading and before installing. For every package being upgraded it compares the new archive in the cache with the installed version and re-checks the capability pins of the contracts in `/etc/xray/contracts`. In `mode = report` (the default, in `/etc/xray/hook.conf`) it lists the gains; in `mode = block` it stops the upgrade on a strong gain or a broken contract, except for packages on the `allow` line. Because pacman runs hooks as root, `xray hook install` points the hook at a root-owned copy of XRAY, never a user-writable one.
+
 [`demo/xz-style`](demo/xz-style/README.md) re-enacts the 2024 xz backdoor pattern with a harmless toy library and shows drift, the log, a contract break, a traced breach and enforcement stopping the payload.
 
 ## What it reads
@@ -253,6 +261,7 @@ xray/
 ├── model.py
 ├── observe.py
 ├── overview.py
+├── pachook.py
 ├── perlscan.py
 ├── profile.py
 ├── project_graph.py
