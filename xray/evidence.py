@@ -33,6 +33,7 @@ from .libresolve import ldconfig_entries, resolve_library, search_path_risks
 from .locate import locate
 from .perlscan import perl_inc, resolve_module, scan_perl
 from .provenance import packages_of
+from .pyexec import python_exec
 from .shellscan import shell_facts
 
 EVIDENCE_SCHEMA_VERSION = 1
@@ -390,29 +391,7 @@ class _Builder:
             self.graph.blind(path, f"the script assigns PATH (line {lines}), so command lookups below are guesses")
 
         for name, lines in facts.commands.items():
-            via = facts.via.get(name)
-            said = _said(f"runs `{name}`", path, lines, via)
-            target = locate(name)
-            if target is None:
-                node = self.graph.add_node(f"command:{name}", "command", name, resolved=False)
-                self.graph.add_link(path, node.id, "runs", said)
-                continue
-            if "/" in name:
-                target_id = self.file_node(target, depth)
-                if target_id:
-                    self.graph.add_link(path, target_id, "runs", said)
-                continue
-            name_id = self.graph.add_node(f"command:{name}", "command", name).id
-            self.graph.add_link(path, name_id, "runs", said)
-            target_id = self.file_node(target, depth)
-            if target_id:
-                basis = "guessed" if path_changed else "inferred"
-                self.graph.add_link(
-                    name_id,
-                    target_id,
-                    "resolves_to",
-                    Evidence(basis, "PATH", f"`{name}` is {target} on this machine's PATH"),
-                )
+            self.runs(path, name, _said(f"runs `{name}`", path, lines, facts.via.get(name)), depth, path_changed)
 
         for name, lines in facts.sources.items():
             candidate = Path(name).expanduser()
@@ -426,6 +405,31 @@ class _Builder:
             else:
                 node = self.graph.add_node(f"command:{name}", "command", name, resolved=False)
                 self.graph.add_link(path, node.id, "sources", said)
+
+    def runs(self, path, name, said, depth, path_changed=False):
+        """Link path to the command it runs, and the name to the file PATH picks."""
+
+        target = locate(name)
+        if target is None:
+            node = self.graph.add_node(f"command:{name}", "command", name, resolved=False)
+            self.graph.add_link(path, node.id, "runs", said)
+            return
+        if "/" in name:
+            target_id = self.file_node(target, depth)
+            if target_id:
+                self.graph.add_link(path, target_id, "runs", said)
+            return
+        name_id = self.graph.add_node(f"command:{name}", "command", name).id
+        self.graph.add_link(path, name_id, "runs", said)
+        target_id = self.file_node(target, depth)
+        if target_id:
+            basis = "guessed" if path_changed else "inferred"
+            self.graph.add_link(
+                name_id,
+                target_id,
+                "resolves_to",
+                Evidence(basis, "PATH", f"`{name}` is {target} on this machine's PATH"),
+            )
 
     # -- ELF -------------------------------------------------------------
     def elf(self, path, depth):
@@ -484,7 +488,23 @@ class _Builder:
                     path, target_id, "imports",
                     Evidence("inferred", "python-import", f"imports {Path(target).stem}", path, line),
                 )
-        self.graph.blind(path, "Python imports built at runtime (importlib, __import__) and subprocess calls are not followed yet")
+        started = python_exec(path)
+        for name, lines in started.commands.items():
+            how = started.via[name]
+            if " through " in how:
+                said = Evidence(
+                    "guessed", "python-variable",
+                    f"runs `{name}` with {how}, which the file only sets to literal values", path, lines[0],
+                )
+            else:
+                said = Evidence("inferred", "python-exec", f"runs `{name}` via {how}", path, lines[0])
+            self.runs(path, name, said, depth)
+        if started.dynamic:
+            where = ", ".join(str(line) for line in sorted({line for line, _ in started.dynamic})[:8])
+            self.graph.blind(
+                path, f"{len(started.dynamic)} command(s) are computed at run time and not in the graph (line {where})"
+            )
+        self.graph.blind(path, "Python imports built at runtime (importlib, __import__) are not followed")
 
     # -- Perl ------------------------------------------------------------
     def perl(self, path, depth):
