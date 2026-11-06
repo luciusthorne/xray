@@ -7,6 +7,9 @@ from pathlib import Path
 from xray.entrypoints import command_kind
 
 _NEEDED = re.compile(r"\(NEEDED\)\s+Shared library: \[(.+?)\]")
+_RPATH = re.compile(r"\(RPATH\)\s+Library rpath: \[(.*?)\]")
+_RUNPATH = re.compile(r"\(RUNPATH\)\s+Library runpath: \[(.*?)\]")
+_NODEFLIB = re.compile(r"\(FLAGS_1\)\s+Flags:.*\bNODEFLIB\b")
 _SYMBOL = re.compile(
     r"^\s*\d+:\s+\S+\s+\S+\s+(\w+)\s+(\w+)\s+\w+\s+(\S+)\s*(\S*)"
 )
@@ -34,12 +37,41 @@ class ElfScan:
     interpreter: str | None = None
     imports: tuple = ()
     exports: tuple = ()
+    rpath: tuple = ()
+    runpath: tuple = ()
+    elf_class: int = 64
+    nodeflib: bool = False
 
 
 def parse_dynamic(text):
     """Return the shared libraries listed by readelf -d."""
 
     return tuple(sorted(set(_NEEDED.findall(text))))
+
+
+def parse_search_paths(text):
+    """Return (rpath, runpath, nodeflib) from readelf -d output.
+
+    Each path list keeps its entries in order, including empty entries,
+    which the loader reads as the current directory.
+    """
+
+    def entries(pattern):
+        match = pattern.search(text)
+        return tuple(match.group(1).split(":")) if match else ()
+
+    return entries(_RPATH), entries(_RUNPATH), _NODEFLIB.search(text) is not None
+
+
+def elf_class(path):
+    """Return 32 or 64 from the ELF identification bytes (64 if unreadable)."""
+
+    try:
+        with open(path, "rb") as handle:
+            ident = handle.read(5)
+    except OSError:
+        return 64
+    return 32 if len(ident) == 5 and ident[4] == 1 else 64
 
 
 def parse_symbols(text):
@@ -112,10 +144,15 @@ def scan_elf(path):
         return ElfScan()
 
     imports, exports = parse_symbols(symbols)
+    rpath, runpath, nodeflib = parse_search_paths(dynamic)
 
     return ElfScan(
         parse_dynamic(dynamic),
         parse_interp(interp),
         imports,
         exports,
+        rpath,
+        runpath,
+        elf_class(path),
+        nodeflib,
     )

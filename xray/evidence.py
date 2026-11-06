@@ -20,14 +20,16 @@ Nothing here says a program is safe: blind spots lists what was not seen.
 
 from __future__ import annotations
 
+import os
 import shutil
+import stat
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .elfscan import scan_elf
 from .entrypoints import _interpreter, _read_start, command_kind, import_file_lines
-from .libresolve import find_library, ldconfig_cache
+from .libresolve import ldconfig_entries, resolve_library, search_path_risks
 from .locate import locate
 from .perlscan import perl_inc, resolve_module, scan_perl
 from .provenance import packages_of
@@ -132,6 +134,7 @@ class EvidenceGraph:
         self.nodes = {}
         self.links = {}
         self.blind_spots = []
+        self.risks = []
         self.truncated = []
         self.trace = None
 
@@ -158,6 +161,14 @@ class EvidenceGraph:
 
     def outgoing(self, node_id):
         return [link for (source, _, _), link in self.links.items() if source == node_id]
+
+    def risk(self, file, message):
+        entry = {"file": file, "message": message}
+        if entry not in self.risks:
+            self.risks.append(entry)
+
+    def blind_once(self, message):
+        self.blind("*", message)
 
     def blind(self, file, message):
         entry = {"file": file, "message": message}
@@ -230,6 +241,7 @@ class EvidenceGraph:
             "nodes": [node.to_dict() for node in self.nodes.values()],
             "links": [link.to_dict() for link in self.links.values()],
             "blind_spots": list(self.blind_spots),
+            "risks": list(self.risks),
             "truncated": list(self.truncated),
             "trace": self.trace,
         }
@@ -251,6 +263,21 @@ def _said(what, path, lines, via):
             path, lines[0],
         )
     return Evidence("inferred", "shell-parse", f"{detail} via {via}", path, lines[0])
+
+
+def _resolution_detail(soname, found):
+    where = {
+        "rpath": "DT_RPATH",
+        "runpath": "DT_RUNPATH",
+        "LD_LIBRARY_PATH": "LD_LIBRARY_PATH (this environment)",
+        "ldconfig": "ldconfig cache",
+        "default": "default library directory",
+        "path": "path named in DT_NEEDED",
+    }[found.method]
+    detail = f"{soname} -> {found.path} ({where}"
+    if found.method in ("rpath", "runpath", "LD_LIBRARY_PATH"):
+        detail += f" {found.directory}"
+    return detail + ")"
 
 
 def _shebang(path):
@@ -276,10 +303,11 @@ class _Builder:
         self.files = set()
         self._ldcache = None
         self._inc = None
+        self.root_rpath = ()
 
-    def ldcache(self):
+    def ld_entries(self):
         if self._ldcache is None:
-            self._ldcache = ldconfig_cache()
+            self._ldcache = ldconfig_entries()
         return self._ldcache
 
     def file_node(self, path, depth):
@@ -408,22 +436,42 @@ class _Builder:
             target_id = self.file_node(target, depth) if target.exists() else None
             if target_id:
                 self.graph.add_link(path, target_id, "interpreter", evidence)
+        if path == self.graph.root:
+            self.root_rpath = scan.rpath
+        try:
+            info = Path(path).stat()
+        except OSError:
+            info = None
+        secure = bool(info and info.st_mode & (stat.S_ISUID | stat.S_ISGID))
+        origin = Path(path).parent
+        for kind, entries in (("RPATH", scan.rpath), ("RUNPATH", scan.runpath)):
+            if entries:
+                self.graph.nodes[path].attrs[kind.lower()] = list(entries)
+            for message in search_path_risks(entries, origin, kind, scan.elf_class, info.st_uid if info else 0):
+                self.graph.risk(path, message)
+        inherited = () if scan.runpath or path == self.graph.root else self.root_rpath
         for soname in scan.needed:
             soname_id = self.graph.add_node(f"soname:{soname}", "soname", soname).id
             self.graph.add_link(
                 path, soname_id, "needs",
                 Evidence("declared", "elf-dynamic", f"DT_NEEDED {soname}", path),
             )
-            target = find_library(soname, self.ldcache())
-            if target is None:
+            found = resolve_library(
+                soname, origin, scan.rpath, scan.runpath, inherited,
+                scan.elf_class, scan.nodeflib, self.ld_entries(), secure=secure,
+            )
+            if found.path is None:
                 self.graph.nodes[soname_id].attrs["resolved"] = False
                 continue
-            target_id = self.file_node(target, depth)
+            target_id = self.file_node(found.path, depth)
             if target_id:
                 self.graph.add_link(
                     soname_id, target_id, "resolves_to",
-                    Evidence("inferred", "ldconfig", f"{soname} -> {target} (ldconfig cache; RPATH and LD_LIBRARY_PATH not applied)"),
+                    Evidence("inferred", found.method, _resolution_detail(soname, found)),
                 )
+        if not secure and os.environ.get("LD_LIBRARY_PATH"):
+            self.graph.blind(path, "LD_LIBRARY_PATH is set here; the program may run with a different value")
+        self.graph.blind_once("LD_PRELOAD and /etc/ld.so.preload can add libraries that no file names")
 
     # -- Python ----------------------------------------------------------
     def python(self, path, depth):

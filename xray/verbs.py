@@ -175,9 +175,16 @@ def inspect_lines(graph, show_all=False, limit=25):
             lines.append(f"  … {len(unpredicted) - limit} more (--json)")
         lines.append("")
 
+    if graph.risks:
+        lines.append(f"Worth a look ({len(graph.risks)})")
+        for entry in graph.risks[:limit]:
+            lines.append(f"  {entry['file']}: {entry['message']}")
+        lines.append("")
+
     lines.append("Blind spots (what this graph cannot show)")
     for entry in graph.blind_spots[:limit]:
-        lines.append(f"  {entry['file']}: {entry['message']}")
+        where = "" if entry["file"] == "*" else f"{entry['file']}: "
+        lines.append(f"  {where}{entry['message']}")
     if len(graph.blind_spots) > limit:
         lines.append(f"  … {len(graph.blind_spots) - limit} more (--json)")
     for note in graph.truncated[:1]:
