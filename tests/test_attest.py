@@ -22,7 +22,7 @@ def signed(tmp_path):
 
 @needs_ssh
 def test_statement_shape_and_verification(signed):
-    tmp_path, _key, contract, program, written = signed
+    _tmp_path, _key, _contract, program, written = signed
     data = json.loads(written[0].read_text())
 
     assert data["_type"] == "https://in-toto.io/Statement/v1"
@@ -34,7 +34,7 @@ def test_statement_shape_and_verification(signed):
 
 @needs_ssh
 def test_a_changed_subject_or_statement_fails(signed):
-    tmp_path, _key, contract, program, written = signed
+    _tmp_path, _key, _contract, program, written = signed
 
     program.write_text("#!/bin/sh\ncurl -s x\n")
     ok, messages = attest.verify(written[0], written[2])
