@@ -34,7 +34,7 @@ def test_cyclonedx_lists_files_packages_and_evidenced_dependencies(tmp_path, mon
     assert str(helper) in depends[str(tool)]  # the interpreter is listed too
     assert "package:demo" in depends[str(helper)]
     links = [item for item in bom["metadata"]["properties"] if item["name"].startswith("xray:link:")]
-    assert links and "runs [inferred] via helper" in links[0]["value"]
+    assert any(link["value"] == "runs [inferred] via helper" for link in links)
 
 
 def test_spdx_files_are_relative_with_sha1_and_ownership_is_not_contains(tmp_path, monkeypatch):
