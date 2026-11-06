@@ -134,6 +134,17 @@ The capability log is JSON Lines in `~/.local/share/xray/capability-log.jsonl` (
 
 **Against the real backdoor:** [docs/real-xz.md](docs/real-xz.md) runs XRAY on Debian's actual backdoored liblzma5 5.6.0/5.6.1 packages, the clean releases around them, and Arch's builds of the same versions (where the payload was not injected). `drift` names the loader hook in both backdoored builds and in none of the clean ones; the same rule finds nothing else in 1,019 archives of the 500 most popular Arch packages or on a full desktop install. `demo/real-xz/run.sh` reproduces it from hash-pinned downloads.
 
+### The live Arch capability feed
+
+```sh
+xray feed update            # first run starts the feed; later runs profile every update since the last one
+xray feed report            # newest gains first; --strong for strong gains only
+xray feed report --html > feed.html
+xray feed timer --install   # a systemd user timer that runs the update hourly
+```
+
+Each run reads the `core` and `extra` databases from the mirror in `/etc/pacman.d/mirrorlist`, finds the packages whose version changed, downloads each new archive, checks it against the packager signature embedded in the database (with the pacman keyring) and its SHA-256, profiles it into the capability log, fetches the previous version from archive.archlinux.org when the log does not hold it, and records what the update gained in `~/.local/share/xray/feed.jsonl`. Strong gains — a new call class, a loader hook, IFUNC resolvers, constructors, setuid — are marked. Arch does not sign its databases, so trust rests on the per-package signatures.
+
 [`demo/xz-style`](demo/xz-style/README.md) re-enacts the 2024 xz backdoor pattern with a harmless toy library and shows drift, the log, a contract break, a traced breach and enforcement stopping the payload.
 
 ## What it reads
@@ -196,6 +207,7 @@ xray/
 ├── analysis_views.py
 ├── analyze.py
 ├── analyzers.py
+├── archfeed.py
 ├── browse.py
 ├── callgraph.py
 ├── calls.py
