@@ -135,6 +135,16 @@ def _paired(added, removed):
     return pairs
 
 
+def _new_search_entries(old, new):
+    """Search path entries in new that are not old ones with another version number or a trailing slash."""
+
+    def normal(entry):
+        return re.sub(r"\d+(?:\.\d+)*", "#", entry.rstrip("/") or "/")
+
+    before = {normal(entry) for entry in (old or "").split(":") if entry}
+    return [entry for entry in (new or "").split(":") if entry and normal(entry) not in before]
+
+
 def _set_change(old, new, key):
     before, after = set(old.get(key) or ()), set(new.get(key) or ())
     return sorted(after - before), sorted(before - after)
@@ -179,7 +189,7 @@ def compare(old, new):
             add("loss", key, f"dropped {label}: {item}")
     for key in ("rpath", "runpath", "interpreter", "soname"):
         if old.get(key) != new.get(key):
-            kind = "gain" if key in ("rpath", "runpath") and new.get(key) else "change"
+            kind = "gain" if key in ("rpath", "runpath") and _new_search_entries(old.get(key), new.get(key)) else "change"
             add(kind, key, f"{key}: {old.get(key) or '-'} -> {new.get(key) or '-'}")
     for key, label in (("ifuncs", "IFUNC resolvers"), ("constructors", "constructors run before main")):
         before, after = old.get(key) or 0, new.get(key) or 0

@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
 import urllib.request
 from functools import cmp_to_key
 from pathlib import Path
@@ -80,7 +81,8 @@ def mirror():
 def previous_version(name, current, arch):
     listing = fetch(f"{ARCHIVE}/{name[0]}/{name}/").decode("utf-8", "replace")
     pattern = re.compile(rf'href="({re.escape(name)}-([^"]+?)-({arch})\.pkg\.tar\.(?:zst|xz))"')
-    found = {version: filename for filename, version, _ in pattern.findall(listing)}
+    # epochs are URL-encoded in the listing (1%3A26.2.5-1)
+    found = {urllib.parse.unquote(version): filename for filename, version, _ in pattern.findall(listing)}
     older = [version for version in found if caplog.vercmp(version, current) < 0]
     if not older:
         return None

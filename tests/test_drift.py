@@ -157,3 +157,12 @@ def test_check_flags_a_library_that_gains_capabilities_under_the_same_name(tmp_p
 
     assert "now uses shell (system)" in details
     assert "IFUNC resolvers: 1 now" in details
+
+
+def test_search_path_version_bumps_are_changes_not_gains():
+    old = elf(runpath="/usr/lib/perl5/5.42/core_perl/CORE:$ORIGIN/")
+    bumped = elf(sha256="b", runpath="/usr/lib/perl5/5.44/core_perl/CORE:$ORIGIN")
+    widened = elf(sha256="c", runpath="/usr/lib/perl5/5.44/core_perl/CORE:/build/src")
+
+    assert [item["kind"] for item in compare(old, bumped)] == ["change"]
+    assert [item["kind"] for item in compare(old, widened)] == ["gain"]
