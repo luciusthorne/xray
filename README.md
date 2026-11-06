@@ -171,6 +171,18 @@ The GitHub Action runs any XRAY command, puts the output in the job summary and 
 
 [`demo/xz-style`](demo/xz-style/README.md) re-enacts the 2024 xz backdoor pattern with a harmless toy library and shows drift, the log, a contract break, a traced breach and enforcement stopping the payload.
 
+## Signed evidence
+
+```sh
+xray attest keygen                                   # an Ed25519 key in ~/.config/xray (once)
+xray attest contract app.contract                    # app.contract.intoto.json + .sig + .signers
+xray attest log                                      # the capability log's head
+xray drift a b --json > drift.json && xray attest report drift.json --input a b -o drift.intoto.json
+xray attest verify app.contract.intoto.json --signers allowed_signers
+```
+
+Contracts, capability profiles, drift and compare reports, and capability log heads can be published as **in-toto Statements** (the format SLSA and Sigstore use): the subjects are the files with their SHA-256, the predicate is the XRAY result. Statements are signed with `ssh-keygen -Y sign` in the `xray-attestation` namespace — no extra dependencies — and `--cosign` adds a Sigstore keyless signature where cosign is installed. `verify` checks the signature against an allowed-signers file and re-hashes every subject still on disk, reporting any that changed since they were attested.
+
 ## What it reads
 
 | Input | Analysis | Requirements and limits |
@@ -232,6 +244,7 @@ xray/
 ├── analyze.py
 ├── analyzers.py
 ├── archfeed.py
+├── attest.py
 ├── browse.py
 ├── callgraph.py
 ├── calls.py
