@@ -174,6 +174,15 @@ The GitHub Action runs any XRAY command, puts the output in the job summary and 
 
 [`demo/xz-style`](demo/xz-style/README.md) re-enacts the 2024 xz backdoor pattern with a harmless toy library and shows drift, the log, a contract break, a traced breach and enforcement stopping the payload.
 
+## A minimal root filesystem from evidence
+
+```sh
+xray build --commands xdg-mime curl jq -o rootfs/ --check "curl --version" --check "jq --version"
+xray build --contract app.min.contract -o app.tar --check "app --serve"    # podman import app.tar
+```
+
+`xray build` copies only what the evidence says the commands need — the programs, their interpreters, the commands they run, every shared library and the dynamic loader — and recreates the symlinks they are reached through (`/bin`, soname links, `awk` → `gawk`). With `--contract`, the contract's `[exec]`, `[load]` and `[read]` entries decide, so a minimized contract gives a minimal root. `--check` runs a command line inside the result with bubblewrap (no network, private `/tmp`) and fails the build when it does not work. On the development machine, xdg-mime, curl and jq fit in 79 files (34 MiB); xdg-mime's minimized three-workload contract in 30 files (21 MiB, mostly libmagic's database).
+
 ## Querying everything with SQL
 
 ```sh
@@ -338,6 +347,7 @@ xray/
 ├── relationships.py
 ├── report.py
 ├── rizinview.py
+├── rootfs.py
 ├── ruby_analyzer.py
 ├── sbom.py
 ├── scan.py

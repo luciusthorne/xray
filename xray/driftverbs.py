@@ -677,3 +677,50 @@ def run_query(argv):
         raise CLIError(f"query: {error}") from None
     print(query.json_rows(names, rows) if options.json else "\n".join(query.table_lines(names, rows)))
     return 0
+
+
+@_guard
+def run_build(argv):
+    from . import rootfs
+
+    parser = argparse.ArgumentParser(prog="xray build",
+                                     description="a minimal root filesystem with only what the commands need")
+    parser.add_argument("--commands", nargs="*", default=[], metavar="CMD")
+    parser.add_argument("--contract", nargs="*", default=[], metavar="FILE")
+    parser.add_argument("-o", "--output", required=True, help="a directory, or FILE.tar for a tar archive")
+    parser.add_argument("--check", action="append", default=[], metavar="'CMD ARGS'",
+                        help="run this command line inside the result (repeatable)")
+    options = _parse(parser, argv)
+    if not options.commands and not options.contract:
+        raise CLIError("give --commands, --contract or both")
+    try:
+        files, entries = rootfs.needed_files(options.commands, options.contract)
+    except FileNotFoundError as error:
+        raise CLIError(f"Not found on PATH or disk: {error}") from None
+    output = Path(options.output)
+    import tempfile as _tempfile
+
+    staging = Path(_tempfile.mkdtemp(prefix="xray-rootfs-")) if output.suffix == ".tar" else output
+    if staging.exists() and any(staging.iterdir()) and staging == output:
+        raise CLIError(f"{output} exists and is not empty")
+    count, links, size = rootfs.build(staging, files, entries)
+    print(f"{count} files ({size / 1048576:.1f} MiB) and {links} symlinks in {output}")
+    failed = 0
+    for workload in options.check:
+        try:
+            done = rootfs.check(staging, workload)
+        except FileNotFoundError:
+            raise CLIError("bubblewrap (bwrap) is needed for --check") from None
+        status = "ok" if done.returncode == 0 else f"exit {done.returncode}"
+        failed += done.returncode != 0
+        print(f"  check `{workload}`: {status}")
+        first = (done.stdout or done.stderr).decode("utf-8", "replace").strip().splitlines()[:1]
+        if first:
+            print(f"      {first[0][:100]}")
+    if output.suffix == ".tar":
+        rootfs.write_tar(staging, output)
+        import shutil as _shutil
+
+        _shutil.rmtree(staging, ignore_errors=True)
+        print(f"wrote {output} (podman import {output})")
+    return 1 if failed else 0

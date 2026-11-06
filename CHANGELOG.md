@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `xray build --commands … / --contract …`: a minimal root filesystem (directory or tar) with only the files the evidence or contract names, the symlinks they are reached through, and `--check` runs inside it with bubblewrap.
 - Add `xray query`: read-only SQL over the scan store or a capability log (`--log`), with `--schema`, `--examples` and `--json`.
 - `xray taint` follows arguments by position across programs: a helper's `$2` / `sys.argv[2]` is tainted only when the caller passed input in that position, and the chain names the argument.
 - `contract enforce`: read, exec and load entries with a glob (`/etc/tool/*.conf`) grant only the files that match when the program starts, instead of the whole directory.
