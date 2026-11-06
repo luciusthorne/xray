@@ -10,13 +10,16 @@ Two layers, both unprivileged:
 - bubblewrap (when [net] is none): a private network namespace, so no
   network at all, UDP included.
 
-Landlock grants are per file or per directory tree, so an entry such as
-/etc/tool/*.conf is enforced as the directory /etc/tool. ``xray contract
+Landlock grants are per file or per directory tree. A read entry such as
+/etc/tool/*.conf is enforced as the files that match when the program
+starts; a write entry with a glob is enforced on its directory, since the
+files it creates do not exist yet. ``xray contract
 check --trace`` reports accesses at the exact granularity of the contract.
 """
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 import shutil
@@ -41,6 +44,16 @@ def _root_of(value, home=None):
     return value
 
 
+def _roots_for_reading(value, home=None):
+    """What a read, exec or load entry is enforced on. A glob in the last component (/etc/tool/*.conf)
+    is expanded to the files that match now, instead of granting the whole directory."""
+
+    expanded = expand_home(value, home)
+    if not expanded.endswith("/**") and any(ch in Path(expanded).name for ch in "*?["):
+        return sorted(glob.glob(expanded))
+    return [_root_of(value, home)]
+
+
 def landlock_rules(contract, home=None, extra_read=(), extra_write=()):
     rights = {}
 
@@ -48,12 +61,14 @@ def landlock_rules(contract, home=None, extra_read=(), extra_write=()):
         rights[path] = rights.get(path, 0) | bits
 
     for value in contract.values("exec"):
-        grant(_root_of(value, home), ll.EXECUTE | ll.READ)
+        for root in _roots_for_reading(value, home):
+            grant(root, ll.EXECUTE | ll.READ)
     for value in contract.values("load"):
-        root = _root_of(value, home)
-        grant(root, ll.READ | (ll.EXECUTE if Path(root).name.startswith("ld-") else 0))
+        for root in _roots_for_reading(value, home):
+            grant(root, ll.READ | (ll.EXECUTE if Path(root).name.startswith("ld-") else 0))
     for value in [*contract.values("read"), *extra_read]:
-        grant(_root_of(value, home), ll.READ)
+        for root in _roots_for_reading(value, home):
+            grant(root, ll.READ)
     for value in [*contract.values("write"), *extra_write]:
         root = _root_of(value, home)
         if os.path.isdir(root) or value.endswith(("/**", "/*")):
