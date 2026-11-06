@@ -103,7 +103,8 @@ xray contract minimize xdg-mime.contract -o xdg-mime.min -- query default text/p
 - `check` rebuilds the evidence and lists everything the program now reaches that the contract does not allow — a new command, a library a rebuilt binary started loading — with the chain of proof; with `--trace`, also what a real run did. `--strict` counts a changed program file (SHA-256) as a breach.
 - `enforce` runs the program under Landlock (unprivileged; per-file execute/read/write rights and TCP ports) and, when `[net]` is `none`, in a private network namespace via bubblewrap. `--read`/`--write` add paths for one run; `--dry-run` prints the rules.
 - `generate --workloads FILE` and `minimize --workloads FILE` take one command line per line: the contract covers every workload, and minimization keeps an entry when any workload needs it.
-- `minimize` removes every entry the workload does not need, by re-running it under the shrinking contract until any further removal changes its exit status or output. What remains is marked `required`: a contract proven minimal for that workload.
+- `contract systemd FILE [-- ARGS]` turns a contract into a systemd unit (`--dropin` for an existing service, `--run` to run it now with `systemd-run --user`): `[exec]`/`[load]` become `NoExecPaths=/` plus `ExecPaths=` for exactly those files, `[write]` becomes `ProtectSystem=strict` with `ReadWritePaths=`, `[net]` becomes `PrivateNetwork=`/`RestrictAddressFamilies=`/`SocketBindAllow=`. systemd does not limit reads (`--hide-home` hides the home directory except the contract's reads), and its no-exec mounts make `test -x` fail for anything outside `[exec]` — which is why runs are traced for execute-permission probes, and why `minimize --enforcer systemd` exists: minimize with the mechanism you deploy with.
+- `minimize` removes every entry the workload does not need, by re-running it under the shrinking contract until any further removal changes its exit status or output. It also runs each workload unconfined first and warns when even the full contract changes the result. What remains is marked `required`: a contract proven minimal for that workload.
 
 ## Taint: input reaching code, across languages
 
@@ -336,6 +337,7 @@ xray/
 ├── shtaint.py
 ├── sourcelookup.py
 ├── symbols.py
+├── systemd.py
 ├── taint.py
 ├── textjson.py
 ├── trace.py

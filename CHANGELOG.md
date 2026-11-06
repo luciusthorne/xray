@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `xray contract systemd`: a contract as systemd sandboxing settings (unit, drop-in, or `--run` with systemd-run), and `minimize --enforcer systemd`. Traced runs record execute-permission probes (`test -x`), which systemd's no-exec mounts change; `minimize` now compares with an unconfined run and warns when the full contract already changes a workload's result.
 - Add `xray inspect CMD --sbom cyclonedx|spdx`: CycloneDX 1.6 and SPDX 2.3 bills of materials from the evidence graph, with hashes, package URLs and evidenced dependencies (validated with the official CycloneDX schema and spdx-tools).
 - Add policy as code: `xray policy check POLICY` over drift, compare, feed, taint, scan or contract results (`allow|deny gain|taint|risk|breach PATTERN [in GLOB] [for PACKAGE]`, first match wins); the pacman hook can use a policy to decide what blocks.
 - Add `xray attest`: contracts, profiles, reports and capability log heads as in-toto Statements, signed with an SSH key (`ssh-keygen -Y`, optionally also Sigstore cosign); `verify` checks the signature and re-hashes the subjects.

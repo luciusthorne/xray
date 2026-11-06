@@ -16,7 +16,8 @@ from .errors import CLIError
 USAGE = """usage: xray contract generate <command> [-o FILE] [--trace -- ARGS...]
        xray contract check <contract> [--trace -- ARGS...] [--strict] [--json]
        xray contract enforce <contract> [--read PATH] [--write PATH] [--dry-run] -- ARGS...
-       xray contract minimize <contract> [-o FILE] [--all] [--max-runs N] -- ARGS..."""
+       xray contract minimize <contract> [-o FILE] [--all] [--max-runs N] -- ARGS...
+       xray contract systemd <contract> [--dropin] [--run] [-- ARGS...]"""
 
 
 def _split(argv):
@@ -52,9 +53,17 @@ def _parser(name):
         parser.add_argument("--read", action="append", default=[], metavar="PATH", help="also allow reading PATH")
         parser.add_argument("--write", action="append", default=[], metavar="PATH", help="also allow writing PATH")
         parser.add_argument("--dry-run", action="store_true", help="print the rules and command; run nothing")
+    if name == "systemd":
+        parser.add_argument("--dropin", action="store_true", help="print a [Service] drop-in for an existing unit")
+        parser.add_argument("--run", action="store_true",
+                            help="run the program now with systemd-run --user under these settings")
+        parser.add_argument("--hide-home", action="store_true",
+                            help="hide the home directory except the contract's [read] entries (stricter; see docs)")
     if name == "minimize":
         parser.add_argument("-o", "--output", metavar="FILE")
         parser.add_argument("--workloads", metavar="FILE", help="keep every workload in FILE working (one per line)")
+        parser.add_argument("--enforcer", choices=("landlock", "systemd"), default="landlock",
+                            help="minimize under the mechanism you will deploy with (default landlock)")
         parser.add_argument("--all", action="store_true", help="also try removing declared libraries and the loader")
         parser.add_argument("--max-runs", type=int, default=200)
         parser.add_argument("--timeout", type=int, default=30)
@@ -67,7 +76,7 @@ def run_contract(argv):
         print(USAGE)
         return 0
     name, rest = argv[0], argv[1:]
-    if name not in ("generate", "check", "enforce", "minimize"):
+    if name not in ("generate", "check", "enforce", "minimize", "systemd"):
         raise CLIError(USAGE)
     options_argv, workload = _split(rest)
     parser = _parser(name)
@@ -78,7 +87,8 @@ def run_contract(argv):
             return 0
         raise CLIError(f"usage: {parser.format_usage().strip()}") from None
     try:
-        return {"generate": _generate, "check": _check, "enforce": _enforce, "minimize": _minimize}[name](options, workload)
+        return {"generate": _generate, "check": _check, "enforce": _enforce, "minimize": _minimize,
+                "systemd": _systemd}[name](options, workload)
     except ContractError as error:
         raise CLIError(f"contract: {error}") from None
 
@@ -370,7 +380,8 @@ def read_workloads(path):
     return workloads
 
 
-def minimize(contract, args, max_runs=200, timeout=30, everything=False, same_stderr=True, run=None, workloads=None):
+def minimize(contract, args, max_runs=200, timeout=30, everything=False, same_stderr=True, run=None, workloads=None,
+             enforcer="landlock"):
     """Remove every entry the workload does not need (delta debugging over entries).
 
     Returns (minimal contract, removed [(section, entry)], runs, baseline).
@@ -385,7 +396,13 @@ def minimize(contract, args, max_runs=200, timeout=30, everything=False, same_st
 
     def run_one(trial, arguments):
         try:
-            done = run_enforced(trial, arguments, capture=True, timeout=timeout, stdin=None)
+            if enforcer == "systemd":
+                from . import systemd
+
+                done = subprocess.run(systemd.run_command(trial, arguments), capture_output=True, timeout=timeout,
+                                      check=False, stdin=subprocess.DEVNULL)
+            else:
+                done = run_enforced(trial, arguments, capture=True, timeout=timeout, stdin=None)
         except (subprocess.TimeoutExpired, OSError) as error:  # counts as a different result
             return ("error", str(type(error).__name__))
         return (done.returncode, done.stdout, done.stderr if same_stderr else b"")
@@ -398,6 +415,20 @@ def minimize(contract, args, max_runs=200, timeout=30, everything=False, same_st
     runs = [0]
     baseline = run(contract)
     runs[0] += 1
+    mismatch = []
+    if run is default_run:
+        # The full contract should reproduce what the program does unconfined; when it does not, the
+        # contract is missing something this enforcer depends on, and the result is reported.
+        for arguments, confined in zip(argument_sets, baseline):
+            try:
+                free = subprocess.run([contract.program, *arguments], capture_output=True, timeout=timeout,
+                                      check=False, stdin=subprocess.DEVNULL)
+                unconfined = (free.returncode, free.stdout, free.stderr if same_stderr else b"")
+            except (subprocess.TimeoutExpired, OSError) as error:
+                unconfined = ("error", str(type(error).__name__))
+            if unconfined != confined:
+                mismatch.append(arguments)
+    minimize.mismatch = mismatch
     candidates = _candidates(contract, everything)
 
     def passes(kept):
@@ -454,17 +485,23 @@ def _minimize(options, workload):
     minimal, removed, runs, _baseline = minimize(
         contract, args, max_runs=options.max_runs, timeout=options.timeout,
         everything=options.all, same_stderr=not options.ignore_stderr, workloads=workloads,
+        enforcer=options.enforcer,
     )
     name = Path(contract.program).name
     minimal.workload = (f"{len(workloads)} workloads (listed below)" if workloads
                         else shlex.join([name, *args]))
     minimal.notes = [note for note in contract.notes]
     minimal.notes.append(
-        f"minimized with {runs} enforced runs: every entry marked 'required' changed the result "
+        f"minimized with {runs} runs under {options.enforcer}: every entry marked 'required' changed the result "
         f"(exit status and output) of the workload when removed"
     )
     if runs >= options.max_runs:
         minimal.notes.append(f"stopped at --max-runs {options.max_runs}: the result may not be minimal")
+    for arguments in getattr(minimize, "mismatch", []):
+        warning = (f"WARNING: under {options.enforcer}, even the full contract changes the result of "
+                   f"`{shlex.join([name, *arguments])}` compared with running it unconfined")
+        minimal.notes.append(warning)
+        print(warning, file=sys.stderr)
     for arguments in workloads or []:
         minimal.notes.append(f"workload `{shlex.join([name, *arguments])}`")
     for section, entry in removed:
@@ -473,3 +510,16 @@ def _minimize(options, workload):
     print(f"{len(removed)} of {len(removed) + sum(1 for s in minimal.sections.values() for e in s if e.comment.startswith('required'))} "
           f"candidate entries removed in {runs} runs", file=sys.stderr)
     return 0
+
+
+def _systemd(options, workload):
+    from . import systemd
+
+    contract = load_contract(options.contract)
+    args = workload or []
+    if not options.run:
+        print(systemd.unit(contract, args, dropin=options.dropin, hide_home=options.hide_home), end="")
+        return 0
+    # systemd-run starts from a clean environment; run_command passes the desktop and locale settings
+    # programs read, so the run takes the same code path it took when the contract was made.
+    return subprocess.run(systemd.run_command(contract, args, options.hide_home), check=False).returncode

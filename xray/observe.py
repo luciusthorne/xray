@@ -21,7 +21,8 @@ from .errors import AnalysisError
 
 _CALLS = (
     "execve,execveat,open,openat,openat2,creat,mkdir,mkdirat,unlink,unlinkat,rename,renameat,renameat2,"
-    "rmdir,symlink,symlinkat,link,linkat,truncate,chdir,fchdir,socket,connect,bind,clone,clone3,fork,vfork"
+    "rmdir,symlink,symlinkat,link,linkat,truncate,chdir,fchdir,socket,connect,bind,clone,clone3,fork,vfork,"
+    "access,faccessat,faccessat2"
 )
 _LINE = re.compile(r"^(?P<pid>\d+)\s+(?P<call>\w+)\((?P<args>.*)\)\s+=\s+(?P<ret>-?\d+|\?)(?P<rest>.*)$")
 _UNFINISHED = re.compile(r"^(?P<pid>\d+)\s+(?P<head>.*) <unfinished \.\.\.>$")
@@ -41,6 +42,7 @@ class Observed:
     read: list = field(default_factory=list)
     write: list = field(default_factory=list)
     net: list = field(default_factory=list)  # (kind, protocol, port-or-path)
+    probed: list = field(default_factory=list)  # files the run tested for execute permission (test -x)
     status: int | None = None
     timed_out: bool = False
 
@@ -125,6 +127,11 @@ def parse_capabilities(text, cwd):
         if call == "fchdir":
             continue
         if not strings:
+            continue
+        if call in ("access", "faccessat", "faccessat2"):
+            if "X_OK" in args:
+                dirfd = first_arg if call != "access" else None
+                observed.add("probed", absolute(pid, strings[0], dirfd))
             continue
         if call in ("execve", "execveat"):
             observed.add("exec", absolute(pid, strings[0]))
