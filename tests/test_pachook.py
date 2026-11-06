@@ -91,5 +91,5 @@ def test_config_is_read(tmp_path):
     path = tmp_path / "hook.conf"
     path.write_text("mode = block  # stop\nallow = linux nvidia\n")
 
-    assert pachook.read_config(path) == {"mode": "block", "allow": {"linux", "nvidia"}}
-    assert pachook.read_config(tmp_path / "missing") == {"mode": "report", "allow": set()}
+    assert pachook.read_config(path) == {"mode": "block", "allow": {"linux", "nvidia"}, "policy": None}
+    assert pachook.read_config(tmp_path / "missing") == {"mode": "report", "allow": set(), "policy": None}
