@@ -277,3 +277,93 @@ def run_compare(argv):
     else:
         print("\n".join(compare_lines(label(left_label, left_meta), label(right_label, right_meta), report)))
     return 1 if options.fail_on_strong and report["strong"] else 0
+
+
+FEED_USAGE = """usage: xray feed update [--repos core,extra] [--watch NAME...] [--limit N] [--max-mib N] [--quiet]
+       xray feed report [--html] [--strong] [--limit N]
+       xray feed timer [--install]"""
+
+
+@_guard
+def run_feed(argv):
+    import shutil as _shutil
+    import sys as _sys
+
+    from . import archfeed, caplog
+
+    if not argv or argv[0] not in ("update", "report", "timer"):
+        raise CLIError(FEED_USAGE)
+    command = argv[0]
+    parser = argparse.ArgumentParser(prog=f"xray feed {command}")
+    if command == "update":
+        parser.add_argument("--repos", default="core,extra")
+        parser.add_argument("--watch", nargs="+", metavar="NAME", help="only these packages (default: all)")
+        parser.add_argument("--limit", type=int, metavar="N", help="process at most N updates per repository")
+        parser.add_argument("--max-mib", type=int, default=80)
+        parser.add_argument("--mirror", help="a Server URL with $repo and $arch (default: /etc/pacman.d/mirrorlist)")
+        parser.add_argument("--quiet", action="store_true")
+    if command == "report":
+        parser.add_argument("--html", action="store_true")
+        parser.add_argument("--strong", action="store_true", help="only updates with strong gains")
+        parser.add_argument("--limit", type=int, default=50)
+    if command == "timer":
+        parser.add_argument("--install", action="store_true", help="write the units to ~/.config/systemd/user")
+    parser.add_argument("--log", metavar="FILE")
+    parser.add_argument("--feed", metavar="FILE")
+    parser.add_argument("--state", metavar="FILE")
+    options = _parse(parser, argv[1:])
+    paths = {key: Path(value) for key, value in (("log", options.log), ("feed", options.feed),
+                                                  ("state", options.state)) if value}
+    resolved = {**archfeed.default_paths(), **paths}
+
+    if command == "update":
+        def progress(repo, number, total, name):
+            if not options.quiet and _sys.stderr.isatty():
+                print(f"\r{repo} {number}/{total} {name[:40]:<40}", end="", file=_sys.stderr, flush=True)
+
+        first_run = not resolved["state"].exists()
+        try:
+            entries = archfeed.update([repo.strip() for repo in options.repos.split(",") if repo.strip()],
+                                      paths=paths, watch=set(options.watch) if options.watch else None,
+                                      max_mib=options.max_mib, limit=options.limit, base_url=options.mirror,
+                                      progress=progress)
+        except (archfeed.FeedError, OSError) as error:
+            raise CLIError(f"feed: {error}") from None
+        if not options.quiet and _sys.stderr.isatty():
+            print("\r" + " " * 60 + "\r", end="", file=_sys.stderr)
+        if first_run:
+            print("Started the feed from the current repository versions; later runs record every update.")
+            return 0
+        strong_count = sum(1 for entry in entries if entry.get("strong"))
+        if not options.quiet or strong_count:
+            print(f"{len(entries)} updates recorded; {sum(1 for e in entries if e.get('gains'))} gained capabilities, "
+                  f"{strong_count} strongly")
+            for entry in entries:
+                if entry.get("strong"):
+                    print(f"  STRONG {entry['package']} {entry['from']} -> {entry['to']}: "
+                          + "; ".join(gain["detail"][:80] for gain in entry["strong"][:3]))
+        return 0
+
+    if command == "report":
+        entries = archfeed.read_feed(resolved["feed"])
+        if options.html:
+            _, head, _ = caplog.verify(caplog.read_log(resolved["log"]))
+            print(archfeed.report_html(entries, head))
+        else:
+            print("\n".join(archfeed.report_lines(entries, options.limit, options.strong)))
+        return 0
+
+    xray_path = _shutil.which("xray") or "xray"
+    units = {"xray-feed.service": archfeed.service(xray_path), "xray-feed.timer": archfeed.TIMER}
+    if not options.install:
+        for name, text in units.items():
+            print(f"# ~/.config/systemd/user/{name}\n{text}")
+        print("# then: systemctl --user daemon-reload && systemctl --user enable --now xray-feed.timer")
+        return 0
+    folder = Path.home() / ".config" / "systemd" / "user"
+    folder.mkdir(parents=True, exist_ok=True)
+    for name, text in units.items():
+        (folder / name).write_text(text)
+    print(f"wrote {', '.join(units)} to {folder}")
+    print("enable with: systemctl --user daemon-reload && systemctl --user enable --now xray-feed.timer")
+    return 0
