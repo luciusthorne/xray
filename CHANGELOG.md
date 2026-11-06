@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `xray inspect CMD --sbom cyclonedx|spdx`: CycloneDX 1.6 and SPDX 2.3 bills of materials from the evidence graph, with hashes, package URLs and evidenced dependencies (validated with the official CycloneDX schema and spdx-tools).
 - Add policy as code: `xray policy check POLICY` over drift, compare, feed, taint, scan or contract results (`allow|deny gain|taint|risk|breach PATTERN [in GLOB] [for PACKAGE]`, first match wins); the pacman hook can use a policy to decide what blocks.
 - Add `xray attest`: contracts, profiles, reports and capability log heads as in-toto Statements, signed with an SSH key (`ssh-keygen -Y`, optionally also Sigstore cosign); `verify` checks the signature and re-hashes the subjects.
 - `xray taint` reads compiled programs: functions where an input call (getenv, fgets, read, recv, …) is followed, directly or through called functions, by a code-execution call (system, popen, exec*, dlopen), with both source lines; labelled guessed (call order, not data flow).

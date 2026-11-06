@@ -36,6 +36,7 @@ def _parser(verb):
         parser.add_argument("--all", action="store_true", help="list every direct link")
         parser.add_argument("--tree", action="store_true", help="print the whole graph as a tree, with the basis of each link")
         parser.add_argument("--html", action="store_true", help="print an interactive evidence graph page (save it with >)")
+        parser.add_argument("--sbom", choices=("cyclonedx", "spdx"), help="print a bill of materials of what it reaches")
         parser.add_argument(
             "--trace", action="store_true",
             help="also RUN the command under strace and compare what it did with the static graph",
@@ -105,6 +106,10 @@ def run_verb(argv):
             from .evidencehtml import render
 
             print(render(graph))
+        elif options.sbom:
+            from .sbom import cyclonedx, spdx
+
+            print(json.dumps(cyclonedx(graph) if options.sbom == "cyclonedx" else spdx(graph), indent=2))
         elif options.tree:
             print("\n".join(tree_lines(graph)))
         else:
