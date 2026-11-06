@@ -250,3 +250,30 @@ def run_log(argv):
         lines.append(f"  {gain['package']} {gain['from']} -> {gain['to']}  {gain['path']}: {gain['detail']}")
     print("\n".join(lines))
     return 0
+
+
+@_guard
+def run_compare(argv):
+    from .crossbuild import compare_builds, compare_lines
+    from .drift import opened, profiles
+
+    parser = argparse.ArgumentParser(prog="xray compare",
+                                     description="compare two builds of the same release (files paired by name)")
+    parser.add_argument("left")
+    parser.add_argument("right")
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--fail-on-strong", action="store_true", help="exit 1 when a strong difference is found")
+    options = _parse(parser, argv)
+    with opened(options.left) as (left_label, _, left_files, left_meta), \
+            opened(options.right) as (right_label, _, right_files, right_meta):
+        report = compare_builds(profiles(left_files), profiles(right_files))
+
+    def label(source, meta):
+        return f"{meta['pkgname']} {meta.get('pkgver', '')} ({Path(source).name})" if meta.get("pkgname") else source
+
+    if options.json:
+        print(json.dumps({"schema_version": 1, "left": {"source": left_label, **left_meta},
+                          "right": {"source": right_label, **right_meta}, **report}, indent=2))
+    else:
+        print("\n".join(compare_lines(label(left_label, left_meta), label(right_label, right_meta), report)))
+    return 1 if options.fail_on_strong and report["strong"] else 0

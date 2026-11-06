@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `xray compare A B`: two builds of the same release compared file by file (paired by name), listing what only one build can do, with strong differences (call classes, loader hooks or dependence on the dynamic loader, IFUNCs, constructors, setuid) separated from weak ones. Add `tools/crossdistro_study.py` for Arch-versus-Debian studies.
 - Detect the xz backdoor's loader hook: a library outside glibc that links the dynamic loader and has IFUNC resolvers. `drift` reports it as a gain and `inspect`/`scan` list it under "Worth a look". Checked on Debian's real backdoored liblzma5 5.6.0/5.6.1 (flagged), every clean liblzma build around them and Arch's builds of the same versions (not flagged), and 1,019 archives of the top 500 Arch packages and a full desktop install (no false positives). See docs/real-xz.md and demo/real-xz/run.sh.
 - `drift` and the capability log read Debian `.deb` packages.
 - Add `xray inspect CMD --html`: the evidence graph as a self-contained interactive page with edges styled by basis, per-link evidence, the strongest path to any node, blind spots and findings; `#node=NAME` deep links.
