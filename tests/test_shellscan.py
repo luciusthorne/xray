@@ -119,7 +119,7 @@ def test_builtins_are_filtered(tmp_path):
         "export A=1\n"
         "local b\n"
         "set -e\n"
-        "trap x EXIT\n"
+        "trap - EXIT\n"
         "[ -f x ]\n"
         "[[ -n y ]]\n"
         "test -d z\n"

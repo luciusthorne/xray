@@ -20,18 +20,22 @@ Nothing here says a program is safe: blind spots lists what was not seen.
 
 from __future__ import annotations
 
+import os
+import re
 import shutil
+import stat
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .elfscan import scan_elf
 from .entrypoints import _interpreter, _read_start, command_kind, import_file_lines
-from .libresolve import find_library, ldconfig_cache
+from .libresolve import ldconfig_entries, resolve_library, search_path_risks
 from .locate import locate
 from .perlscan import perl_inc, resolve_module, scan_perl
 from .provenance import packages_of
-from .shellscan import changes_path, command_lines, scan_shell
+from .pyexec import python_exec
+from .shellscan import shell_facts
 
 EVIDENCE_SCHEMA_VERSION = 1
 BASES = ("observed", "declared", "inferred", "guessed")
@@ -40,7 +44,8 @@ _RANK = {basis: rank for rank, basis in enumerate(BASES)}
 LINK_KINDS = (
     "runs",          # a script starts a command
     "sources",       # a shell script loads another file
-    "imports",       # Python or Perl loads a module file
+    "imports",       # Python, Perl, Ruby, JavaScript, TypeScript or Lua loads a module
+    "includes",      # C #include
     "interpreter",   # shebang or PT_INTERP: what executes this file
     "needs",         # ELF DT_NEEDED: binary or library -> soname
     "resolves_to",   # soname or command name -> the file the system picks
@@ -49,7 +54,23 @@ LINK_KINDS = (
     "opened",        # observed in a traced run
 )
 
-FOLLOWED_KINDS = ("shell", "elf", "python", "perl")
+FOLLOWED_KINDS = ("shell", "elf", "python", "perl", "ruby", "javascript", "typescript", "lua", "c")
+_READER_KINDS = ("ruby", "javascript", "typescript", "lua", "c")
+
+# Literal command starts in languages read with patterns rather than a parser.
+_EXEC_PATTERNS = {
+    "ruby": re.compile(
+        r"""(?:\b(?:system|exec|spawn|IO\.popen|Open3\.\w+|Process\.spawn)\s*\(?\s*\[?\s*|%x[({\[]\s*|`\s*)"""
+        r"""(?P<q>['"]?)(?P<cmd>[A-Za-z0-9_./+-]+)"""
+    ),
+    "javascript": re.compile(
+        r"""\b(?:exec|execSync|execFile|execFileSync|spawn|spawnSync|fork)\s*\(\s*(?P<q>['"`])(?P<cmd>[A-Za-z0-9_./+-]+)"""
+    ),
+}
+_EXEC_PATTERNS["typescript"] = _EXEC_PATTERNS["javascript"]
+_EXEC_PATTERNS["lua"] = re.compile(
+    r"""\b(?:os\.execute|io\.popen)\s*\(?\s*(?P<q>['"])(?P<cmd>[A-Za-z0-9_./+-]+)"""
+)
 
 
 @dataclass(frozen=True)
@@ -132,6 +153,7 @@ class EvidenceGraph:
         self.nodes = {}
         self.links = {}
         self.blind_spots = []
+        self.risks = []
         self.truncated = []
         self.trace = None
 
@@ -158,6 +180,14 @@ class EvidenceGraph:
 
     def outgoing(self, node_id):
         return [link for (source, _, _), link in self.links.items() if source == node_id]
+
+    def risk(self, file, message):
+        entry = {"file": file, "message": message}
+        if entry not in self.risks:
+            self.risks.append(entry)
+
+    def blind_once(self, message):
+        self.blind("*", message)
 
     def blind(self, file, message):
         entry = {"file": file, "message": message}
@@ -230,9 +260,54 @@ class EvidenceGraph:
             "nodes": [node.to_dict() for node in self.nodes.values()],
             "links": [link.to_dict() for link in self.links.values()],
             "blind_spots": list(self.blind_spots),
+            "risks": list(self.risks),
             "truncated": list(self.truncated),
             "trace": self.trace,
         }
+
+
+def _said(what, path, lines, via):
+    """Evidence that a shell script names a command or file on these lines."""
+
+    detail = what
+    if len(lines) > 1:
+        more = ", ".join(str(line) for line in lines[1:6])
+        detail += f" (also line {more})"
+    if via is None:
+        return Evidence("inferred", "shell-parse", detail, path, lines[0])
+    if via.startswith("$"):
+        return Evidence(
+            "guessed", "shell-variable",
+            f"{detail} through {via}, which the script only sets to fixed values",
+            path, lines[0],
+        )
+    return Evidence("inferred", "shell-parse", f"{detail} via {via}", path, lines[0])
+
+
+def _resolution_detail(soname, found):
+    where = {
+        "rpath": "DT_RPATH",
+        "runpath": "DT_RUNPATH",
+        "LD_LIBRARY_PATH": "LD_LIBRARY_PATH (this environment)",
+        "ldconfig": "ldconfig cache",
+        "default": "default library directory",
+        "path": "path named in DT_NEEDED",
+    }[found.method]
+    detail = f"{soname} -> {found.path} ({where}"
+    if found.method in ("rpath", "runpath", "LD_LIBRARY_PATH"):
+        detail += f" {found.directory}"
+    return detail + ")"
+
+
+def _line_naming(lines, name):
+    """The first line that mentions a written import name, or None."""
+
+    if not name:
+        return None
+    for number, line in enumerate(lines, 1):
+        if name in line:
+            return number
+    return None
 
 
 def _shebang(path):
@@ -250,29 +325,52 @@ def _file_kind(path):
 
 
 class _Builder:
-    def __init__(self, graph, max_depth, max_files):
+    def __init__(self, graph, max_depth, max_files, store=None, shared=None):
         self.graph = graph
         self.max_depth = max_depth
         self.max_files = max_files
         self.queue = deque()
         self.files = set()
-        self._ldcache = None
-        self._inc = None
+        self.store = store
+        self.shared = shared if shared is not None else {}
+        self._ldcache = self.shared.get("ld")
+        self._inc = self.shared.get("inc")
+        self.root_rpath = ()
+        self.collected = None
 
-    def ldcache(self):
+    def ld_entries(self):
         if self._ldcache is None:
-            self._ldcache = ldconfig_cache()
+            self._ldcache = ldconfig_entries()
         return self._ldcache
 
+    def real(self, path):
+        cache = self.shared.setdefault("real", {})
+        key = str(path)
+        if key not in cache:
+            cache[key] = str(Path(path).resolve())
+        return cache[key]
+
+    def kind_of(self, path):
+        cache = self.shared.setdefault("kind", {})
+        if path not in cache:
+            cache[path] = _file_kind(path)
+        return cache[path]
+
     def file_node(self, path, depth):
-        path = str(Path(path).resolve())
+        path = self.real(path)
+        if self.collected is not None:
+            # Reading one file on its own: note the file, the caller merges it.
+            if path not in self.collected:
+                self.collected.append(path)
+                self.graph.add_node(path, self.kind_of(path))
+            return path
         if path in self.files:
             return path
         if len(self.files) >= self.max_files:
             self.graph.truncated.append(f"file limit ({self.max_files}) reached at {path}")
             return None
         self.files.add(path)
-        self.graph.add_node(path, _file_kind(path))
+        self.graph.add_node(path, self.kind_of(path))
         self.queue.append((path, depth))
         return path
 
@@ -288,6 +386,63 @@ class _Builder:
             self.expand(path, kind, depth + 1)
 
     def expand(self, path, kind, depth):
+        """Add what one file reaches: from the store when it is unchanged."""
+
+        inherited = self.root_rpath if kind == "library" else ()
+        facts = self.store.get(path, inherited) if self.store is not None else None
+        if facts is None:
+            facts = self.local_facts(path, kind)
+            if self.store is not None:
+                self.store.put(path, inherited, facts)
+        self.merge(facts, depth)
+        if path == self.graph.root and facts.get("rpath") is not None:
+            self.root_rpath = tuple(facts["rpath"])
+
+    def local_facts(self, path, kind):
+        """Read one file on its own and return what it reaches, as plain data."""
+
+        main = self.graph
+        scratch = EvidenceGraph(main.root)
+        scratch.add_node(path, kind)
+        self.graph, self.collected = scratch, []
+        try:
+            self.read_file(path, kind)
+            collected = self.collected
+        finally:
+            self.graph, self.collected = main, None
+        self.shared["ld"], self.shared["inc"] = self._ldcache, self._inc
+        data = scratch.to_dict()
+        return {
+            "files": collected,
+            "nodes": data["nodes"],
+            "links": data["links"],
+            "blind_spots": data["blind_spots"],
+            "risks": data["risks"],
+            "rpath": scratch.nodes[path].attrs.get("rpath"),
+        }
+
+    def merge(self, facts, depth):
+        files = set(facts["files"])
+        added = {path for path in facts["files"] if self.file_node(path, depth)}
+        for node in facts["nodes"]:
+            if node["id"] in files:
+                continue
+            attrs = {key: value for key, value in node.items() if key not in ("id", "kind", "label")}
+            self.graph.add_node(node["id"], node["kind"], node["label"], **attrs)
+        for link in facts["links"]:
+            if (link["target"] in files and link["target"] not in added) or (
+                link["source"] in files and link["source"] not in added
+            ):
+                continue
+            for item in link["evidence"]:
+                self.graph.add_link(link["source"], link["target"], link["kind"], Evidence(**item))
+        for entry in facts["blind_spots"]:
+            self.graph.blind(entry["file"], entry["message"])
+        for entry in facts["risks"]:
+            self.graph.risk(entry["file"], entry["message"])
+
+    def read_file(self, path, kind):
+        depth = 0
         line = _shebang(path)
         if line is not None and kind != "elf":
             self.shebang(path, line, depth)
@@ -299,6 +454,8 @@ class _Builder:
             self.python(path, depth)
         elif kind == "perl":
             self.perl(path, depth)
+        elif kind in _READER_KINDS:
+            self.reader(path, kind, depth)
         elif kind not in ("unknown",):
             self.graph.blind(path, f"{kind} files are not followed yet")
 
@@ -330,55 +487,59 @@ class _Builder:
 
     # -- shell -----------------------------------------------------------
     def shell(self, path, depth):
-        scan = scan_shell(path)
-        lines = command_lines(path)
-        path_changed = changes_path(path)
-        if scan.dynamic:
+        facts = shell_facts(path)
+        path_changed = bool(facts.path_lines)
+        if facts.dynamic:
+            lines = ", ".join(str(line) for line in sorted({line for line, _ in facts.dynamic})[:8])
             self.graph.blind(
                 path,
-                f"{scan.dynamic} command(s) are built at runtime (eval or variables) and are not in the graph",
+                f"{len(facts.dynamic)} command(s) are built at runtime (eval or variables) "
+                f"and are not in the graph (line {lines})",
             )
         if path_changed:
-            self.graph.blind(path, "the script assigns PATH, so command lookups below are guesses")
+            lines = ", ".join(str(line) for line in facts.path_lines[:8])
+            self.graph.blind(path, f"the script assigns PATH (line {lines}), so command lookups below are guesses")
 
-        for name in scan.commands:
-            line = lines.get(name)
-            target = locate(name)
-            said = Evidence("inferred", "shell-static", f"runs `{name}`", path, line)
-            if target is None:
-                node = self.graph.add_node(f"command:{name}", "command", name, resolved=False)
-                self.graph.add_link(path, node.id, "runs", said)
-                continue
-            if "/" in name:
-                target_id = self.file_node(target, depth)
-                if target_id:
-                    self.graph.add_link(path, target_id, "runs", said)
-                continue
-            name_id = self.graph.add_node(f"command:{name}", "command", name).id
-            self.graph.add_link(path, name_id, "runs", said)
-            target_id = self.file_node(target, depth)
-            if target_id:
-                basis = "guessed" if path_changed else "inferred"
-                self.graph.add_link(
-                    name_id,
-                    target_id,
-                    "resolves_to",
-                    Evidence(basis, "PATH", f"`{name}` is {target} on this machine's PATH"),
-                )
+        for name, lines in facts.commands.items():
+            self.runs(path, name, _said(f"runs `{name}`", path, lines, facts.via.get(name)), depth, path_changed)
 
-        for name in scan.sources:
-            line = lines.get(name)
+        for name, lines in facts.sources.items():
             candidate = Path(name).expanduser()
             if not candidate.is_absolute():
                 candidate = Path(path).parent / candidate
-            said = Evidence("inferred", "shell-static", f"sources `{name}`", path, line)
-            if candidate.is_file():
+            said = _said(f"sources `{name}`", path, lines, None)
+            if "$" not in name and candidate.is_file():
                 target_id = self.file_node(candidate, depth)
                 if target_id:
                     self.graph.add_link(path, target_id, "sources", said)
             else:
                 node = self.graph.add_node(f"command:{name}", "command", name, resolved=False)
                 self.graph.add_link(path, node.id, "sources", said)
+
+    def runs(self, path, name, said, depth, path_changed=False):
+        """Link path to the command it runs, and the name to the file PATH picks."""
+
+        target = locate(name)
+        if target is None:
+            node = self.graph.add_node(f"command:{name}", "command", name, resolved=False)
+            self.graph.add_link(path, node.id, "runs", said)
+            return
+        if "/" in name:
+            target_id = self.file_node(target, depth)
+            if target_id:
+                self.graph.add_link(path, target_id, "runs", said)
+            return
+        name_id = self.graph.add_node(f"command:{name}", "command", name).id
+        self.graph.add_link(path, name_id, "runs", said)
+        target_id = self.file_node(target, depth)
+        if target_id:
+            basis = "guessed" if path_changed else "inferred"
+            self.graph.add_link(
+                name_id,
+                target_id,
+                "resolves_to",
+                Evidence(basis, "PATH", f"`{name}` is {target} on this machine's PATH"),
+            )
 
     # -- ELF -------------------------------------------------------------
     def elf(self, path, depth):
@@ -389,22 +550,40 @@ class _Builder:
             target_id = self.file_node(target, depth) if target.exists() else None
             if target_id:
                 self.graph.add_link(path, target_id, "interpreter", evidence)
+        try:
+            info = Path(path).stat()
+        except OSError:
+            info = None
+        secure = bool(info and info.st_mode & (stat.S_ISUID | stat.S_ISGID))
+        origin = Path(path).parent
+        for kind, entries in (("RPATH", scan.rpath), ("RUNPATH", scan.runpath)):
+            if entries:
+                self.graph.nodes[path].attrs[kind.lower()] = list(entries)
+            for message in search_path_risks(entries, origin, kind, scan.elf_class, info.st_uid if info else 0):
+                self.graph.risk(path, message)
+        inherited = () if scan.runpath or self.graph.nodes[path].kind != "library" else self.root_rpath
         for soname in scan.needed:
             soname_id = self.graph.add_node(f"soname:{soname}", "soname", soname).id
             self.graph.add_link(
                 path, soname_id, "needs",
                 Evidence("declared", "elf-dynamic", f"DT_NEEDED {soname}", path),
             )
-            target = find_library(soname, self.ldcache())
-            if target is None:
+            found = resolve_library(
+                soname, origin, scan.rpath, scan.runpath, inherited,
+                scan.elf_class, scan.nodeflib, self.ld_entries(), secure=secure,
+            )
+            if found.path is None:
                 self.graph.nodes[soname_id].attrs["resolved"] = False
                 continue
-            target_id = self.file_node(target, depth)
+            target_id = self.file_node(found.path, depth)
             if target_id:
                 self.graph.add_link(
                     soname_id, target_id, "resolves_to",
-                    Evidence("inferred", "ldconfig", f"{soname} -> {target} (ldconfig cache; RPATH and LD_LIBRARY_PATH not applied)"),
+                    Evidence("inferred", found.method, _resolution_detail(soname, found)),
                 )
+        if not secure and os.environ.get("LD_LIBRARY_PATH"):
+            self.graph.blind(path, "LD_LIBRARY_PATH is set here; the program may run with a different value")
+        self.graph.blind_once("LD_PRELOAD and /etc/ld.so.preload can add libraries that no file names")
 
     # -- Python ----------------------------------------------------------
     def python(self, path, depth):
@@ -417,7 +596,77 @@ class _Builder:
                     path, target_id, "imports",
                     Evidence("inferred", "python-import", f"imports {Path(target).stem}", path, line),
                 )
-        self.graph.blind(path, "Python imports built at runtime (importlib, __import__) and subprocess calls are not followed yet")
+        started = python_exec(path)
+        for name, lines in started.commands.items():
+            how = started.via[name]
+            if " through " in how:
+                said = Evidence(
+                    "guessed", "python-variable",
+                    f"runs `{name}` with {how}, which the file only sets to literal values", path, lines[0],
+                )
+            else:
+                said = Evidence("inferred", "python-exec", f"runs `{name}` via {how}", path, lines[0])
+            self.runs(path, name, said, depth)
+        if started.dynamic:
+            where = ", ".join(str(line) for line in sorted({line for line, _ in started.dynamic})[:8])
+            self.graph.blind(
+                path, f"{len(started.dynamic)} command(s) are computed at run time and not in the graph (line {where})"
+            )
+        self.graph.blind(path, "Python imports built at runtime (importlib, __import__) are not followed")
+
+    # -- Ruby, JavaScript, TypeScript, Lua, C ----------------------------
+    def reader(self, path, kind, depth):
+        from .analyzers import analyzer_for
+        from .errors import AnalysisError, FileError
+
+        try:
+            text = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            return
+        analyzer = analyzer_for(path)
+        link_kind = "includes" if kind == "c" else "imports"
+        method = "c-include" if kind == "c" else f"{kind}-import"
+        try:
+            edges = analyzer.command_edges(path) if analyzer else []
+        except (AnalysisError, FileError, OSError, ValueError) as error:
+            self.graph.blind(path, f"{kind} imports not read: {error}")
+            edges = []
+        for edge in edges:
+            if edge.kind not in ("imports", "sources", "depends_on"):
+                continue
+            name = edge.name or edge.target or ""
+            said = Evidence("inferred", method, f"{'includes' if kind == 'c' else 'imports'} {name}",
+                            path, _line_naming(text, name))
+            target = edge.target if edge.status == "resolved" else None
+            if target is None and kind == "c" and edge.status == "external":
+                for directory in ("/usr/local/include", "/usr/include"):
+                    if (Path(directory) / name).is_file():
+                        target = str(Path(directory) / name)
+                        break
+            if target and Path(target).is_file():
+                target_id = self.file_node(target, depth)
+                if target_id:
+                    self.graph.add_link(path, target_id, link_kind, said)
+                continue
+            attrs = {"resolved": False} if edge.status == "unresolved" else {"external": True}
+            node = self.graph.add_node(f"module:{name}", "command", name, **attrs)
+            self.graph.add_link(path, node.id, link_kind, said)
+
+        pattern = _EXEC_PATTERNS.get(kind)
+        if pattern is None:
+            return
+        seen = set()
+        for number, line in enumerate(text, 1):
+            if line.lstrip().startswith(("#", "//", "--")):
+                continue
+            for match in pattern.finditer(line):
+                name = match.group("cmd")
+                if name in seen:
+                    continue
+                seen.add(name)
+                said = Evidence("inferred", f"{kind}-exec", f"starts `{name}` (literal command text)", path, number)
+                self.runs(path, name, said, depth)
+        self.graph.blind(path, f"{kind} commands built at run time are not followed; literal ones are matched by pattern")
 
     # -- Perl ------------------------------------------------------------
     def perl(self, path, depth):
@@ -435,7 +684,7 @@ class _Builder:
                 self.graph.add_link(path, target_id, "imports", said)
 
 
-def build_evidence_graph(path, max_depth=4, max_files=300, packages=True):
+def build_evidence_graph(path, max_depth=4, max_files=300, packages=True, store=None, shared=None, owners=None):
     """Return the EvidenceGraph of everything a program reaches statically.
 
     Shell scripts, ELF binaries and shared libraries, Python and Perl
@@ -449,11 +698,14 @@ def build_evidence_graph(path, max_depth=4, max_files=300, packages=True):
         raise FileNotFoundError(path)
     root = str(Path(target).resolve())
     graph = EvidenceGraph(root)
-    _Builder(graph, max_depth, max_files).run(root)
+    _Builder(graph, max_depth, max_files, store, shared).run(root)
 
     if packages:
         files = [node.id for node in graph.nodes.values() if node.id.startswith("/")]
-        owners = packages_of(files)
+        if owners is None:
+            owners = packages_of(files)
+        else:
+            owners = {file: owners[file] for file in files if file in owners}
         for file, (manager, owner) in owners.items():
             package = graph.add_node(f"package:{owner.split()[0]}", "package", owner, manager=manager)
             query = "pacman -Qo" if manager == "pacman" else "rpm -qf"

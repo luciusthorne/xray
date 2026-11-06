@@ -5,6 +5,13 @@
 - Add the evidence graph and two verbs. `xray inspect <command>` shows what a command reaches (commands, sourced files, Python and Perl imports, interpreters, shared libraries, owning packages) with the proof for every link — method, file and line, and a basis of observed, declared, inferred or guessed — plus its blind spots; `--trace` merges a real run and lists what static reading missed. `xray why <command> <target>` prints the proof chains to a file, command, library or package.
 - The shell reader no longer reports a command named `_` when a command substitution is itself run (`$(printf "$cmd")`); it counts as a command built at runtime.
 - Python import resolution keeps the line of each import; package ownership can be looked up for many files in one pacman call.
+- Read shell scripts with a full parser (`xray/shparse.py`) instead of line patterns. `case` patterns and `getopts` letters are no longer reported as commands; multi-line `$(...)`, arrays, `[[ ]]`, `(( ))`, `for ((...))` and every redirection form are understood; unquoted here-document substitutions, `trap` strings and `sh -c`/`su -c` strings are read as code; `command -v` is a lookup, not a run. Every use keeps its line number.
+- Resolve commands run through a variable the script only ever sets to fixed values (`CMD=(foot -e)` … `"${CMD[@]}"`), labelled guessed.
+- Resolve shared libraries in the dynamic loader's order (`DT_RPATH` with inheritance, `LD_LIBRARY_PATH` except for setuid programs, `DT_RUNPATH`, ldconfig cache entries for the binary's word size, default directories; `$ORIGIN`, `$LIB`, `$PLATFORM`, `-z nodefaultlib`). Each link names the step that found the library. Empty, relative, world-writable or foreign-owned search path entries are reported under "Worth a look".
+- Follow commands Python files start (`subprocess`, `os.system`, `os.popen`, `os.exec*`, `os.spawn*`, `posix_spawn`, `asyncio`, `pty`), through import aliases; shell strings are parsed.
+- The evidence graph follows Ruby, JavaScript, TypeScript and Lua imports, C `#include`s, and literal command starts in Ruby, Node and Lua.
+- Add `xray inspect --tree`, the evidence graph as a tree with each link's basis and line; it supersedes `--chain` and `--launch`.
+- Add `xray scan`, which reads every command on PATH into a cached evidence store keyed by file signature, SHA-256 and machine state, and `xray reach <target>`, which lists the programs that reach a file, library, command or package with a proof chain for each.
 
 ## 1.0.0
 

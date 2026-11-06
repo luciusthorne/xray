@@ -1,4 +1,4 @@
-"""Verb commands built on the evidence graph: ``xray inspect`` and ``xray why``."""
+"""Verb commands built on the evidence graph: inspect, why, scan and reach."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from .evidence import (
     weakest,
 )
 
-VERBS = ("inspect", "why")
+VERBS = ("inspect", "why", "scan", "reach")
 
 
 def _parser(verb):
@@ -34,6 +34,7 @@ def _parser(verb):
     parser.add_argument("--json", action="store_true", help="print the result as JSON")
     if verb == "inspect":
         parser.add_argument("--all", action="store_true", help="list every direct link")
+        parser.add_argument("--tree", action="store_true", help="print the whole graph as a tree, with the basis of each link")
         parser.add_argument(
             "--trace", action="store_true",
             help="also RUN the command under strace and compare what it did with the static graph",
@@ -45,6 +46,10 @@ def _parser(verb):
 
 def run_verb(argv):
     verb, rest = argv[0], argv[1:]
+    if verb in ("scan", "reach"):
+        from .scan import run_reach, run_scan
+
+        return run_scan(rest) if verb == "scan" else run_reach(rest)
     parser = _parser(verb)
     try:
         options = parser.parse_args(rest)
@@ -73,6 +78,8 @@ def run_verb(argv):
             add_trace(graph, run_trace(graph.root, options.args, timeout=options.timeout))
         if options.json:
             print(json.dumps(graph.to_dict(), indent=2))
+        elif options.tree:
+            print("\n".join(tree_lines(graph)))
         else:
             print("\n".join(inspect_lines(graph, show_all=options.all)))
         return 0
@@ -175,9 +182,16 @@ def inspect_lines(graph, show_all=False, limit=25):
             lines.append(f"  … {len(unpredicted) - limit} more (--json)")
         lines.append("")
 
+    if graph.risks:
+        lines.append(f"Worth a look ({len(graph.risks)})")
+        for entry in graph.risks[:limit]:
+            lines.append(f"  {entry['file']}: {entry['message']}")
+        lines.append("")
+
     lines.append("Blind spots (what this graph cannot show)")
     for entry in graph.blind_spots[:limit]:
-        lines.append(f"  {entry['file']}: {entry['message']}")
+        where = "" if entry["file"] == "*" else f"{entry['file']}: "
+        lines.append(f"  {where}{entry['message']}")
     if len(graph.blind_spots) > limit:
         lines.append(f"  … {len(graph.blind_spots) - limit} more (--json)")
     for note in graph.truncated[:1]:
@@ -190,6 +204,58 @@ def inspect_lines(graph, show_all=False, limit=25):
     lines.append("Next")
     lines.append(f"  xray why {root.label} <name>      proof chain to a file, command, library or package")
     lines.append(f"  xray inspect {root.label} --json  the whole graph with every piece of evidence")
+    return lines
+
+
+def tree_lines(graph):
+    """The graph as a tree from the root: one line per link, with its basis.
+
+    A command or soname and the file it resolves to share one line. A
+    file seen before is marked (seen) and not expanded again.
+    """
+
+    root = graph.nodes[graph.root]
+    lines = [f"{root.id} [{root.kind}]"]
+    seen = {graph.root}
+
+    def children(node_id):
+        found = [link for link in graph.outgoing(node_id) if link.kind not in ("owned_by",)]
+        return sorted(found, key=lambda link: (link.kind, _short(graph, link.target)))
+
+    def walk(node_id, prefix):
+        links = children(node_id)
+        for index, link in enumerate(links):
+            last = index == len(links) - 1
+            branch = "└── " if last else "├── "
+            evidence = min(link.evidence, key=lambda item: BASES.index(item.basis))
+            where = evidence.where()
+            line_no = f":{evidence.line}" if evidence.line and where else ""
+            target = link.target
+            basis = link.basis
+            onward = [step for step in graph.outgoing(target) if step.kind == "resolves_to"]
+            label = _short(graph, target)
+            if onward:
+                target = onward[0].target
+                basis = weakest([basis, onward[0].basis])
+                label += f" -> {target}"
+            node = graph.nodes.get(target)
+            kind = f" [{node.kind}]" if node is not None and node.kind not in ("command", "soname") else ""
+            missing = " (not found)" if node is not None and node.attrs.get("resolved") is False else ""
+            tag = f"  {basis}" + (f" line {line_no[1:]}" if line_no else "")
+            text = f"{prefix}{branch}{link.kind} {label}{kind}{missing}{tag}"
+            if target in seen:
+                lines.append(text + " (seen)")
+                continue
+            seen.add(target)
+            lines.append(text)
+            walk(target, prefix + ("    " if last else "│   "))
+
+    walk(graph.root, "")
+    not_expanded = sum(1 for node in graph.nodes.values() if node.attrs.get("not_expanded"))
+    if not_expanded:
+        lines.append(f"Truncated: {not_expanded} files at the depth limit were not read (raise --depth)")
+    for note in graph.truncated[:1]:
+        lines.append(f"Truncated: {note}")
     return lines
 
 

@@ -93,7 +93,7 @@ def _strip_heredocs(text):
     return [line for _, line in _numbered_lines(text)]
 
 
-def function_lines(path):
+def _legacy_function_lines(path):
     """Return {function name: line number} in the original file.
 
     Uses the same heredoc and continuation handling as scan_shell,
@@ -386,7 +386,7 @@ def _collect(text, commands, sources, dynamic=None):
             _scan_words(words, commands, sources, dynamic)
 
 
-def scan_shell(path):
+def _legacy_scan_shell(path):
     """Return a ShellScan for a shell script.
 
     A file that cannot be read gives an empty ShellScan.
@@ -425,7 +425,7 @@ def scan_shell(path):
     )
 
 
-def command_lines(path):
+def _legacy_command_lines(path):
     """Return {name: line} for the first line each command or source appears on.
 
     Each logical line (backslash continuations joined, here-documents
@@ -465,7 +465,7 @@ def command_lines(path):
                 found.setdefault(name, start)
         start = None
 
-    scan = scan_shell(path)
+    scan = _legacy_scan_shell(path)
     for name in (*scan.commands, *scan.sources):
         if name in found:
             continue
@@ -481,7 +481,7 @@ def command_lines(path):
     return found
 
 
-def changes_path(path):
+def _legacy_changes_path(path):
     """Return True when a shell script assigns PATH, so lookups made now may differ."""
 
     try:
@@ -490,3 +490,264 @@ def changes_path(path):
         return False
 
     return re.search(r"(?m)^\s*(?:export\s+)?PATH\+?=", text) is not None
+
+
+# -- parser-based reading ------------------------------------------------------
+
+# Shells whose -c argument is shell code XRAY can read.
+SHELLS = frozenset(["sh", "bash", "dash", "zsh", "ksh", "mksh", "ash", "busybox"])
+# Extra wrappers: commands that run the command named after their options.
+WRAPPERS.update({
+    "setsid": frozenset(),
+    "nohup": frozenset(),
+    "runuser": frozenset(["-u", "-g", "-G", "--user", "--group"]),
+    "chrt": frozenset(),
+    "taskset": frozenset(),
+})
+
+
+@dataclass(frozen=True)
+class ShellFacts:
+    """Everything the parser learned about a script, with line numbers.
+
+    commands and sources map each name to the sorted lines it appears on;
+    via maps a command name to how it was reached when that was not a
+    plain command line ("eval", "sh -c", "trap", a wrapper or "find
+    -exec"); dynamic lists (line, word) for each command whose name is
+    only known at run time; path_lines are the lines that assign PATH.
+    """
+
+    functions: dict = field(default_factory=dict)
+    commands: dict = field(default_factory=dict)
+    sources: dict = field(default_factory=dict)
+    via: dict = field(default_factory=dict)
+    dynamic: tuple = ()
+    path_lines: tuple = ()
+
+
+_VARREF = re.compile(r'^("?)\$(?:\{([A-Za-z_][A-Za-z0-9_]*)(?:\[(?:@|\*|0)\])?\}|([A-Za-z_][A-Za-z0-9_]*))\1$')
+
+
+def _variable_commands(raw, assignments):
+    """Word lists a command written as $NAME may run, or None if unknown.
+
+    Only variables the script assigns, every time, to a fixed value are
+    resolved: the result is a guess, since the environment or a sourced
+    file could still set the variable before it is used.
+    """
+
+    from .shparse import Word
+
+    match = _VARREF.match(raw)
+    if not match:
+        return None
+    name = match.group(2) or match.group(3)
+    values = assignments.get(name)
+    if not values or any(value is None for value in values):
+        return None
+    options = []
+    for value in values:
+        if isinstance(value, tuple):
+            if not value or not value[0].static:
+                return None
+            option = list(value)
+        elif not value.strip():
+            return None
+        elif match.group(1):
+            if any(ch.isspace() for ch in value):
+                return None
+            option = [Word(value, True, value)]
+        else:
+            option = [Word(part, True, part) for part in value.split()]
+        if option not in options:
+            options.append(option)
+    return name, options
+
+
+class _Reader:
+    def __init__(self, assignments=None):
+        self.commands = {}
+        self.sources = {}
+        self.via = {}
+        self.plain = set()
+        self.dynamic = []
+        self.assignments = assignments or {}
+
+    def add(self, table, name, line, via=None):
+        table.setdefault(name, set()).add(line)
+        if table is not self.commands:
+            return
+        if via is None:
+            self.plain.add(name)
+            self.via.pop(name, None)
+        elif name not in self.plain:
+            self.via.setdefault(name, via)
+
+    def code(self, text, line, via, result):
+        from .shparse import parse
+
+        before = len(result.commands)
+        parse(text, base_line=line, result=result)
+        for command in result.commands[before:]:
+            self.words(list(command.words), line, via)
+        del result.commands[before:]
+
+    def words(self, words, line, via=None, result=None):
+        from .shparse import ParseResult
+
+        index = 0
+        while index < len(words) and words[index].static and words[index].value in ("exec", "command", "nohup", "time", "!"):
+            prefix = words[index].value
+            index += 1
+            if prefix == "command":
+                if index < len(words) and words[index].value in ("-v", "-V"):
+                    return  # a lookup, nothing runs
+                while index < len(words) and words[index].value == "-p":
+                    index += 1
+            if prefix == "exec":
+                while index < len(words) and words[index].value.startswith("-"):
+                    index += 2 if words[index].value == "-a" else 1
+        if index >= len(words):
+            return
+        first = words[index]
+        rest = words[index + 1:]
+        if not first.static:
+            resolved = _variable_commands(first.raw, self.assignments)
+            if resolved is None:
+                self.dynamic.append((line, first.raw))
+                return
+            variable, options = resolved
+            for option in options:
+                self.words([*option, *rest], line, f"${variable}")
+            return
+        name = first.value
+        if name in ("source", "."):
+            if rest:
+                self.add(self.sources, rest[0].value, line)
+            return
+        if name == "eval":
+            if rest and all(word.static for word in rest):
+                self.code(" ".join(word.value for word in rest), line, "eval", ParseResult())
+            else:
+                self.dynamic.append((line, "eval"))
+            return
+        if name == "trap":
+            if rest and rest[0].static and rest[0].value not in ("-", "") and not rest[0].value.startswith("-"):
+                self.code(rest[0].value, line, "trap", ParseResult())
+            return
+        if name in BUILTINS:
+            return
+        if not (_NAME.match(name) and not name.isdigit()):
+            return
+        self.add(self.commands, name, line, via)
+
+        values = [word.value for word in rest]
+        if Path(name).name in SHELLS:
+            for position, value in enumerate(values):
+                if value.startswith("-") and not value.startswith("--") and "c" in value[1:]:
+                    if position + 1 < len(rest) and rest[position + 1].static:
+                        self.code(rest[position + 1].value, line, f"{Path(name).name} -c", ParseResult())
+                    elif position + 1 < len(rest):
+                        self.dynamic.append((line, f"{Path(name).name} -c {rest[position + 1].raw}"))
+                    return
+            return
+        if name == "su":
+            for position, value in enumerate(values[:-1]):
+                if value in ("-c", "--command") and rest[position + 1].static:
+                    self.code(rest[position + 1].value, line, "su -c", ParseResult())
+            return
+        if name == "find":
+            for position, value in enumerate(values):
+                if value in FIND_ACTIONS:
+                    self.words(rest[position + 1:], line, "find " + value)
+            return
+        if name in WRAPPERS:
+            wrapped = _wrapped(name, values)
+            self.words(rest[len(rest) - len(wrapped):], line, name)
+
+
+def shell_facts(path):
+    """Return ShellFacts for a shell script, read with the full parser.
+
+    A file that cannot be read gives empty ShellFacts.
+    """
+
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ShellFacts()
+    return facts_of_text(text)
+
+
+def facts_of_text(text):
+    from .shparse import parse
+
+    result = parse(text)
+    reader = _Reader(result.assignments)
+    for command in result.commands:
+        reader.words(list(command.words), command.line)
+    functions = dict(result.functions)
+    for name in functions:
+        reader.commands.pop(name, None)
+        reader.via.pop(name, None)
+    return ShellFacts(
+        functions=functions,
+        commands={name: sorted(lines) for name, lines in sorted(reader.commands.items())},
+        sources={name: sorted(lines) for name, lines in sorted(reader.sources.items())},
+        via=reader.via,
+        dynamic=tuple(sorted(reader.dynamic)),
+        path_lines=tuple(sorted(set(result.path_lines))),
+    )
+
+
+def _facts_or_none(path):
+    try:
+        return shell_facts(path)
+    except (RecursionError, ValueError, IndexError, AttributeError):
+        return None
+
+
+def scan_shell(path):
+    """Return a ShellScan for a shell script.
+
+    A file that cannot be read gives an empty ShellScan.
+    """
+
+    facts = _facts_or_none(path)
+    if facts is None:
+        return _legacy_scan_shell(path)
+    return ShellScan(
+        tuple(sorted(facts.functions)),
+        tuple(facts.sources),
+        tuple(facts.commands),
+        len(facts.dynamic),
+    )
+
+
+def function_lines(path):
+    """Return {function name: line number} where each definition starts."""
+
+    facts = _facts_or_none(path)
+    if facts is None:
+        return _legacy_function_lines(path)
+    return dict(facts.functions)
+
+
+def command_lines(path):
+    """Return {name: line} for the first line each command or source appears on."""
+
+    facts = _facts_or_none(path)
+    if facts is None:
+        return _legacy_command_lines(path)
+    found = {name: lines[0] for name, lines in facts.sources.items()}
+    found.update({name: lines[0] for name, lines in facts.commands.items()})
+    return found
+
+
+def changes_path(path):
+    """Return True when a shell script assigns PATH, so lookups made now may differ."""
+
+    facts = _facts_or_none(path)
+    if facts is None:
+        return _legacy_changes_path(path)
+    return bool(facts.path_lines)
