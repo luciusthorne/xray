@@ -1,0 +1,58 @@
+name: XRAY capability check
+description: What Linux programs can do, with evidence - capability drift, contract checks, taint and cross-build comparison
+author: luciusthorne
+branding:
+  icon: shield
+  color: blue
+
+inputs:
+  command:
+    description: >-
+      The XRAY command line after "xray", for example
+      "drift old/ new/ --fail-on-gain", "contract check app.contract",
+      "taint scripts/deploy.sh" or "compare a.pkg.tar.zst b.deb --fail-on-strong".
+      It is run by bash, so quote paths with spaces.
+    required: true
+  python-version:
+    description: Python version to run XRAY with
+    default: "3.12"
+  working-directory:
+    description: Directory to run the command in
+    default: "."
+
+outputs:
+  exit-code:
+    description: XRAY's exit status (0 = nothing found that the command fails on)
+    value: ${{ steps.xray.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v7
+      with:
+        python-version: ${{ inputs.python-version }}
+    - name: Install XRAY
+      shell: bash
+      run: python -m pip install --quiet "$GITHUB_ACTION_PATH"
+    - name: Run XRAY
+      id: xray
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        XRAY_COMMAND: ${{ inputs.command }}
+      run: |
+        set +e
+        eval "xray $XRAY_COMMAND" > "$RUNNER_TEMP/xray-output.txt" 2>&1
+        code=$?
+        cat "$RUNNER_TEMP/xray-output.txt"
+        {
+          echo "### XRAY: \`xray $XRAY_COMMAND\`"
+          echo
+          echo '```'
+          head -c 60000 "$RUNNER_TEMP/xray-output.txt"
+          echo '```'
+          echo
+          echo "Exit status: $code"
+        } >> "$GITHUB_STEP_SUMMARY"
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        exit $code

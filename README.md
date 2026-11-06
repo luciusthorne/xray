@@ -153,6 +153,16 @@ xray hook install     # prints the commands that install the hook (needs root)
 
 pacman runs the hook after downloading and before installing. For every package being upgraded it compares the new archive in the cache with the installed version and re-checks the capability pins of the contracts in `/etc/xray/contracts`. In `mode = report` (the default, in `/etc/xray/hook.conf`) it lists the gains; in `mode = block` it stops the upgrade on a strong gain or a broken contract, except for packages on the `allow` line. Because pacman runs hooks as root, `xray hook install` points the hook at a root-owned copy of XRAY, never a user-writable one.
 
+### In CI
+
+```yaml
+- uses: luciusthorne/xray@v1
+  with:
+    command: drift build-main/ build-pr/ --fail-on-gain
+```
+
+The GitHub Action runs any XRAY command, puts the output in the job summary and fails the step on a non-zero exit. Recipes for drift, contract checks, taint and cross-build comparison are in [docs/github-action.md](docs/github-action.md).
+
 [`demo/xz-style`](demo/xz-style/README.md) re-enacts the 2024 xz backdoor pattern with a harmless toy library and shows drift, the log, a contract break, a traced breach and enforcement stopping the payload.
 
 ## What it reads

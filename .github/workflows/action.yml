@@ -1,0 +1,35 @@
+name: action
+on:
+  push:
+  pull_request:
+
+jobs:
+  self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: drift with no gain passes
+        uses: ./
+        with:
+          command: drift tests/action/old tests/action/old --fail-on-gain
+      - name: drift with a new network command fails
+        id: gain
+        continue-on-error: true
+        uses: ./
+        with:
+          command: drift tests/action/old tests/action/new --fail-on-gain
+      - name: taint of a safe script passes
+        uses: ./
+        with:
+          command: taint tests/action/safe.sh
+      - name: taint of network input reaching eval fails
+        id: taint
+        continue-on-error: true
+        uses: ./
+        with:
+          command: taint tests/action/unsafe.sh
+      - name: the failing checks failed for the right reason
+        shell: bash
+        run: |
+          test "${{ steps.gain.outputs.exit-code }}" = 1
+          test "${{ steps.taint.outputs.exit-code }}" = 1
