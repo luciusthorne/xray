@@ -123,3 +123,29 @@ def test_cross_language_chain_from_shell_into_python(tmp_path):
 def test_missing_command_raises(tmp_path):
     with pytest.raises(FileNotFoundError):
         analyze(str(tmp_path / "nope"))
+
+
+def test_arguments_are_followed_by_position(tmp_path):
+    tool = tmp_path / "tool"
+    tool.write_text('#!/bin/sh\npython3 "$(dirname "$0")/helper.py" safe-name "$1"\n')
+    helper = tmp_path / "helper.py"
+    helper.write_text(
+        "import os, sys\n"
+        "os.system('echo ' + sys.argv[1])\n"   # argument 1 is a fixed string: not a finding
+        "os.system('echo ' + sys.argv[2])\n"   # argument 2 is the caller's $1: a finding
+    )
+    for path in (tool, helper):
+        path.chmod(0o755)
+
+    report = analyze(str(tool))
+    lines = sorted(item["line"] for item in report.findings if item["file"] == str(helper))
+
+    assert lines == [3]
+    finding = next(item for item in report.findings if item["file"] == str(helper))
+    assert "as argument 2" in finding["chain"][0]["detail"]
+
+
+def test_positional_shell_arguments():
+    result = sh('eval "$2"\neval "$1"\n', argv_labels=[[], ["argv"]])
+
+    assert [(item["sink"], item["line"]) for item in result.findings] == [("eval", 2)]

@@ -31,7 +31,9 @@ class _Taint(ast.NodeVisitor):
     def __init__(self, tree, argv_labels, env_labels, env_default):
         self.tree = tree
         self.aliases = _aliases(tree)
-        self.argv = set(argv_labels)
+        from .shtaint import split_argv
+
+        self.argv, self.argv_positions = split_argv(argv_labels)
         self.env = env_labels
         self.env_default = env_default
         self.vars = {}      # (function or None, name) -> labels
@@ -83,6 +85,13 @@ class _Taint(ast.NodeVisitor):
             return {"network"}
         if isinstance(node, ast.Subscript):
             base = self.name(node.value)
+            if base == "sys.argv" and isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, int):
+                index = node.slice.value
+                if index == 0:
+                    return set()  # the program's own name
+                if self.argv_positions is not None:
+                    return set(self.argv_positions[index - 1]) if index - 1 < len(self.argv_positions) else set()
+                return set(self.argv)
             if base == "os.environ":
                 key = node.slice.value if isinstance(node.slice, ast.Constant) else None
                 return self._env(key)

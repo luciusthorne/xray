@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `xray taint` follows arguments by position across programs: a helper's `$2` / `sys.argv[2]` is tainted only when the caller passed input in that position, and the chain names the argument.
 - `contract enforce`: read, exec and load entries with a glob (`/etc/tool/*.conf`) grant only the files that match when the program starts, instead of the whole directory.
 - `drift` pairs files that move between version directories (perl 5.42 → 5.44 no longer reports `libperl.so` as a new file with new capabilities).
 - docs/real-xz.md: Fedora Rawhide's xz builds as a second independent test — the loader-hook rule flags 5.6.0-2 and 5.6.1-1 and not 5.4.6-3 or the IFUNC-disabled 5.6.0-3; two of three distributions carried the payload, so cross-build comparison is "any disagreement", not a vote. demo/real-xz/run.sh fetches the Fedora builds too.
