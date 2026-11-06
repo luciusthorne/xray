@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `xray taint` reads compiled programs: functions where an input call (getenv, fgets, read, recv, …) is followed, directly or through called functions, by a code-execution call (system, popen, exec*, dlopen), with both source lines; labelled guessed (call order, not data flow).
 - Add `xray explain FILE SYMBOL…` and `xray drift --explain`: every call to a newly imported function, with its function and source line (inline chains included), from the binary's debug information or a debuginfod server.
 - `xray contract generate --workloads FILE` and `minimize --workloads FILE`: contracts from many workloads; an entry is required when any workload needs it.
 - Fix: a traced run that lists a broad directory (`/`, `/usr`, `/etc`, the home directory, …) no longer adds it to `[read]`, which granted everything beneath it; the listing is recorded as a note.

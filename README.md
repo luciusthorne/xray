@@ -112,6 +112,8 @@ xray taint --scan               # every shell and Python command on PATH
 
 `xray taint` follows untrusted input — a program's arguments, standard input, network downloads (`$(curl …)`, `requests`, `urlopen`, web request data) and environment variables — to sinks that run code: a command named by input, `eval`, `sh -c`, `source`, `trap`, Python `os.system`/`shell=True`, a program named by input, `eval`/`exec`, `pickle`/`yaml.load`. Flow is followed through variables, arrays (element by element), loops, `read`, function arguments and return values, and **across programs**: when a script passes tainted data to another script as arguments or exports it, that program is analysed with those inputs, so `tool.sh`'s `$1` handed to `helper.py` and run with `shell=True` is one finding with the chain through both files. A compiled program that receives input is reported with what its capability profile says it can do.
 
+Compiled programs — the target itself, or one a script hands tainted data to — are read from their machine code: a function that calls an input function (`getenv`, `fgets`, `read`, `recv`, …) and then, directly or through the functions it calls, a code-execution function (`system`, `popen`, `exec*`, `dlopen`) is reported with both call sites and their source lines (from debug information or debuginfod). This follows call order, not data, so these leads are labelled *guessed*; network input makes them medium, other input low.
+
 Severity follows trust boundaries: network input reaching code is **high**; any input into a setuid program is high; a command-line tool's own arguments or stdin reaching `eval` or a shell is **medium** (quoting bugs, or callers passing untrusted data); environment-only input is low, and a wrapper that runs the command it was given (`"$@"`) is info. Low and info findings are listed with `--all`. On this project's development machine `--scan` read 969 commands and reported 2 high findings — `bash -c "$(curl …)"` installers — and 321 medium leads in 85 commands. Every finding is inferred from code: a lead to review, not proof.
 
 ## Drift, what-if and the capability log
@@ -253,6 +255,7 @@ xray/
 ├── drift.py
 ├── driftverbs.py
 ├── elfscan.py
+├── elftaint.py
 ├── enforce.py
 ├── entrypoints.py
 ├── errors.py
