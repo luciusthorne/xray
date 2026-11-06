@@ -166,3 +166,71 @@ def test_search_path_version_bumps_are_changes_not_gains():
 
     assert [item["kind"] for item in compare(old, bumped)] == ["change"]
     assert [item["kind"] for item in compare(old, widened)] == ["gain"]
+def test_loader_hook_rule():
+    from xray.profile import loader_hook
+
+    hooked = elf(soname="liblzma.so.5", needed=["libc.so.6", "ld-linux-x86-64.so.2"], ifuncs=2)
+
+    assert loader_hook(hooked, "usr/lib/liblzma.so.5.6.1")
+    assert not loader_hook({**hooked, "ifuncs": 0}, "usr/lib/liblzma.so.5.6.1")  # TLS users link the loader too
+    assert not loader_hook({**hooked, "needed": ["libc.so.6"]}, "usr/lib/liblzma.so.5.6.1")  # IFUNC alone: Arch 5.6.x
+    assert not loader_hook({**hooked, "soname": "libc.so.6"}, "usr/lib/libc.so.6")  # glibc does this by design
+
+
+def test_drift_names_the_loader_hook_when_it_appears():
+    old = {"usr/lib/liblzma.so.5.4.5": elf(soname="liblzma.so.5", needed=["libc.so.6"])}
+    new = {"usr/lib/liblzma.so.5.6.1": elf(sha256="b", soname="liblzma.so.5",
+                                           needed=["libc.so.6", "ld-linux-x86-64.so.2"], ifuncs=2)}
+
+    gains = drift(old, new)["gains"]
+
+    assert gains[0]["field"] == "loader-hook"
+    assert "xz backdoor" in gains[0]["detail"]
+
+
+@pytest.mark.skipif(shutil.which("ar") is None or shutil.which("bsdtar") is None, reason="needs ar and bsdtar")
+def test_debian_packages_are_read(tmp_path):
+    root = tmp_path / "root"
+    tool = root / "usr/bin/tool"
+    tool.parent.mkdir(parents=True)
+    tool.write_text("#!/bin/sh\ncurl -s x\n")
+    tool.chmod(0o755)
+    control = tmp_path / "control"
+    control.mkdir()
+    (control / "control").write_text("Package: demo\nVersion: 1:2.0-1\nArchitecture: amd64\nDescription: x\n continued\n")
+    (tmp_path / "debian-binary").write_text("2.0\n")
+    subprocess.run(["bsdtar", "-czf", tmp_path / "control.tar.gz", "-C", control, "control"], check=True)
+    subprocess.run(["bsdtar", "-cJf", tmp_path / "data.tar.xz", "-C", root, "usr"], check=True)
+    deb = tmp_path / "demo_2.0-1_amd64.deb"
+    subprocess.run(["ar", "rc", deb, "debian-binary", "control.tar.gz", "data.tar.xz"], cwd=tmp_path, check=True)
+
+    with opened(deb) as (_, _, files, meta):
+        found = profiles(files)
+
+    assert meta == {"pkgname": "demo", "pkgver": "1:2.0-1", "arch": "amd64"}
+    assert found["usr/bin/tool"]["classes"] == {"net": ["curl"]}
+
+
+@needs_gcc
+@pytest.mark.skipif(not __import__("pathlib").Path("/usr/lib/ld-linux-x86-64.so.2").exists()
+                    and not __import__("pathlib").Path("/lib64/ld-linux-x86-64.so.2").exists(), reason="x86-64 glibc only")
+def test_a_library_that_hooks_the_loader_is_flagged_by_drift_and_inspect(tmp_path):
+    loader = next(path for path in ("/usr/lib/ld-linux-x86-64.so.2", "/lib64/ld-linux-x86-64.so.2")
+                  if __import__("pathlib").Path(path).exists())
+    clean = build(tmp_path / "old", CLEAN)
+    hooked = tmp_path / "new" / "usr/lib"
+    hooked.mkdir(parents=True)
+    (tmp_path / "hook.c").write_text(
+        "static int impl(int x){return x+1;}\n"
+        "static void *resolve(void){return (void*)impl;}\n"
+        'int lz(int x) __attribute__((ifunc("resolve")));\n'
+    )
+    subprocess.run(["gcc", "-shared", "-fPIC", "-Wl,-soname,liblz.so.5", "-o", hooked / "liblz.so.5",
+                    tmp_path / "hook.c", "-Wl,--no-as-needed", loader], check=True)
+
+    gains = drift(profiles({"usr/lib/liblz.so.5": str(clean / "usr/lib/liblz.so.5")}),
+                  profiles({"usr/lib/liblz.so.5": str(hooked / "liblz.so.5")}))["gains"]
+    graph = build_evidence_graph(str(hooked / "liblz.so.5"), packages=False)
+
+    assert gains[0]["field"] == "loader-hook"
+    assert any("xz backdoor" in risk["message"] for risk in graph.risks)
