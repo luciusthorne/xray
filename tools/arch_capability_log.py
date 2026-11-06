@@ -26,7 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from xray import caplog  # noqa: E402
+from xray import caplog
 
 USER_AGENT = "xray-capability-log/1.1 (+https://github.com/luciusthorne/xray)"
 ARCHIVE = "https://archive.archlinux.org/packages"
@@ -84,7 +84,7 @@ def previous_version(name, current, arch):
     older = [version for version in found if caplog.vercmp(version, current) < 0]
     if not older:
         return None
-    best = sorted(older, key=cmp_to_key(caplog.vercmp))[-1]
+    best = max(older, key=cmp_to_key(caplog.vercmp))
     return best, f"{ARCHIVE}/{name[0]}/{name}/{found[best]}"
 
 
@@ -149,7 +149,7 @@ def main():
                 Path(f"{path}.sig").unlink(missing_ok=True)
             print(f"[{number}/{len(names)}] {name}: {len(archives)} archive(s)", flush=True)
             time.sleep(0.2)
-    ok, head, message = caplog.verify(caplog.read_log(log))
+    _ok, head, message = caplog.verify(caplog.read_log(log))
     print(message)
     print(f"head {head}")
     for item, reason in skipped:
