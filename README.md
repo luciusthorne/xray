@@ -75,6 +75,8 @@ Running `xray` by itself reads XRAY's own CLI source and suggests follow-up comm
 
 "Worth a look" lists findings with evidence, such as an empty, relative or world-writable `RPATH`/`RUNPATH` entry that would let another user plant a library.
 
+`xray inspect <command> --html > graph.html` writes the evidence graph as one self-contained interactive page: columns by steps from the program, edges styled by basis (observed, declared, inferred, guessed), and a side panel with the evidence for every link into and out of the selected node and its strongest path from the program. Add `--trace -- ARGS` to include an observed run; `graph.html#node=NAME` opens with a node selected.
+
 `xray inspect <command> --tree` prints the whole graph as a tree with the basis and line of every link; it supersedes `--chain` and `--launch`, which remain for compatibility.
 
 `xray why <command> <target>` prints the shortest proof chains from the command to a file, command name, library (`libssl` or `libssl.so.3`) or package; each chain is as strong as its weakest link, and the exit status is 1 when no chain is found. `inspect --trace -- <args>` runs the command and lists files it executed or opened that static reading did not predict.
@@ -215,6 +217,7 @@ xray/
 ├── entrypoints.py
 ├── errors.py
 ├── evidence.py
+├── evidencehtml.py
 ├── evidencestore.py
 ├── export.py
 ├── fingerprint.py
