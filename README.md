@@ -174,6 +174,16 @@ The GitHub Action runs any XRAY command, puts the output in the job summary and 
 
 [`demo/xz-style`](demo/xz-style/README.md) re-enacts the 2024 xz backdoor pattern with a harmless toy library and shows drift, the log, a contract break, a traced breach and enforcement stopping the payload.
 
+## Querying everything with SQL
+
+```sh
+xray query "SELECT DISTINCT command FROM reach WHERE label LIKE 'libssl.so%'"     # the scan store
+xray query --log "SELECT package, path FROM calls WHERE class = 'shell' AND path LIKE '%.so%'"
+xray query --examples      # more, with --schema for the tables
+```
+
+`xray query` runs read-only SQL over the scan store (`programs`, `reach`, `owners`, `files`) or, with `--log`, over a capability log loaded into memory (`archives`, `files`, `needs`, `calls`). Only `SELECT`/`WITH` statements run; `--json` prints rows as objects.
+
 ## Policy as code
 
 ```text
@@ -323,6 +333,7 @@ xray/
 ├── pyexec.py
 ├── pytaint.py
 ├── python_analyzer.py
+├── query.py
 ├── references.py
 ├── relationships.py
 ├── report.py

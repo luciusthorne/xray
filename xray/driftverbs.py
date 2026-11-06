@@ -632,3 +632,48 @@ def run_policy(argv):
         print(f"Checked {len(items)} finding(s) against {options.policy}")
         print("\n".join(policy.violation_lines(found)))
     return 1 if found else 0
+
+
+@_guard
+def run_query(argv):
+    import sqlite3
+
+    from . import query
+
+    parser = argparse.ArgumentParser(prog="xray query", description="read-only SQL over the scan store or a capability log")
+    parser.add_argument("sql", nargs="?")
+    parser.add_argument("--log", nargs="?", const="", metavar="FILE", help="query a capability log instead of the scan store")
+    parser.add_argument("--store", metavar="FILE")
+    parser.add_argument("--limit", type=int, metavar="N")
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--examples", action="store_true")
+    parser.add_argument("--schema", action="store_true", help="list the tables and columns")
+    options = _parse(parser, argv)
+    if options.examples:
+        for title, sql in query.EXAMPLES.items():
+            print(f"# {title}\nxray query{' --log' if title.startswith('(--log)') else ''} \"{sql}\"\n")
+        return 0
+    try:
+        if options.log is not None:
+            from . import caplog
+
+            db = query.load_log(options.log or caplog.default_log_path())
+        else:
+            from .evidencestore import default_store_path
+
+            store = Path(options.store) if options.store else default_store_path()
+            if not store.exists():
+                raise CLIError(f"no scan store at {store}: run `xray scan` first, or use --log")
+            db = query.open_store(store)
+        if options.schema:
+            for (name,) in db.execute("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"):
+                columns = [row[1] for row in db.execute(f"PRAGMA table_info({name})")]
+                print(f"{name}({', '.join(columns)})")
+            return 0
+        if not options.sql:
+            raise CLIError("usage: xray query [--log [FILE]] SQL   (--examples, --schema)")
+        names, rows = query.run(db, options.sql, options.limit)
+    except (ValueError, sqlite3.Error) as error:
+        raise CLIError(f"query: {error}") from None
+    print(query.json_rows(names, rows) if options.json else "\n".join(query.table_lines(names, rows)))
+    return 0
