@@ -543,3 +543,92 @@ def run_attest(argv):
     print("wrote " + ", ".join(str(path) for path in written))
     print(f"verify with: xray attest verify {written[0]} --signers {written[2]}")
     return 0
+
+
+POLICY_USAGE = """usage: xray policy check POLICY --drift OLD NEW
+       xray policy check POLICY --compare A B
+       xray policy check POLICY --feed [FEED]
+       xray policy check POLICY --taint COMMAND
+       xray policy check POLICY --scan [DIR...]
+       xray policy check POLICY --contract FILE"""
+
+
+@_guard
+def run_policy(argv):
+    from . import policy
+
+    if not argv or argv[0] != "check":
+        raise CLIError(POLICY_USAGE)
+    parser = argparse.ArgumentParser(prog="xray policy check")
+    parser.add_argument("policy")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--drift", nargs=2, metavar=("OLD", "NEW"))
+    group.add_argument("--compare", nargs=2, metavar=("A", "B"))
+    group.add_argument("--feed", nargs="?", const="", metavar="FEED")
+    group.add_argument("--taint", metavar="COMMAND")
+    group.add_argument("--scan", nargs="*", metavar="DIR")
+    group.add_argument("--contract", metavar="FILE")
+    parser.add_argument("--json", action="store_true")
+    options = _parse(parser, argv[1:])
+    try:
+        rules = policy.load(options.policy)
+    except policy.PolicyError as error:
+        raise CLIError(f"policy: {error}") from None
+
+    items = []
+    if options.drift or options.compare:
+        from .drift import drift, opened, profiles
+
+        left, right = options.drift or options.compare
+        with opened(left) as (_, _, old_files, _meta), opened(right) as (_, _, new_files, meta):
+            if options.drift:
+                items = policy.gain_items(drift(profiles(old_files), profiles(new_files))["gains"], meta.get("pkgname"))
+            else:
+                from .crossbuild import compare_builds
+
+                report = compare_builds(profiles(old_files), profiles(new_files))
+                for entry in report["differences"]:
+                    for change in entry["only_left"] + entry["only_right"]:
+                        items += policy.gain_items([{**change, "path": entry["name"]}], meta.get("pkgname"))
+    elif options.feed is not None:
+        from . import archfeed
+
+        for entry in archfeed.read_feed(options.feed or None):
+            items += policy.gain_items(entry.get("gains") or [], entry["package"])
+    elif options.taint:
+        from .taint import analyze
+
+        try:
+            items = policy.taint_items(analyze(options.taint).findings)
+        except FileNotFoundError:
+            raise CLIError(f"Not found on PATH or disk: {options.taint}") from None
+    elif options.scan is not None:
+        from .evidence import build_evidence_graph
+        from .evidencestore import path_dirs
+        from .scan import commands_in
+
+        shared = {}
+        for _name, path in sorted(commands_in(options.scan or path_dirs()).items()):
+            try:
+                graph = build_evidence_graph(path, packages=False, shared=shared)
+            except (OSError, ValueError, RecursionError):
+                continue
+            items += policy.risk_items(graph.risks)
+    else:
+        from .contract import load_contract
+        from .contractverbs import check_contract
+        from .evidence import build_evidence_graph
+
+        contract = load_contract(options.contract)
+        graph = build_evidence_graph(contract.program, packages=False)
+        items = policy.breach_items(check_contract(contract, graph)["breaches"])
+
+    found = policy.violations(rules, items)
+    if options.json:
+        print(json.dumps({"schema_version": 1, "checked": len(items),
+                          "violations": [{**item, "rule": rule.text, "rule_line": rule.line} for item, rule in found]},
+                         indent=2))
+    else:
+        print(f"Checked {len(items)} finding(s) against {options.policy}")
+        print("\n".join(policy.violation_lines(found)))
+    return 1 if found else 0

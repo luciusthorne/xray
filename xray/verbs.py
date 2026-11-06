@@ -16,7 +16,7 @@ from .evidence import (
     weakest,
 )
 
-VERBS = ("inspect", "why", "scan", "reach", "contract", "drift", "whatif", "log", "taint", "compare", "feed", "hook", "explain", "attest")
+VERBS = ("inspect", "why", "scan", "reach", "contract", "drift", "whatif", "log", "taint", "compare", "feed", "hook", "explain", "attest", "policy")
 
 
 def _parser(verb):
@@ -49,7 +49,7 @@ def run_verb(argv):
     verb, rest = argv[0], argv[1:]
     if verb == "taint":
         return run_taint(rest)
-    if verb in ("drift", "whatif", "log", "compare", "feed", "hook", "explain", "attest"):
+    if verb in ("drift", "whatif", "log", "compare", "feed", "hook", "explain", "attest", "policy"):
         from .driftverbs import (
             run_attest,
             run_compare,
@@ -58,11 +58,13 @@ def run_verb(argv):
             run_feed,
             run_hook,
             run_log,
+            run_policy,
             run_whatif,
         )
 
         return {"drift": run_drift, "whatif": run_whatif, "log": run_log, "compare": run_compare,
-                "feed": run_feed, "hook": run_hook, "explain": run_explain, "attest": run_attest}[verb](rest)
+                "feed": run_feed, "hook": run_hook, "explain": run_explain, "attest": run_attest,
+                "policy": run_policy}[verb](rest)
     if verb == "contract":
         from .contractverbs import run_contract
 

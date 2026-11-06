@@ -171,6 +171,25 @@ The GitHub Action runs any XRAY command, puts the output in the job summary and 
 
 [`demo/xz-style`](demo/xz-style/README.md) re-enacts the 2024 xz backdoor pattern with a harmless toy library and shows drift, the log, a contract break, a traced breach and enforcement stopping the payload.
 
+## Policy as code
+
+```text
+# /etc/xray/policy — first matching rule wins
+deny gain loader-hook                  # never again
+allow gain class:net for ghostty       # a terminal with a network feature
+deny gain class:net in usr/bin/*       # nothing else in /usr/bin may start using the network
+deny gain class:shell in *.so*         # libraries must not start running shells
+deny taint high
+deny risk *RPATH*
+```
+
+```sh
+xray policy check policy --drift old.pkg.tar.zst new.pkg.tar.zst
+xray policy check policy --feed          # or --compare A B, --taint CMD, --scan, --contract FILE
+```
+
+A rule is `allow|deny KIND [PATTERN] [in PATH-GLOB] [for PACKAGE-GLOB]`, where KIND is `gain` (drift, compare, feed and hook results), `taint` (a severity), `risk` (a "Worth a look" message) or `breach` (contract check). `check` exits 1 on any violation and names the rule that denied it, so the same file works in CI (the GitHub Action) and in the pacman hook (`policy = /etc/xray/policy` in `/etc/xray/hook.conf`, which then decides what blocks).
+
 ## Signed evidence
 
 ```sh
@@ -294,6 +313,7 @@ xray/
 ├── overview.py
 ├── pachook.py
 ├── perlscan.py
+├── policy.py
 ├── profile.py
 ├── project_graph.py
 ├── provenance.py

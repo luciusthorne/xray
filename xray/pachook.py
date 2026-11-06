@@ -43,6 +43,8 @@ CONFIG = """# XRAY pacman hook settings
 mode = report
 # packages whose gains are shown but never block, separated by spaces
 allow =
+# optional: decide what blocks with a policy file (see `xray policy`) instead of "any strong gain"
+# policy = /etc/xray/policy
 """
 
 
@@ -66,7 +68,7 @@ def pacman_conf(path="/etc/pacman.conf"):
 
 
 def read_config(path="/etc/xray/hook.conf"):
-    config = {"mode": "report", "allow": set()}
+    config = {"mode": "report", "allow": set(), "policy": None}
     try:
         text = Path(path).read_text()
     except OSError:
@@ -78,6 +80,8 @@ def read_config(path="/etc/xray/hook.conf"):
             config["mode"] = value
         elif key == "allow":
             config["allow"] = set(value.split())
+        elif key == "policy" and value:
+            config["policy"] = value
     return config
 
 
@@ -199,7 +203,15 @@ def check_targets(names, conf=None, config=None, contracts_dir="/etc/xray/contra
             lines.append(f"    {gain['path']}: {gain['detail'][:120]}")
         for item in breaches:
             lines.append(f"    contract {item}")
-        if (strong or breaches) and name not in config["allow"]:
+        if config.get("policy"):
+            from . import policy
+
+            denied = policy.violations(policy.load(config["policy"]), policy.gain_items(report["gains"], name))
+            for item, rule in denied:
+                lines.append(f"    policy: {item['detail'][:100]} (denied by line {rule.line})")
+            if (denied or breaches) and name not in config["allow"]:
+                blocking.append(name)
+        elif (strong or breaches) and name not in config["allow"]:
             blocking.append(name)
     block = config["mode"] == "block" and bool(blocking)
     if block:
