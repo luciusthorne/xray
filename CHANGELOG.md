@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add capability profiles (`xray/profile.py`) and `xray drift OLD NEW` for files, directories, package archives and installed packages: imported call classes, libraries, search paths, IFUNC resolvers, constructors, setuid bits and script commands, with rebuilt or renamed libraries paired instead of reported as new.
+- Add `xray whatif upgrade ARCHIVE` (drift from the installed version, plus the scanned programs that reach each file that gained a capability) and `xray whatif remove PACKAGE`.
+- Add the capability transparency log: `xray log add` (archives or `--from-cache`), `verify` (hash chain), `history NAME` and `gains`.
+- Contract `[exec]` and `[load]` entries pin what each ELF file is able to do (`caps=`, `ifuncs=`, `ctors=`); `xray contract check` reports a file that gained a capability under the same name.
+- Add `demo/xz-style`, a harmless re-enactment of the xz backdoor pattern.
 - Add capability contracts ([spec](docs/contract-spec.md)): `xray contract generate` (from the evidence graph, plus a strace-observed run with `--trace`), `check` (breaches with proof chains; `--trace` checks a real run; `--strict` flags a changed program), `enforce` (Landlock file and TCP rules, unprivileged, plus a private network namespace when the contract allows no network) and `minimize` (delta debugging over entries until every remaining one is required by the workload).
 - `#!/usr/bin/env NAME` scripts now link to `env` itself (declared) as well as the interpreter it finds on PATH.
 - Add the evidence graph and two verbs. `xray inspect <command>` shows what a command reaches (commands, sourced files, Python and Perl imports, interpreters, shared libraries, owning packages) with the proof for every link — method, file and line, and a basis of observed, declared, inferred or guessed — plus its blind spots; `--trace` merges a real run and lists what static reading missed. `xray why <command> <target>` prints the proof chains to a file, command, library or package.

@@ -66,6 +66,16 @@ class ContractError(ValueError):
 class Entry:
     value: str
     comment: str = ""
+    attrs: tuple = ()  # (key, value) pairs: caps, ifuncs, ctors
+
+    def attr(self, key, default=None):
+        for name, value in self.attrs:
+            if name == key:
+                return value
+        return default
+
+    def text(self):
+        return " ".join([self.value, *(f"{key}={value}" for key, value in self.attrs)])
 
     def basis(self):
         word = self.comment.split(":", 1)[0].strip()
@@ -83,20 +93,20 @@ class Contract:
     notes: list = field(default_factory=list)
 
     # -- editing -----------------------------------------------------------
-    def add(self, section, value, comment=""):
+    def add(self, section, value, comment="", attrs=()):
         if section not in SECTIONS:
             raise ContractError(f"unknown section [{section}]")
         if section == "net":
             _check_net(value)
         else:
             _check_path(value)
+        _check_attrs(section, attrs)
         entries = self.sections[section]
         for index, entry in enumerate(entries):
             if entry.value == value:
-                if not entry.comment and comment:
-                    entries[index] = Entry(value, comment)
+                entries[index] = Entry(value, entry.comment or comment, entry.attrs or tuple(attrs))
                 return
-        entries.append(Entry(value, comment))
+        entries.append(Entry(value, comment, tuple(attrs)))
 
     def remove(self, section, value):
         self.sections[section] = [entry for entry in self.sections[section] if entry.value != value]
@@ -150,9 +160,9 @@ class Contract:
             entries = self.sections[name]
             if name == "net" and not entries:
                 entries = [Entry("none")]
-            width = min(60, max((len(entry.value) for entry in entries), default=0))
+            width = min(60, max((len(entry.text()) for entry in entries), default=0))
             for entry in entries:
-                text = entry.value
+                text = entry.text()
                 if entry.comment:
                     text = f"{text:<{width}}  # {entry.comment}"
                 lines.append(text)
@@ -164,6 +174,25 @@ def _check_path(value):
         raise ContractError(f"path entries must be absolute or start with ~/: {value}")
     if "**" in value and not value.endswith("/**"):
         raise ContractError(f"** is only allowed as a final /** component: {value}")
+
+
+CAPABILITY_CLASSES = ("net", "exec", "shell", "dynload", "identity", "ptrace", "kernel")
+
+
+def _check_attrs(section, attrs):
+    for key, value in attrs:
+        if section not in ("exec", "load"):
+            raise ContractError(f"[{section}] entries take no attributes: {key}={value}")
+        if key == "caps":
+            names = [] if value == "-" else value.split(",")
+            unknown = [name for name in names if name not in CAPABILITY_CLASSES]
+            if unknown or not value:
+                raise ContractError(f"caps= takes classes from {', '.join(CAPABILITY_CLASSES)} or -: {value}")
+        elif key in ("ifuncs", "ctors"):
+            if not value.isdigit():
+                raise ContractError(f"{key}= takes a number: {value}")
+        else:
+            raise ContractError(f"unknown attribute {key}= (caps, ifuncs, ctors)")
 
 
 def _check_net(value):
@@ -222,7 +251,17 @@ def parse_contract(text):
                 continue
             if section == "net" and line == "none":
                 continue
-            contract.add(section, line, comment)
+            if section == "net":
+                contract.add(section, line, comment)
+            else:
+                value, *pairs = line.split()
+                attrs = []
+                for pair in pairs:
+                    key, sep, item = pair.partition("=")
+                    if not sep:
+                        raise ContractError(f"expected KEY=VALUE after the path, got: {pair}")
+                    attrs.append((key, item))
+                contract.add(section, value, comment, attrs)
         except ContractError as error:
             raise ContractError(f"line {number}: {error}") from None
     if contract is None:

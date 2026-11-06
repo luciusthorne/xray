@@ -266,6 +266,39 @@ def run_reach(rest):
     return 0 if found else 1
 
 
+def reach_programs(target, store_path=None, depth=4, limit=300):
+    """[(command, weakest basis, short chain)], scanned program count, stale flag."""
+
+    with EvidenceStore(Path(store_path) if store_path else None) as store:
+        last = store.meta("last_scan")
+        if last is None:
+            raise CLIError("No scan in the evidence store yet: run `xray scan` first")
+        programs = store.programs()
+        owners = store.owners()
+        found = []
+        for command in store.reaching(target):
+            program = programs.get(command)
+            if program is None or not Path(program["root"]).exists():
+                continue
+            graph = build_evidence_graph(program["root"], max_depth=depth, max_files=limit,
+                                         packages=bool(owners), store=store, owners=owners)
+            matches = graph.find(target)
+            paths = graph.paths(matches, max_paths=1) if matches else []
+            if paths:
+                found.append((command, weakest(link.basis for link in paths[0]), _steps(graph, paths[0])))
+        stale = last["epoch"] != store.epoch
+    found.sort(key=lambda item: (BASES.index(item[1]), item[0]))
+    return found, len(programs), stale
+
+
+def _steps(graph, path):
+    return " → ".join(
+        Path(_label(graph, link.target)).name or _label(graph, link.target)
+        for position, link in enumerate(path)
+        if not (position + 1 < len(path) and path[position + 1].kind == "resolves_to")
+    )
+
+
 def _label(graph, node_id):
     node = graph.nodes.get(node_id)
     if node is None:

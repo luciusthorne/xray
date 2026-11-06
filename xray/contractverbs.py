@@ -158,6 +158,10 @@ def check_contract(contract, graph, observed=None, strict=False):
             "chain": [item.to_dict() for item in chain[0]] if chain else [],
         })
 
+    for section in ("exec", "load"):
+        for entry in contract.sections[section]:
+            breaches.extend(_capability_breaches(section, entry))
+
     observed_values = set()
     if observed is not None:
         checks = [("exec", path) for path in observed.exec] + [("read", path) for path in observed.read] + [
@@ -180,12 +184,46 @@ def check_contract(contract, graph, observed=None, strict=False):
                 if item not in breaches:
                     breaches.append(item)
 
+    from .contract import expand_home
+
+    reached = {expand_home(value) for value in seen_static | observed_values}
     unused = []
     for section in ("exec", "load"):
         for entry in contract.sections[section]:
-            if entry.value not in seen_static and entry.value not in observed_values and entry.value != contract.program:
+            if expand_home(entry.value) not in reached and entry.value != contract.program:
                 unused.append({"section": section, "value": entry.value})
     return {"breaches": breaches, "unused": unused, "changed": changed}
+
+
+def _capability_breaches(section, entry):
+    """What a pinned [exec]/[load] file is able to do now and its contract entry does not list."""
+
+    from .contract import expand_home
+    from .profile import CLASSES, profile
+
+    if not entry.attrs:
+        return []
+    path = expand_home(entry.value)
+    try:
+        data = profile(path)
+    except OSError:
+        return []
+    if data.get("kind") != "elf":
+        return []
+    out = []
+    pinned = entry.attr("caps")
+    if pinned is not None:
+        allowed = set() if pinned == "-" else set(pinned.split(","))
+        for cls, symbols in sorted((data.get("classes") or {}).items()):
+            if cls not in allowed and cls in CLASSES:
+                out.append({"section": section, "value": path, "how": "static",
+                            "detail": f"the file now uses {cls} ({', '.join(symbols)}); its entry allows caps={pinned}"})
+    for key, field, label in (("ifuncs", "ifuncs", "IFUNC resolvers"), ("ctors", "constructors", "constructors run before main")):
+        pinned_count = entry.attr(key)
+        if pinned_count is not None and (data.get(field) or 0) > int(pinned_count):
+            out.append({"section": section, "value": path, "how": "static",
+                        "detail": f"{label}: {data.get(field)} now, the entry allows {key}={pinned_count}"})
+    return out
 
 
 def _check(options, workload):
@@ -368,7 +406,7 @@ def minimize(contract, args, max_runs=200, timeout=30, everything=False, same_st
                 candidates.append(("load", entry))
     for section in minimal.sections:
         minimal.sections[section] = [
-            Entry(entry.value, f"required: {entry.comment}" if id(entry) in kept_ids else entry.comment)
+            Entry(entry.value, f"required: {entry.comment}" if id(entry) in kept_ids else entry.comment, entry.attrs)
             for entry in minimal.sections[section]
         ]
     removed = [(section, entry) for section, entry in candidates if id(entry) not in kept_ids]

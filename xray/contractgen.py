@@ -42,6 +42,35 @@ def _baseline(path, home):
     return any(matches(pattern, path, home) for pattern in BASELINE_READ + BASELINE_DEVICES)
 
 
+def capability_attrs(path):
+    """caps/ifuncs/ctors attributes for an ELF file, from its capability profile; () for others."""
+
+    from .profile import profile
+
+    try:
+        data = profile(path)
+    except OSError:
+        return ()
+    if data.get("kind") != "elf":
+        return ()
+    classes = sorted(data.get("classes") or {})
+    return (("caps", ",".join(classes) or "-"), ("ifuncs", str(data.get("ifuncs") or 0)),
+            ("ctors", str(data.get("constructors") or 0)))
+
+
+def pin_capabilities(contract):
+    """Record what each [exec] and [load] ELF file is able to do, so check can see it change."""
+
+    from .contract import expand_home
+
+    for section in ("exec", "load"):
+        contract.sections[section] = [
+            Entry(entry.value, entry.comment, entry.attrs or capability_attrs(expand_home(entry.value)))
+            for entry in contract.sections[section]
+        ]
+    return contract
+
+
 def from_graph(graph, contract=None):
     """Fill exec and load from what the evidence graph says the program reaches."""
 
@@ -128,7 +157,7 @@ def _upgrade(contract, section, value, comment="observed"):
     for index, entry in enumerate(entries):
         if entry.value == value:
             if not entry.comment.startswith("observed"):
-                entries[index] = Entry(value, f"observed; {entry.comment}" if entry.comment else comment)
+                entries[index] = Entry(value, f"observed; {entry.comment}" if entry.comment else comment, entry.attrs)
             return
     contract.add(section, value, comment)
 
@@ -147,6 +176,7 @@ def generate(path, argv=None, depth=4, limit=300, timeout=30, packages=True):
     for link in graph.outgoing(graph.root):
         if link.kind == "owned_by":
             contract.package = graph.nodes[link.target].label
+    pin_capabilities(contract)
     today = datetime.date.today().isoformat()
     if argv is None:
         contract.generated = f"{today} from static evidence"
@@ -156,6 +186,7 @@ def generate(path, argv=None, depth=4, limit=300, timeout=30, packages=True):
 
         observed = observe_run([graph.root, *argv], timeout=timeout)
         add_observed(contract, observed)
+        pin_capabilities(contract)
         contract.generated = f"{today} from static evidence and a traced run"
         contract.workload = shlex.join([Path(graph.root).name, *argv])
         if observed.timed_out:

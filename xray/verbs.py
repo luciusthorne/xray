@@ -16,7 +16,7 @@ from .evidence import (
     weakest,
 )
 
-VERBS = ("inspect", "why", "scan", "reach", "contract")
+VERBS = ("inspect", "why", "scan", "reach", "contract", "drift", "whatif", "log")
 
 
 def _parser(verb):
@@ -46,6 +46,10 @@ def _parser(verb):
 
 def run_verb(argv):
     verb, rest = argv[0], argv[1:]
+    if verb in ("drift", "whatif", "log"):
+        from .driftverbs import run_drift, run_log, run_whatif
+
+        return {"drift": run_drift, "whatif": run_whatif, "log": run_log}[verb](rest)
     if verb == "contract":
         from .contractverbs import run_contract
 

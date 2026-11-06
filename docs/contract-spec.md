@@ -19,7 +19,7 @@ workload xdg-mime query default text/plain
 
 [exec]
 /usr/bin/xdg-mime  # observed; the program itself
-/usr/bin/bash      # required: declared: #!/bin/sh (/bin/sh is a link to /usr/bin/bash) (xdg-mime:1)
+/usr/bin/bash caps=dynload,exec,identity,net ifuncs=0 ctors=1  # required: declared: #!/bin/sh (/bin/sh is a link to /usr/bin/bash) (xdg-mime:1)
 /usr/bin/grep      # required: observed; inferred: runs `grep` (xdg-mime:322)
 
 [load]
@@ -64,7 +64,26 @@ One entry per line:
 - a final `/**`: everything beneath that directory, at any depth.
 
 `**` anywhere else is an error. Paths name files after symbolic links are
-resolved.
+resolved, and may not contain spaces.
+
+### Capability pins (`exec` and `load`)
+
+An `[exec]` or `[load]` entry may be followed by `KEY=VALUE` attributes that
+pin what that file is *able to do*, read from its contents:
+
+- `caps=CLASS,...` (or `caps=-` for none): the classes of calls the file
+  imports: `net`, `exec`, `shell`, `dynload`, `identity`, `ptrace`, `kernel`;
+- `ifuncs=N`: at most N IFUNC resolvers (code the loader runs to pick an
+  implementation);
+- `ctors=N`: at most N constructors (code that runs before `main`).
+
+```
+/usr/lib/liblzma.so.5.8.4 caps=- ifuncs=0 ctors=2  # declared: DT_NEEDED liblzma.so.5
+```
+
+A file that gains a class or exceeds a count breaks the contract even when its
+name and API stay the same: the case of the 2024 xz backdoor. Updates that add
+no capability pass. Unknown attributes are errors.
 
 ### Meaning
 
