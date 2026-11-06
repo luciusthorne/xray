@@ -243,6 +243,17 @@ def _is_module_named(origin, leaf):
 def import_files(path):
     """Return the files a Python file's imports lead to.
 
+    See import_file_lines, which also gives the line of each import.
+    """
+
+    return list(import_file_lines(path))
+
+
+def import_file_lines(path):
+    """Return {file: line} for the files a Python file's imports lead to.
+
+    line is the first import statement that leads to the file.
+
     Relative imports are resolved against the file's own directory.
     Absolute imports skip the standard library and modules that cannot
     be found. "from pkg import name" also includes pkg/name when name
@@ -255,21 +266,30 @@ def import_files(path):
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"))
     except (OSError, SyntaxError, ValueError):
-        return []
+        return {}
 
-    statements = set()
+    statements = {}
+
+    def note(key, line):
+        if key not in statements or line < statements[key]:
+            statements[key] = line
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                statements.add((0, alias.name, ()))
+                note((0, alias.name, ()), node.lineno)
         elif isinstance(node, ast.ImportFrom):
             names = tuple(sorted(alias.name for alias in node.names))
-            statements.add((node.level, node.module or "", names))
+            note((node.level, node.module or "", names), node.lineno)
 
     found = {}
 
-    for level, module, names in sorted(statements):
+    def add(origin, line):
+        origin = origin.resolve()
+        if origin not in found or line < found[origin]:
+            found[origin] = line
+
+    for (level, module, names), line in sorted(statements.items()):
         if level == 0:
             if not module:
                 continue
@@ -280,7 +300,7 @@ def import_files(path):
             origin = find_module_file(module, (path.parent,))
 
             if origin is not None:
-                found[origin.resolve()] = None
+                add(origin, line)
 
             for name in names:
                 if name == "*":
@@ -289,7 +309,7 @@ def import_files(path):
                 origin = find_module_file(f"{module}.{name}", (path.parent,))
 
                 if origin is not None and _is_module_named(origin, name):
-                    found[origin.resolve()] = None
+                    add(origin, line)
 
             continue
 
@@ -308,7 +328,7 @@ def import_files(path):
             package = base
 
         if origin is not None and origin.is_file():
-            found[origin.resolve()] = None
+            add(origin, line)
 
         for name in names:
             if name == "*":
@@ -317,6 +337,6 @@ def import_files(path):
             origin = _file_for(package / name)
 
             if origin is not None:
-                found[origin.resolve()] = None
+                add(origin, line)
 
-    return list(found)
+    return found

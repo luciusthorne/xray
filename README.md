@@ -32,9 +32,24 @@ xray pytest --graph-json > pytest-graph.json
 xray pytest --html > pytest-graph.html
 xray ls --code
 xray ls --code main
+xray inspect xdg-open
+xray why xdg-open glibc
 ```
 
 Running `xray` by itself reads XRAY's own CLI source and suggests follow-up commands. Running `xray <command>` gives that command's overview and suggests code, calls, chains, dependency, cycle, path, and JSON queries. For ELF commands with configured debuginfod, `xray <command> --code` lists function names, and `--code <function>` reads the matching C source.
+
+## Evidence graph: `inspect` and `why`
+
+`xray inspect <command>` follows everything a command reaches — the commands a shell script runs and the files it sources, Python and Perl imports, shebang and ELF interpreters, the shared libraries ELF files need, and the package that owns each file — and records the proof for every link: how it was found, where (file and line), and how strong that proof is.
+
+| Basis | Meaning |
+| --- | --- |
+| `observed` | seen in a real run (`--trace`, which runs the command under `strace`) |
+| `declared` | stated by metadata the system acts on: a shebang, ELF `DT_NEEDED` or `PT_INTERP`, a package database record |
+| `inferred` | read from code by static analysis, then resolved the way this machine would resolve it now (PATH, ldconfig cache, Python and Perl search paths) |
+| `guessed` | a resolution XRAY cannot stand behind, such as a PATH lookup in a script that assigns PATH |
+
+`xray why <command> <target>` prints the shortest proof chains from the command to a file, command name, library (`libssl` or `libssl.so.3`) or package; each chain is as strong as its weakest link, and the exit status is 1 when no chain is found. `inspect --trace -- <args>` runs the command and lists files it executed or opened that static reading did not predict. Both verbs accept `--depth`, `--limit`, `--no-packages` and `--json` (schema version 1). Every report ends with its blind spots — commands built at runtime, files past the depth limit — because a missing link is not proof that something cannot happen. To analyze a file literally named `inspect` or `why`, pass a path such as `./why`.
 
 ## What it reads
 
@@ -114,6 +129,7 @@ xray/
 ├── elfscan.py
 ├── entrypoints.py
 ├── errors.py
+├── evidence.py
 ├── export.py
 ├── fingerprint.py
 ├── graph.py
@@ -147,7 +163,8 @@ xray/
 ├── treesitter_analyzers.py
 ├── unused.py
 ├── unused_symbols.py
-└── uses.py
+├── uses.py
+└── verbs.py
 ```
 
 ## Testing
