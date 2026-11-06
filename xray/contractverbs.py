@@ -34,6 +34,7 @@ def _parser(name):
         parser.add_argument("command")
         parser.add_argument("-o", "--output", metavar="FILE")
         parser.add_argument("--trace", action="store_true", help="also RUN the command (args after --) under strace")
+        parser.add_argument("--workloads", metavar="FILE", help="trace every workload in FILE (one command line per line)")
         parser.add_argument("--depth", type=int, default=4)
         parser.add_argument("--limit", type=int, default=300)
         parser.add_argument("--timeout", type=int, default=30)
@@ -53,6 +54,7 @@ def _parser(name):
         parser.add_argument("--dry-run", action="store_true", help="print the rules and command; run nothing")
     if name == "minimize":
         parser.add_argument("-o", "--output", metavar="FILE")
+        parser.add_argument("--workloads", metavar="FILE", help="keep every workload in FILE working (one per line)")
         parser.add_argument("--all", action="store_true", help="also try removing declared libraries and the loader")
         parser.add_argument("--max-runs", type=int, default=200)
         parser.add_argument("--timeout", type=int, default=30)
@@ -93,6 +95,9 @@ def _write(contract, output):
 def _generate(options, workload):
     from .contractgen import generate
 
+    workloads = read_workloads(options.workloads) if options.workloads else None
+    if workloads and (options.trace or workload):
+        raise CLIError("use either --workloads FILE or --trace -- ARGS")
     if options.trace and workload is None:
         workload = []
     if not options.trace and workload:
@@ -101,6 +106,7 @@ def _generate(options, workload):
         contract, _ = generate(
             options.command, workload if options.trace else None, depth=options.depth,
             limit=options.limit, timeout=options.timeout, packages=not options.no_packages,
+            workloads=workloads,
         )
     except FileNotFoundError:
         raise CLIError(f"Not found on PATH or disk: {options.command}") from None
@@ -344,7 +350,27 @@ def _with_only(contract, candidates, kept):
     return trial
 
 
-def minimize(contract, args, max_runs=200, timeout=30, everything=False, same_stderr=True, run=None):
+def read_workloads(path):
+    """Argument lists from a workloads file: one shell-quoted command line per line, # comments."""
+
+    workloads = []
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except OSError as error:
+        raise CLIError(f"cannot read {path}: {error.strerror}") from None
+    for line in text.splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            try:
+                workloads.append(shlex.split(line))
+            except ValueError as error:
+                raise CLIError(f"{path}: {error}: {line}") from None
+    if not workloads:
+        raise CLIError(f"{path} lists no workloads")
+    return workloads
+
+
+def minimize(contract, args, max_runs=200, timeout=30, everything=False, same_stderr=True, run=None, workloads=None):
     """Remove every entry the workload does not need (delta debugging over entries).
 
     Returns (minimal contract, removed [(section, entry)], runs, baseline).
@@ -355,12 +381,18 @@ def minimize(contract, args, max_runs=200, timeout=30, everything=False, same_st
 
     from .enforce import run_enforced
 
-    def default_run(trial):
+    argument_sets = workloads or [args]
+
+    def run_one(trial, arguments):
         try:
-            done = run_enforced(trial, args, capture=True, timeout=timeout, stdin=None)
+            done = run_enforced(trial, arguments, capture=True, timeout=timeout, stdin=None)
         except (subprocess.TimeoutExpired, OSError) as error:  # counts as a different result
             return ("error", str(type(error).__name__))
         return (done.returncode, done.stdout, done.stderr if same_stderr else b"")
+
+    def default_run(trial):
+        # every workload must keep its result: an entry any workload needs is required
+        return tuple(run_one(trial, arguments) for arguments in argument_sets)
 
     run = run or default_run
     runs = [0]
@@ -416,11 +448,16 @@ def minimize(contract, args, max_runs=200, timeout=30, everything=False, same_st
 def _minimize(options, workload):
     contract = load_contract(options.contract)
     args = workload or []
+    workloads = read_workloads(options.workloads) if options.workloads else None
+    if workloads and args:
+        raise CLIError("use either --workloads FILE or -- ARGS")
     minimal, removed, runs, _baseline = minimize(
         contract, args, max_runs=options.max_runs, timeout=options.timeout,
-        everything=options.all, same_stderr=not options.ignore_stderr,
+        everything=options.all, same_stderr=not options.ignore_stderr, workloads=workloads,
     )
-    minimal.workload = shlex.join([Path(contract.program).name, *args])
+    name = Path(contract.program).name
+    minimal.workload = (f"{len(workloads)} workloads (listed below)" if workloads
+                        else shlex.join([name, *args]))
     minimal.notes = [note for note in contract.notes]
     minimal.notes.append(
         f"minimized with {runs} enforced runs: every entry marked 'required' changed the result "
@@ -428,6 +465,8 @@ def _minimize(options, workload):
     )
     if runs >= options.max_runs:
         minimal.notes.append(f"stopped at --max-runs {options.max_runs}: the result may not be minimal")
+    for arguments in workloads or []:
+        minimal.notes.append(f"workload `{shlex.join([name, *arguments])}`")
     for section, entry in removed:
         minimal.notes.append(f"removed, not needed for the workload: [{section}] {entry.value}")
     _write(minimal, options.output)
