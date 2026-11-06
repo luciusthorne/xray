@@ -36,6 +36,7 @@ xray inspect xdg-open
 xray why xdg-open glibc
 xray scan
 xray reach liblzma
+xray contract generate jq -o jq.contract
 ```
 
 Running `xray` by itself reads XRAY's own CLI source and suggests follow-up commands. Running `xray <command>` gives that command's overview and suggests code, calls, chains, dependency, cycle, path, and JSON queries. For ELF commands with configured debuginfod, `xray <command> --code` lists function names, and `--code <function>` reads the matching C source.
@@ -66,6 +67,23 @@ Running `xray` by itself reads XRAY's own CLI source and suggests follow-up comm
 `xray scan [DIR ...]` reads every executable on PATH (or in the given directories) into an evidence store in `~/.cache/xray` (`$XRAY_CACHE_DIR` overrides it). What each file reaches is stored with its size, times, inode and SHA-256, and with a machine epoch (PATH, the PATH directories and `/etc/ld.so.cache`), so a rescan reads only changed files. The report lists the most reached libraries and every "worth a look" finding with the programs that reach it. `xray reach <target>` then answers the reverse question — which programs reach this file, library, command or package — with the proof chain for each, strongest first.
 
 All four verbs accept `--depth`, `--limit` and `--json` (schema version 1). Every report ends with its blind spots — commands built at runtime (with their lines), files past the depth limit, `LD_PRELOAD` — because a missing link is not proof that something cannot happen. To analyze a file literally named like a verb, pass a path such as `./why`.
+
+## Capability contracts
+
+A contract is a reviewable text file that says what one program may execute, load, read, write and reach on the network, with the evidence for each entry ([specification](docs/contract-spec.md)).
+
+```sh
+xray contract generate xdg-mime --trace -o xdg-mime.contract -- query default text/plain
+xray contract check xdg-mime.contract                     # exit 1 on a breach, with the proof chain
+xray contract check xdg-mime.contract --trace -- query default text/plain
+xray contract enforce xdg-mime.contract -- query default text/plain
+xray contract minimize xdg-mime.contract -o xdg-mime.min -- query default text/plain
+```
+
+- `generate` fills `[exec]` and `[load]` from the evidence graph; with `--trace` it also runs the workload under strace and adds what the run executed, read, wrote and connected to (home paths become `~/`, temporary files become `/tmp/**`).
+- `check` rebuilds the evidence and lists everything the program now reaches that the contract does not allow — a new command, a library a rebuilt binary started loading — with the chain of proof; with `--trace`, also what a real run did. `--strict` counts a changed program file (SHA-256) as a breach.
+- `enforce` runs the program under Landlock (unprivileged; per-file execute/read/write rights and TCP ports) and, when `[net]` is `none`, in a private network namespace via bubblewrap. `--read`/`--write` add paths for one run; `--dry-run` prints the rules.
+- `minimize` removes every entry the workload does not need, by re-running it under the shrinking contract until any further removal changes its exit status or output. What remains is marked `required`: a contract proven minimal for that workload.
 
 ## What it reads
 
@@ -137,29 +155,35 @@ xray/
 ├── command_analyzers.py
 ├── commandproject.py
 ├── complexity.py
+├── contract.py
+├── contractgen.py
+├── contractverbs.py
 ├── coupling.py
-├── dependencies.py
 ├── debuginfod.py
+├── dependencies.py
 ├── disasm.py
 ├── discover.py
 ├── elfscan.py
+├── enforce.py
 ├── entrypoints.py
 ├── errors.py
 ├── evidence.py
 ├── evidencestore.py
 ├── export.py
 ├── fingerprint.py
+├── git_analysis.py
 ├── graph.py
 ├── graphjson.py
-├── git_analysis.py
 ├── html.py
 ├── identify.py
 ├── javascript_analyzer.py
+├── landlock.py
 ├── launchgraph.py
 ├── libresolve.py
 ├── locate.py
 ├── minidebug.py
 ├── model.py
+├── observe.py
 ├── overview.py
 ├── perlscan.py
 ├── project_graph.py

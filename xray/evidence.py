@@ -467,6 +467,11 @@ class _Builder:
         program = tokens[0]
         name = _interpreter(line)
         if Path(program).name == "env" and name:
+            if Path(program).is_file():
+                # The kernel runs env itself; env then runs the named interpreter.
+                env_id = self.file_node(program, depth)
+                if env_id:
+                    self.graph.add_link(path, env_id, "interpreter", Evidence("declared", "shebang", line.strip(), path, 1))
             target = locate(name)
             evidence = Evidence(
                 "inferred", "shebang+PATH", f"{line.strip()} (env looks {name} up on PATH)", path, 1
