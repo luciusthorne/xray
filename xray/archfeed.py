@@ -230,8 +230,9 @@ def read_feed(path=None):
 
 def report_lines(entries, limit=50, strong_only=False):
     shown = [entry for entry in entries if entry.get("gains") and (entry.get("strong") or not strong_only)]
-    lines = [f"{len(entries)} updates in the feed; {sum(1 for entry in entries if entry.get('gains'))} gained "
-             f"capabilities; {sum(1 for entry in entries if entry.get('strong'))} with strong gains", ""]
+    gained = sum(1 for entry in entries if entry.get("gains"))
+    strong_count = sum(1 for entry in entries if entry.get("strong"))
+    lines = [f"{len(entries)} updates in the feed; {gained} gained capabilities; {strong_count} with strong gains", ""]
     for entry in shown[-limit:][::-1]:
         mark = "STRONG" if entry.get("strong") else "gain"
         lines.append(f"[{mark}] {entry['time'][:16]}  {entry['package']} {entry['from']} -> {entry['to']}")
