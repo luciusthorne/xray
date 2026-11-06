@@ -32,7 +32,6 @@ import urllib.request
 from pathlib import Path
 
 from . import caplog
-from .crossbuild import STRONG_FIELDS
 
 USER_AGENT = "xray-feed/1.1 (+https://github.com/luciusthorne/xray)"
 ARCHIVE = "https://archive.archlinux.org/packages"
@@ -132,8 +131,11 @@ def _sha256(path):
     return digest.hexdigest()
 
 
+FEED_STRONG = ("loader-hook", "ifuncs", "constructors", "setuid", "setgid")
+
+
 def strong(gain):
-    return gain["field"].startswith("class:") or gain["field"] in STRONG_FIELDS
+    return gain["field"].startswith("class:") or gain["field"] in FEED_STRONG
 
 
 def update(repos=DEFAULT_REPOS, paths=None, watch=None, max_mib=80, limit=None, base_url=None, progress=None):

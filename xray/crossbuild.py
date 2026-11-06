@@ -11,8 +11,9 @@ the 2024 xz backdoor, which only reached Debian and RPM builds.
 Files are paired by name, since distributions lay out directories
 differently, and only files present in both builds are compared.
 Differences are split into strong ones (capability classes, loader
-hooks, IFUNC resolvers, constructors, setuid bits) and weak ones (extra
-libraries, search paths), which configure options commonly explain.
+hooks or dependence on the dynamic loader, IFUNC resolvers, setuid
+bits) and weak ones (extra libraries, search paths, constructors),
+which build options commonly explain.
 """
 
 from __future__ import annotations
@@ -22,7 +23,9 @@ from pathlib import Path
 from .drift import LOADER_HOOK, compare
 from .profile import LOADER_NAMES, loader_hook
 
-STRONG_FIELDS = ("loader-hook", "ifuncs", "constructors", "setuid", "setgid")
+# Constructors are left out: distributions' build flags change their number in about 7% of packages
+# (docs/crossdistro-study.md), so a difference in constructors alone says little across builds.
+STRONG_FIELDS = ("loader-hook", "ifuncs", "setuid", "setgid")
 
 
 def by_name(profiles):
@@ -98,6 +101,6 @@ def compare_lines(left_label, right_label, report):
         lines.append(f"Not compared: {len(report['only_in_left'])} files only in the first build, "
                      f"{len(report['only_in_right'])} only in the second (distributions split packages differently).")
     lines.append("")
-    lines.append("Strong: a capability class, a loader hook, IFUNC resolvers, constructors or setuid in one build only.")
-    lines.append("Weak: libraries or search paths, which configure options commonly explain.")
+    lines.append("Strong: a call class, a loader hook or dependence on the dynamic loader, IFUNC resolvers or setuid")
+    lines.append("in one build only. Weak: libraries, search paths or constructors, which build options commonly explain.")
     return lines
