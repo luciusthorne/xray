@@ -21,6 +21,7 @@ Nothing here says a program is safe: blind spots lists what was not seen.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import stat
 from collections import deque
@@ -43,7 +44,8 @@ _RANK = {basis: rank for rank, basis in enumerate(BASES)}
 LINK_KINDS = (
     "runs",          # a script starts a command
     "sources",       # a shell script loads another file
-    "imports",       # Python or Perl loads a module file
+    "imports",       # Python, Perl, Ruby, JavaScript, TypeScript or Lua loads a module
+    "includes",      # C #include
     "interpreter",   # shebang or PT_INTERP: what executes this file
     "needs",         # ELF DT_NEEDED: binary or library -> soname
     "resolves_to",   # soname or command name -> the file the system picks
@@ -52,7 +54,23 @@ LINK_KINDS = (
     "opened",        # observed in a traced run
 )
 
-FOLLOWED_KINDS = ("shell", "elf", "python", "perl")
+FOLLOWED_KINDS = ("shell", "elf", "python", "perl", "ruby", "javascript", "typescript", "lua", "c")
+_READER_KINDS = ("ruby", "javascript", "typescript", "lua", "c")
+
+# Literal command starts in languages read with patterns rather than a parser.
+_EXEC_PATTERNS = {
+    "ruby": re.compile(
+        r"""(?:\b(?:system|exec|spawn|IO\.popen|Open3\.\w+|Process\.spawn)\s*\(?\s*\[?\s*|%x[({\[]\s*|`\s*)"""
+        r"""(?P<q>['"]?)(?P<cmd>[A-Za-z0-9_./+-]+)"""
+    ),
+    "javascript": re.compile(
+        r"""\b(?:exec|execSync|execFile|execFileSync|spawn|spawnSync|fork)\s*\(\s*(?P<q>['"`])(?P<cmd>[A-Za-z0-9_./+-]+)"""
+    ),
+}
+_EXEC_PATTERNS["typescript"] = _EXEC_PATTERNS["javascript"]
+_EXEC_PATTERNS["lua"] = re.compile(
+    r"""\b(?:os\.execute|io\.popen)\s*\(?\s*(?P<q>['"])(?P<cmd>[A-Za-z0-9_./+-]+)"""
+)
 
 
 @dataclass(frozen=True)
@@ -281,6 +299,17 @@ def _resolution_detail(soname, found):
     return detail + ")"
 
 
+def _line_naming(lines, name):
+    """The first line that mentions a written import name, or None."""
+
+    if not name:
+        return None
+    for number, line in enumerate(lines, 1):
+        if name in line:
+            return number
+    return None
+
+
 def _shebang(path):
     start = _read_start(path)
     if not start or not start.startswith(b"#!"):
@@ -346,6 +375,8 @@ class _Builder:
             self.python(path, depth)
         elif kind == "perl":
             self.perl(path, depth)
+        elif kind in _READER_KINDS:
+            self.reader(path, kind, depth)
         elif kind not in ("unknown",):
             self.graph.blind(path, f"{kind} files are not followed yet")
 
@@ -505,6 +536,60 @@ class _Builder:
                 path, f"{len(started.dynamic)} command(s) are computed at run time and not in the graph (line {where})"
             )
         self.graph.blind(path, "Python imports built at runtime (importlib, __import__) are not followed")
+
+    # -- Ruby, JavaScript, TypeScript, Lua, C ----------------------------
+    def reader(self, path, kind, depth):
+        from .analyzers import analyzer_for
+        from .errors import AnalysisError, FileError
+
+        try:
+            text = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            return
+        analyzer = analyzer_for(path)
+        link_kind = "includes" if kind == "c" else "imports"
+        method = "c-include" if kind == "c" else f"{kind}-import"
+        try:
+            edges = analyzer.command_edges(path) if analyzer else []
+        except (AnalysisError, FileError, OSError, ValueError) as error:
+            self.graph.blind(path, f"{kind} imports not read: {error}")
+            edges = []
+        for edge in edges:
+            if edge.kind not in ("imports", "sources", "depends_on"):
+                continue
+            name = edge.name or edge.target or ""
+            said = Evidence("inferred", method, f"{'includes' if kind == 'c' else 'imports'} {name}",
+                            path, _line_naming(text, name))
+            target = edge.target if edge.status == "resolved" else None
+            if target is None and kind == "c" and edge.status == "external":
+                for directory in ("/usr/local/include", "/usr/include"):
+                    if (Path(directory) / name).is_file():
+                        target = str(Path(directory) / name)
+                        break
+            if target and Path(target).is_file():
+                target_id = self.file_node(target, depth)
+                if target_id:
+                    self.graph.add_link(path, target_id, link_kind, said)
+                continue
+            attrs = {"resolved": False} if edge.status == "unresolved" else {"external": True}
+            node = self.graph.add_node(f"module:{name}", "command", name, **attrs)
+            self.graph.add_link(path, node.id, link_kind, said)
+
+        pattern = _EXEC_PATTERNS.get(kind)
+        if pattern is None:
+            return
+        seen = set()
+        for number, line in enumerate(text, 1):
+            if line.lstrip().startswith(("#", "//", "--")):
+                continue
+            for match in pattern.finditer(line):
+                name = match.group("cmd")
+                if name in seen:
+                    continue
+                seen.add(name)
+                said = Evidence("inferred", f"{kind}-exec", f"starts `{name}` (literal command text)", path, number)
+                self.runs(path, name, said, depth)
+        self.graph.blind(path, f"{kind} commands built at run time are not followed; literal ones are matched by pattern")
 
     # -- Perl ------------------------------------------------------------
     def perl(self, path, depth):
