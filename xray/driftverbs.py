@@ -367,3 +367,56 @@ def run_feed(argv):
     print(f"wrote {', '.join(units)} to {folder}")
     print("enable with: systemctl --user daemon-reload && systemctl --user enable --now xray-feed.timer")
     return 0
+
+
+HOOK_USAGE = """usage: xray hook pacman [--block] [--config FILE] [--contracts DIR]   (package names on stdin)
+       xray hook install"""
+
+
+@_guard
+def run_hook(argv):
+    import shutil as _shutil
+    import sys as _sys
+
+    from . import pachook
+
+    if not argv or argv[0] not in ("pacman", "install"):
+        raise CLIError(HOOK_USAGE)
+    if argv[0] == "install":
+        # pacman runs hooks as root: the program it runs must not be writable by an ordinary user.
+        found = _shutil.which("xray")
+        root_owned = bool(found) and all(
+            (info := Path(part).stat()).st_uid == 0 and not info.st_mode & 0o022
+            for part in [Path(found).resolve(), *Path(found).resolve().parents])
+        xray = str(Path(found).resolve()) if root_owned else "/opt/xray/bin/xray"
+        hook = pachook.HOOK.format(xray=xray)
+        print("# Install with (needs root):")
+        if not root_owned:
+            source = Path(__file__).resolve().parent.parent
+            print("# A root-owned copy of XRAY for the hook (your own install is user-writable, and pacman runs hooks")
+            print("# as root). Once the xray-trust package is installed, use /usr/bin/xray instead.")
+            print("sudo python -m venv /opt/xray")
+            print(f"sudo /opt/xray/bin/pip install --no-cache-dir '{source}'")
+        print("sudo install -d /etc/pacman.d/hooks /etc/xray/contracts")
+        print("sudo tee /etc/pacman.d/hooks/90-xray.hook <<'EOF'")
+        print(hook.rstrip())
+        print("EOF")
+        print("sudo tee /etc/xray/hook.conf <<'EOF'")
+        print(pachook.CONFIG.rstrip())
+        print("EOF")
+        print("# Contracts copied into /etc/xray/contracts are re-checked against every upgrade.")
+        return 0
+    parser = argparse.ArgumentParser(prog="xray hook pacman")
+    parser.add_argument("--block", action="store_true", help="exit 1 on strong gains or broken contracts")
+    parser.add_argument("--config", default="/etc/xray/hook.conf")
+    parser.add_argument("--contracts", default="/etc/xray/contracts")
+    parser.add_argument("packages", nargs="*", help="package names (default: read from stdin)")
+    options = _parse(parser, argv[1:])
+    names = options.packages or [line.strip() for line in _sys.stdin if line.strip()]
+    config = pachook.read_config(options.config)
+    if options.block:
+        config["mode"] = "block"
+    lines, block = pachook.check_targets(names, config=config, contracts_dir=options.contracts)
+    if lines:
+        print("\n".join(lines))
+    return 1 if block else 0
