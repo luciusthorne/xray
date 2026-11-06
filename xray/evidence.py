@@ -31,7 +31,7 @@ from .libresolve import find_library, ldconfig_cache
 from .locate import locate
 from .perlscan import perl_inc, resolve_module, scan_perl
 from .provenance import packages_of
-from .shellscan import changes_path, command_lines, scan_shell
+from .shellscan import shell_facts
 
 EVIDENCE_SCHEMA_VERSION = 1
 BASES = ("observed", "declared", "inferred", "guessed")
@@ -235,6 +235,24 @@ class EvidenceGraph:
         }
 
 
+def _said(what, path, lines, via):
+    """Evidence that a shell script names a command or file on these lines."""
+
+    detail = what
+    if len(lines) > 1:
+        more = ", ".join(str(line) for line in lines[1:6])
+        detail += f" (also line {more})"
+    if via is None:
+        return Evidence("inferred", "shell-parse", detail, path, lines[0])
+    if via.startswith("$"):
+        return Evidence(
+            "guessed", "shell-variable",
+            f"{detail} through {via}, which the script only sets to fixed values",
+            path, lines[0],
+        )
+    return Evidence("inferred", "shell-parse", f"{detail} via {via}", path, lines[0])
+
+
 def _shebang(path):
     start = _read_start(path)
     if not start or not start.startswith(b"#!"):
@@ -330,21 +348,23 @@ class _Builder:
 
     # -- shell -----------------------------------------------------------
     def shell(self, path, depth):
-        scan = scan_shell(path)
-        lines = command_lines(path)
-        path_changed = changes_path(path)
-        if scan.dynamic:
+        facts = shell_facts(path)
+        path_changed = bool(facts.path_lines)
+        if facts.dynamic:
+            lines = ", ".join(str(line) for line in sorted({line for line, _ in facts.dynamic})[:8])
             self.graph.blind(
                 path,
-                f"{scan.dynamic} command(s) are built at runtime (eval or variables) and are not in the graph",
+                f"{len(facts.dynamic)} command(s) are built at runtime (eval or variables) "
+                f"and are not in the graph (line {lines})",
             )
         if path_changed:
-            self.graph.blind(path, "the script assigns PATH, so command lookups below are guesses")
+            lines = ", ".join(str(line) for line in facts.path_lines[:8])
+            self.graph.blind(path, f"the script assigns PATH (line {lines}), so command lookups below are guesses")
 
-        for name in scan.commands:
-            line = lines.get(name)
+        for name, lines in facts.commands.items():
+            via = facts.via.get(name)
+            said = _said(f"runs `{name}`", path, lines, via)
             target = locate(name)
-            said = Evidence("inferred", "shell-static", f"runs `{name}`", path, line)
             if target is None:
                 node = self.graph.add_node(f"command:{name}", "command", name, resolved=False)
                 self.graph.add_link(path, node.id, "runs", said)
@@ -366,13 +386,12 @@ class _Builder:
                     Evidence(basis, "PATH", f"`{name}` is {target} on this machine's PATH"),
                 )
 
-        for name in scan.sources:
-            line = lines.get(name)
+        for name, lines in facts.sources.items():
             candidate = Path(name).expanduser()
             if not candidate.is_absolute():
                 candidate = Path(path).parent / candidate
-            said = Evidence("inferred", "shell-static", f"sources `{name}`", path, line)
-            if candidate.is_file():
+            said = _said(f"sources `{name}`", path, lines, None)
+            if "$" not in name and candidate.is_file():
                 target_id = self.file_node(candidate, depth)
                 if target_id:
                     self.graph.add_link(path, target_id, "sources", said)

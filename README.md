@@ -156,6 +156,7 @@ xray/
 ├── serve.py
 ├── shellmetrics.py
 ├── shellscan.py
+├── shparse.py
 ├── sourcelookup.py
 ├── symbols.py
 ├── textjson.py
