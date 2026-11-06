@@ -1,4 +1,4 @@
-"""Verb commands built on the evidence graph: ``xray inspect`` and ``xray why``."""
+"""Verb commands built on the evidence graph: inspect, why, scan and reach."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from .evidence import (
     weakest,
 )
 
-VERBS = ("inspect", "why")
+VERBS = ("inspect", "why", "scan", "reach")
 
 
 def _parser(verb):
@@ -45,6 +45,10 @@ def _parser(verb):
 
 def run_verb(argv):
     verb, rest = argv[0], argv[1:]
+    if verb in ("scan", "reach"):
+        from .scan import run_reach, run_scan
+
+        return run_scan(rest) if verb == "scan" else run_reach(rest)
     parser = _parser(verb)
     try:
         options = parser.parse_args(rest)

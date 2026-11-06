@@ -325,30 +325,52 @@ def _file_kind(path):
 
 
 class _Builder:
-    def __init__(self, graph, max_depth, max_files):
+    def __init__(self, graph, max_depth, max_files, store=None, shared=None):
         self.graph = graph
         self.max_depth = max_depth
         self.max_files = max_files
         self.queue = deque()
         self.files = set()
-        self._ldcache = None
-        self._inc = None
+        self.store = store
+        self.shared = shared if shared is not None else {}
+        self._ldcache = self.shared.get("ld")
+        self._inc = self.shared.get("inc")
         self.root_rpath = ()
+        self.collected = None
 
     def ld_entries(self):
         if self._ldcache is None:
             self._ldcache = ldconfig_entries()
         return self._ldcache
 
+    def real(self, path):
+        cache = self.shared.setdefault("real", {})
+        key = str(path)
+        if key not in cache:
+            cache[key] = str(Path(path).resolve())
+        return cache[key]
+
+    def kind_of(self, path):
+        cache = self.shared.setdefault("kind", {})
+        if path not in cache:
+            cache[path] = _file_kind(path)
+        return cache[path]
+
     def file_node(self, path, depth):
-        path = str(Path(path).resolve())
+        path = self.real(path)
+        if self.collected is not None:
+            # Reading one file on its own: note the file, the caller merges it.
+            if path not in self.collected:
+                self.collected.append(path)
+                self.graph.add_node(path, self.kind_of(path))
+            return path
         if path in self.files:
             return path
         if len(self.files) >= self.max_files:
             self.graph.truncated.append(f"file limit ({self.max_files}) reached at {path}")
             return None
         self.files.add(path)
-        self.graph.add_node(path, _file_kind(path))
+        self.graph.add_node(path, self.kind_of(path))
         self.queue.append((path, depth))
         return path
 
@@ -364,6 +386,63 @@ class _Builder:
             self.expand(path, kind, depth + 1)
 
     def expand(self, path, kind, depth):
+        """Add what one file reaches: from the store when it is unchanged."""
+
+        inherited = self.root_rpath if kind == "library" else ()
+        facts = self.store.get(path, inherited) if self.store is not None else None
+        if facts is None:
+            facts = self.local_facts(path, kind)
+            if self.store is not None:
+                self.store.put(path, inherited, facts)
+        self.merge(facts, depth)
+        if path == self.graph.root and facts.get("rpath") is not None:
+            self.root_rpath = tuple(facts["rpath"])
+
+    def local_facts(self, path, kind):
+        """Read one file on its own and return what it reaches, as plain data."""
+
+        main = self.graph
+        scratch = EvidenceGraph(main.root)
+        scratch.add_node(path, kind)
+        self.graph, self.collected = scratch, []
+        try:
+            self.read_file(path, kind)
+            collected = self.collected
+        finally:
+            self.graph, self.collected = main, None
+        self.shared["ld"], self.shared["inc"] = self._ldcache, self._inc
+        data = scratch.to_dict()
+        return {
+            "files": collected,
+            "nodes": data["nodes"],
+            "links": data["links"],
+            "blind_spots": data["blind_spots"],
+            "risks": data["risks"],
+            "rpath": scratch.nodes[path].attrs.get("rpath"),
+        }
+
+    def merge(self, facts, depth):
+        files = set(facts["files"])
+        added = {path for path in facts["files"] if self.file_node(path, depth)}
+        for node in facts["nodes"]:
+            if node["id"] in files:
+                continue
+            attrs = {key: value for key, value in node.items() if key not in ("id", "kind", "label")}
+            self.graph.add_node(node["id"], node["kind"], node["label"], **attrs)
+        for link in facts["links"]:
+            if (link["target"] in files and link["target"] not in added) or (
+                link["source"] in files and link["source"] not in added
+            ):
+                continue
+            for item in link["evidence"]:
+                self.graph.add_link(link["source"], link["target"], link["kind"], Evidence(**item))
+        for entry in facts["blind_spots"]:
+            self.graph.blind(entry["file"], entry["message"])
+        for entry in facts["risks"]:
+            self.graph.risk(entry["file"], entry["message"])
+
+    def read_file(self, path, kind):
+        depth = 0
         line = _shebang(path)
         if line is not None and kind != "elf":
             self.shebang(path, line, depth)
@@ -471,8 +550,6 @@ class _Builder:
             target_id = self.file_node(target, depth) if target.exists() else None
             if target_id:
                 self.graph.add_link(path, target_id, "interpreter", evidence)
-        if path == self.graph.root:
-            self.root_rpath = scan.rpath
         try:
             info = Path(path).stat()
         except OSError:
@@ -484,7 +561,7 @@ class _Builder:
                 self.graph.nodes[path].attrs[kind.lower()] = list(entries)
             for message in search_path_risks(entries, origin, kind, scan.elf_class, info.st_uid if info else 0):
                 self.graph.risk(path, message)
-        inherited = () if scan.runpath or path == self.graph.root else self.root_rpath
+        inherited = () if scan.runpath or self.graph.nodes[path].kind != "library" else self.root_rpath
         for soname in scan.needed:
             soname_id = self.graph.add_node(f"soname:{soname}", "soname", soname).id
             self.graph.add_link(
@@ -607,7 +684,7 @@ class _Builder:
                 self.graph.add_link(path, target_id, "imports", said)
 
 
-def build_evidence_graph(path, max_depth=4, max_files=300, packages=True):
+def build_evidence_graph(path, max_depth=4, max_files=300, packages=True, store=None, shared=None, owners=None):
     """Return the EvidenceGraph of everything a program reaches statically.
 
     Shell scripts, ELF binaries and shared libraries, Python and Perl
@@ -621,11 +698,14 @@ def build_evidence_graph(path, max_depth=4, max_files=300, packages=True):
         raise FileNotFoundError(path)
     root = str(Path(target).resolve())
     graph = EvidenceGraph(root)
-    _Builder(graph, max_depth, max_files).run(root)
+    _Builder(graph, max_depth, max_files, store, shared).run(root)
 
     if packages:
         files = [node.id for node in graph.nodes.values() if node.id.startswith("/")]
-        owners = packages_of(files)
+        if owners is None:
+            owners = packages_of(files)
+        else:
+            owners = {file: owners[file] for file in files if file in owners}
         for file, (manager, owner) in owners.items():
             package = graph.add_node(f"package:{owner.split()[0]}", "package", owner, manager=manager)
             query = "pacman -Qo" if manager == "pacman" else "rpm -qf"

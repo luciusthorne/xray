@@ -34,22 +34,36 @@ xray ls --code
 xray ls --code main
 xray inspect xdg-open
 xray why xdg-open glibc
+xray scan
+xray reach liblzma
 ```
 
 Running `xray` by itself reads XRAY's own CLI source and suggests follow-up commands. Running `xray <command>` gives that command's overview and suggests code, calls, chains, dependency, cycle, path, and JSON queries. For ELF commands with configured debuginfod, `xray <command> --code` lists function names, and `--code <function>` reads the matching C source.
 
-## Evidence graph: `inspect` and `why`
+## Evidence graph: `inspect`, `why`, `scan` and `reach`
 
-`xray inspect <command>` follows everything a command reaches — the commands a shell script runs and the files it sources, Python and Perl imports, shebang and ELF interpreters, the shared libraries ELF files need, and the package that owns each file — and records the proof for every link: how it was found, where (file and line), and how strong that proof is.
+`xray inspect <command>` follows everything a command reaches and records the proof for every link: how it was found, where (file and line), and how strong that proof is. It follows:
+
+- shell scripts, read with a full parser (quoting, every expansion, here-documents, `case`, functions, arrays): the commands they run and the files they source, including commands inside `$(...)`, unquoted here-documents, `trap` strings, `sh -c` strings, literal `eval` and wrappers such as `sudo` and `find -exec`;
+- Python, Perl, Ruby, JavaScript, TypeScript and Lua imports, and C `#include`s;
+- commands Python starts (`subprocess`, `os.system`, `os.exec*`, …, with shell strings parsed) and literal command starts in Ruby, Node and Lua;
+- shebang and ELF interpreters, and the shared libraries ELF files need, resolved in the dynamic loader's order: `DT_RPATH`, `LD_LIBRARY_PATH`, `DT_RUNPATH`, the ldconfig cache for the right word size, the default directories, with `$ORIGIN` expanded;
+- the package that owns each file.
 
 | Basis | Meaning |
 | --- | --- |
-| `observed` | seen in a real run (`--trace`, which runs the command under `strace`) |
-| `declared` | stated by metadata the system acts on: a shebang, ELF `DT_NEEDED` or `PT_INTERP`, a package database record |
-| `inferred` | read from code by static analysis, then resolved the way this machine would resolve it now (PATH, ldconfig cache, Python and Perl search paths) |
-| `guessed` | a resolution XRAY cannot stand behind, such as a PATH lookup in a script that assigns PATH |
+| observed | seen in a real run (`--trace`) |
+| declared | stated by metadata the system acts on (shebang, ELF `DT_NEEDED`, package database) |
+| inferred | read from code, then resolved the way this machine would resolve it |
+| guessed | a resolution XRAY can't stand behind: a PATH lookup in a script that changes PATH, or a command run through a variable the script only sets to fixed values |
 
-`xray why <command> <target>` prints the shortest proof chains from the command to a file, command name, library (`libssl` or `libssl.so.3`) or package; each chain is as strong as its weakest link, and the exit status is 1 when no chain is found. `inspect --trace -- <args>` runs the command and lists files it executed or opened that static reading did not predict. Both verbs accept `--depth`, `--limit`, `--no-packages` and `--json` (schema version 1). Every report ends with its blind spots — commands built at runtime, files past the depth limit — because a missing link is not proof that something cannot happen. To analyze a file literally named `inspect` or `why`, pass a path such as `./why`.
+"Worth a look" lists findings with evidence, such as an empty, relative or world-writable `RPATH`/`RUNPATH` entry that would let another user plant a library.
+
+`xray why <command> <target>` prints the shortest proof chains from the command to a file, command name, library (`libssl` or `libssl.so.3`) or package; each chain is as strong as its weakest link, and the exit status is 1 when no chain is found. `inspect --trace -- <args>` runs the command and lists files it executed or opened that static reading did not predict.
+
+`xray scan [DIR ...]` reads every executable on PATH (or in the given directories) into an evidence store in `~/.cache/xray` (`$XRAY_CACHE_DIR` overrides it). What each file reaches is stored with its size, times, inode and SHA-256, and with a machine epoch (PATH, the PATH directories and `/etc/ld.so.cache`), so a rescan reads only changed files. The report lists the most reached libraries and every "worth a look" finding with the programs that reach it. `xray reach <target>` then answers the reverse question — which programs reach this file, library, command or package — with the proof chain for each, strongest first.
+
+All four verbs accept `--depth`, `--limit` and `--json` (schema version 1). Every report ends with its blind spots — commands built at runtime (with their lines), files past the depth limit, `LD_PRELOAD` — because a missing link is not proof that something cannot happen. To analyze a file literally named like a verb, pass a path such as `./why`.
 
 ## What it reads
 
@@ -130,6 +144,7 @@ xray/
 ├── entrypoints.py
 ├── errors.py
 ├── evidence.py
+├── evidencestore.py
 ├── export.py
 ├── fingerprint.py
 ├── graph.py
@@ -145,15 +160,16 @@ xray/
 ├── model.py
 ├── overview.py
 ├── perlscan.py
+├── project_graph.py
 ├── provenance.py
 ├── pyexec.py
-├── project_graph.py
 ├── python_analyzer.py
 ├── references.py
 ├── relationships.py
 ├── report.py
 ├── rizinview.py
 ├── ruby_analyzer.py
+├── scan.py
 ├── serve.py
 ├── shellmetrics.py
 ├── shellscan.py
