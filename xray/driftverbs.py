@@ -472,3 +472,74 @@ def run_explain(argv):
     else:
         print("\n".join(explain_lines(options.file, options.symbols, sites, how)))
     return 0 if sites else 1
+
+
+ATTEST_USAGE = """usage: xray attest keygen [--key FILE]
+       xray attest contract FILE.contract [-o OUT] [--key FILE] [--cosign]
+       xray attest profile FILE... -o OUT [--key FILE] [--cosign]
+       xray attest report REPORT.json [--input FILE...] -o OUT [--key FILE]
+       xray attest log [LOG] [-o OUT] [--key FILE]
+       xray attest verify STATEMENT --signers FILE [--identity NAME]"""
+
+
+@_guard
+def run_attest(argv):
+    from . import attest
+
+    if not argv or argv[0] not in ("keygen", "contract", "profile", "report", "log", "verify"):
+        raise CLIError(ATTEST_USAGE)
+    command = argv[0]
+    parser = argparse.ArgumentParser(prog=f"xray attest {command}")
+    if command in ("contract", "report"):
+        parser.add_argument("file")
+    if command == "profile":
+        parser.add_argument("files", nargs="+")
+    if command == "log":
+        parser.add_argument("log", nargs="?")
+    if command == "report":
+        parser.add_argument("--input", nargs="*", default=[], help="the files the report is about")
+    if command == "verify":
+        parser.add_argument("statement")
+        parser.add_argument("--signers", required=True, help="an allowed-signers file (ssh-keygen format)")
+        parser.add_argument("--identity", default="xray")
+    else:
+        parser.add_argument("--key", help="signing key (default ~/.config/xray/attest_ed25519)")
+    if command not in ("keygen", "verify"):
+        parser.add_argument("-o", "--output", help="where to write the statement")
+        parser.add_argument("--identity", default="xray", help="name recorded in the .signers file")
+        parser.add_argument("--cosign", action="store_true", help="also sign with Sigstore cosign (keyless)")
+    options = _parse(parser, argv[1:])
+    try:
+        if command == "keygen":
+            path = attest.keygen(options.key)
+            print(f"created {path} and {path}.pub")
+            return 0
+        if command == "verify":
+            ok, messages = attest.verify(options.statement, options.signers, options.identity)
+            print(("VERIFIED" if ok else "NOT VERIFIED") + f": {options.statement}")
+            for message in messages:
+                print(f"  {message}")
+            return 0 if ok else 1
+        if command == "contract":
+            data = attest.contract_statement(options.file)
+            output = options.output or f"{options.file}.intoto.json"
+        elif command == "profile":
+            if not options.output:
+                raise CLIError("-o is required for profile attestations")
+            data, output = attest.profile_statement(options.files), options.output
+        elif command == "report":
+            if not options.output:
+                raise CLIError("-o is required for report attestations")
+            data, output = attest.report_statement(options.file, options.input), options.output
+        else:
+            from . import caplog
+
+            log = options.log or str(caplog.default_log_path())
+            data = attest.log_statement(log)
+            output = options.output or f"{log}.head.intoto.json"
+        written = attest.sign(data, output, options.key, options.identity, options.cosign)
+    except (attest.AttestError, OSError, ValueError) as error:
+        raise CLIError(f"attest: {error}") from None
+    print("wrote " + ", ".join(str(path) for path in written))
+    print(f"verify with: xray attest verify {written[0]} --signers {written[2]}")
+    return 0
