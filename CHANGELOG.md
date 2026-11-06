@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `xray taint COMMAND` and `xray taint --scan`: untrusted input (arguments, stdin, network downloads, web request data, environment) followed to code-running sinks in shell and Python, through variables, arrays, loops, functions and returns, and across programs that pass tainted arguments or exported variables to each other. Severity follows trust boundaries (network or setuid: high; arguments into eval or a shell: medium).
+- The shell parser records which function each command belongs to, every assignment site, and for/select loops.
 - Add capability profiles (`xray/profile.py`) and `xray drift OLD NEW` for files, directories, package archives and installed packages: imported call classes, libraries, search paths, IFUNC resolvers, constructors, setuid bits and script commands, with rebuilt or renamed libraries paired instead of reported as new.
 - Add `xray whatif upgrade ARCHIVE` (drift from the installed version, plus the scanned programs that reach each file that gained a capability) and `xray whatif remove PACKAGE`.
 - Add the capability transparency log: `xray log add` (archives or `--from-cache`), `verify` (hash chain), `history NAME` and `gains`.

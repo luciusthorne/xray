@@ -16,7 +16,7 @@ from .evidence import (
     weakest,
 )
 
-VERBS = ("inspect", "why", "scan", "reach", "contract", "drift", "whatif", "log")
+VERBS = ("inspect", "why", "scan", "reach", "contract", "drift", "whatif", "log", "taint")
 
 
 def _parser(verb):
@@ -46,6 +46,8 @@ def _parser(verb):
 
 def run_verb(argv):
     verb, rest = argv[0], argv[1:]
+    if verb == "taint":
+        return run_taint(rest)
     if verb in ("drift", "whatif", "log"):
         from .driftverbs import run_drift, run_log, run_whatif
 
@@ -327,3 +329,62 @@ def is_verb(argv):
     """True when argv names a verb (and not an existing file called like one)."""
 
     return bool(argv) and argv[0] in VERBS and not Path(argv[0]).exists()
+
+
+def run_taint(argv):
+    import sys
+
+    from .taint import analyze, report_lines, scan_scripts
+
+    parser = argparse.ArgumentParser(prog="xray taint")
+    parser.add_argument("command", nargs="?", help="command name or path (omit with --scan)")
+    parser.add_argument("--scan", nargs="*", metavar="DIR", help="analyse every shell and Python command on PATH (or in DIRs)")
+    parser.add_argument("--all", action="store_true", help="also show low-severity findings")
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--depth", type=int, default=4)
+    try:
+        options = parser.parse_args(argv)
+    except SystemExit as stop:
+        if stop.code in (0, None):
+            return 0
+        raise CLIError(f"usage: {parser.format_usage().strip()}") from None
+
+    if options.scan is not None:
+        def progress(number, total, name):
+            if sys.stderr.isatty():
+                print(f"\rtaint {number}/{total} {name[:40]:<40}", end="", file=sys.stderr, flush=True)
+
+        results = scan_scripts(options.scan or None, progress=progress)
+        if sys.stderr.isatty():
+            print("\r" + " " * 60 + "\r", end="", file=sys.stderr)
+        rows = [(name, item) for name, report in results for item in report.findings
+                if options.all or item["severity"] in ("high", "medium")]
+        if options.json:
+            print(json.dumps({"schema_version": 1, "programs": len(results),
+                              "findings": [{"command": name, **item} for name, item in rows]}, indent=2))
+            return 0
+        counts = Counter(item["severity"] for _, item in rows)
+        affected = len({name for name, _ in rows})
+        print(f"Analysed {len(results)} shell and Python commands; {affected} have findings: "
+              + ", ".join(f"{counts[level]} {level}" for level in ("high", "medium", "low", "info") if counts[level]))
+        print()
+        for name, item in rows:
+            where = f"{item['file']}:{item['line']}" if item["line"] else item["file"]
+            via = f"  via {Path(item['chain'][-1]['file']).name}" if item["chain"] else ""
+            print(f"  [{item['severity']}] {name}: {item['detail']}  ({where}; from {', '.join(item['sources'])}){via}")
+        print()
+        print("Findings are leads inferred from code, not proof: review each one.")
+        return 0
+
+    if not options.command:
+        raise CLIError("usage: xray taint COMMAND | xray taint --scan [DIR...]")
+    try:
+        report = analyze(options.command, max_depth=options.depth)
+    except FileNotFoundError:
+        raise CLIError(f"Not found on PATH or disk: {options.command}") from None
+    if options.json:
+        print(json.dumps({"schema_version": 1, "root": report.root, "findings": report.findings,
+                          "followed": report.followed, "blind_spots": report.blind_spots}, indent=2))
+    else:
+        print("\n".join(report_lines(report, show_low=options.all)))
+    return 1 if any(item["severity"] == "high" for item in report.findings) else 0
