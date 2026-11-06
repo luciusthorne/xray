@@ -119,6 +119,7 @@ Severity follows trust boundaries: network input reaching code is **high**; any 
 ```sh
 xray drift old.pkg.tar.zst new.pkg.tar.zst      # or .deb/.rpm, two files, two directories, installed:NAME
 xray compare arch.pkg.tar.zst debian.deb        # two builds of the same release: what only one can do
+xray explain /usr/lib/libgtk-4.so.1 connect      # which functions and source lines call it
 xray whatif upgrade new.pkg.tar.zst             # drift from the installed version, and who reaches what changed
 xray whatif remove openssl                      # which scanned programs reach the package
 xray log add --from-cache                       # every archive in /var/cache/pacman/pkg
@@ -126,6 +127,8 @@ xray log history ghostty
 xray log gains
 xray log verify
 ```
+
+`xray drift … --explain` goes one step further for every new call class in a compiled file: it finds each call to the new imports in the machine code and names the function and source line, from the binary's own debug information or, for stripped distribution binaries, the debug file a debuginfod server holds for its build ID (Arch configures `https://debuginfod.archlinux.org`). `xray explain FILE SYMBOL…` does the same for any binary. For example, gtk4's new network calls are `connect` and `socket` in `gtk_cups_connection_test_get_state` (`gtk/print/backends/gtkcupsutils.c:1611` and `:1634`), and `sudo` calls `execve` from `sudo_execve` (`src/exec_common.c:119`, inlined into `exec_cmnd`).
 
 A capability profile reads a file's contents only: for ELF files the libraries it needs, its search paths, the calls it imports grouped into classes (`net`, `exec`, `shell`, `dynload`, `identity`, `ptrace`, `kernel`), its IFUNC resolvers and constructors (code that runs before `main`), and its setuid bit; for scripts the commands they run. `drift` compares two versions file by file and lists every **gain**. Rebuilt libraries whose names differ only by version or build hash are paired, not reported as new.
 
@@ -256,6 +259,7 @@ xray/
 ├── evidence.py
 ├── evidencehtml.py
 ├── evidencestore.py
+├── explain.py
 ├── export.py
 ├── fingerprint.py
 ├── git_analysis.py

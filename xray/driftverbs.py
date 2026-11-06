@@ -51,16 +51,47 @@ def run_drift(argv):
     parser.add_argument("new")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--fail-on-gain", action="store_true", help="exit 1 when any capability was gained")
+    parser.add_argument("--explain", action="store_true",
+                        help="find the functions and source lines behind each new call class (uses debuginfod)")
     options = _parse(parser, argv)
     with opened(options.old) as (old_label, _, old_files, old_meta), \
             opened(options.new) as (new_label, _, new_files, new_meta):
-        report = drift(profiles(old_files), profiles(new_files))
+        new_profiles = profiles(new_files)
+        report = drift(profiles(old_files), new_profiles)
+        if options.explain:
+            _explain_gains(report, new_files, new_profiles)
     if options.json:
         print(json.dumps({"schema_version": 1, "old": {"source": old_label, **old_meta},
                           "new": {"source": new_label, **new_meta}, **report}, indent=2))
     else:
         print("\n".join(drift_lines(old_label, new_label, report, old_meta, new_meta)))
+        for item in report.get("explained", []):
+            print(f"\nWhy {item['path']} {item['detail']}")
+            print(f"  line information: {item['how']}")
+            for site in item["sites"] or []:
+                print(f"  {site['symbol']:<10} in {site['function'] or 'unknown function'}"
+                      f"  ({site['location'] or 'source line unknown'})")
+            if not item["sites"]:
+                print("  no direct calls found (reached through a function pointer or dlsym?)")
     return 1 if options.fail_on_gain and report["gains"] else 0
+
+
+def _explain_gains(report, files, new_profiles):
+    """Attach call sites with function and source line to every gained call class in an ELF file."""
+
+    from .explain import explain
+
+    report["explained"] = []
+    for gain in report["gains"]:
+        if not gain["field"].startswith("class:") or new_profiles.get(gain["path"], {}).get("kind") != "elf":
+            continue
+        symbols = [name.strip() for name in gain["detail"].split(":", 1)[1].split(",")]
+        sites, how = explain(files[gain["path"]], symbols)
+        report["explained"].append({
+            "path": gain["path"], "detail": gain["detail"], "how": how,
+            "sites": [{"symbol": site.symbol, "address": site.address, "function": site.function,
+                       "location": site.location} for site in sites],
+        })
 
 
 # -- whatif -----------------------------------------------------------------------
@@ -420,3 +451,24 @@ def run_hook(argv):
     if lines:
         print("\n".join(lines))
     return 1 if block else 0
+
+
+@_guard
+def run_explain(argv):
+    from .explain import explain, explain_lines
+
+    parser = argparse.ArgumentParser(prog="xray explain",
+                                     description="which functions call these imported symbols, and on which source line")
+    parser.add_argument("file", help="an ELF binary or library")
+    parser.add_argument("symbols", nargs="+", help="imported functions, e.g. system connect dlopen")
+    parser.add_argument("--json", action="store_true")
+    options = _parse(parser, argv)
+    if not Path(options.file).is_file():
+        raise CLIError(f"not a file: {options.file}")
+    sites, how = explain(options.file, options.symbols)
+    if options.json:
+        print(json.dumps({"schema_version": 1, "file": options.file, "how": how,
+                          "sites": [site.__dict__ for site in sites]}, indent=2))
+    else:
+        print("\n".join(explain_lines(options.file, options.symbols, sites, how)))
+    return 0 if sites else 1

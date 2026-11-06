@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `xray explain FILE SYMBOL…` and `xray drift --explain`: every call to a newly imported function, with its function and source line (inline chains included), from the binary's debug information or a debuginfod server.
 - `xray contract generate --workloads FILE` and `minimize --workloads FILE`: contracts from many workloads; an entry is required when any workload needs it.
 - Fix: a traced run that lists a broad directory (`/`, `/usr`, `/etc`, the home directory, …) no longer adds it to `[read]`, which granted everything beneath it; the listing is recorded as a note.
 - Add a GitHub Action (`action.yml`): runs an XRAY command, writes the job summary, fails on a non-zero exit; self-tested in CI. See docs/github-action.md.
