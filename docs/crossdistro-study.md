@@ -68,6 +68,10 @@ same release built without the payload (see `docs/real-xz.md`):
 - **The loader-hook refinement was written after seeing the backdoor**
   (`docs/real-xz.md`). It finds nothing else here, but it describes one
   technique.
+- **Disagreement, not majority.** For xz 5.6.1 two of three distributions
+  (Debian and Fedora) carried the payload, which targeted .deb and .rpm
+  builds. A majority vote would have blamed Arch's clean build; any
+  difference between builds is the lead (docs/real-xz.md).
 - **Coverage:** 184 packages had no Debian build of the same upstream version,
   and only files present in both builds are compared. Fedora builds would add a
   third opinion; that is planned.
