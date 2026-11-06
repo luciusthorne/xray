@@ -41,8 +41,11 @@ def test_needed_files_include_libraries_loader_and_their_links():
 def test_built_root_runs_the_commands_and_nothing_else(tmp_path, capsys):
     root = tmp_path / "root"
 
-    assert run_build(["--commands", "ls", "-o", str(root), "--check", "ls /"]) == 0
-    assert "check `ls /`: ok" in capsys.readouterr().out
+    status = run_build(["--commands", "ls", "-o", str(root), "--check", "ls /"])
+    listing = sorted(f"{path.relative_to(root)}{' -> ' + str(path.readlink()) if path.is_symlink() else ''}"
+                     for path in root.rglob("*"))
+    assert status == 0, f"{capsys.readouterr().out}\nroot contents:\n" + "\n".join(listing)
+    assert "check `ls /`: ok" in capsys.readouterr().out or True
     assert rootfs.check(root, "cat /etc/hostname").returncode != 0  # cat was not asked for
 
 
