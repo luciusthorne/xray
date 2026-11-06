@@ -19,7 +19,10 @@ The payload is harmless: it writes a marker file named by
 
 ```sh
 demo/xz-style/run.sh          # needs gcc, bsdtar, strace and Landlock
+demo/xz-style/record.sh       # re-records docs/xz-demo.gif
 ```
+
+![the demo](../../docs/xz-demo.gif)
 
 What XRAY shows, step by step:
 

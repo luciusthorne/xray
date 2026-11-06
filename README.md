@@ -1,6 +1,20 @@
 # XRAY
 
-XRAY inspects local commands, source files, and ELF binaries. It combines static language analyzers, dependency and call graphs, source lookup, and an interactive graph viewer. Results describe what the files and metadata show; they are not proof of runtime behavior.
+**Contracts for what software may do — with evidence, checked, and enforced.**
+
+XRAY explains what a Linux program can do and proves each step: which commands a script runs and on which line, which libraries a binary loads and why the loader picks them, what a real run read, wrote and connected to. It writes that down as a reviewable capability contract, checks the program against it, enforces it with Landlock (no root), and shrinks it to what a workload provably needs. Across package versions it shows what software newly became able to do, and records it in a tamper-evident log.
+
+```sh
+xray inspect xdg-open                 # everything it reaches, with the proof for every link
+xray why curl libssl                  # the chain from a command to a library or package
+xray contract generate jq --trace -o jq.contract -- . data.json
+xray contract enforce jq.contract -- . data.json
+xray drift old.pkg.tar.zst new.pkg.tar.zst
+```
+
+XRAY never claims a program is safe: every report lists its blind spots. It also keeps its older views — source lookup, call graphs, an HTML graph viewer — described below.
+
+![xray catching an xz-style library backdoor: drift, the capability log, a contract break, a traced breach, and enforcement stopping the payload](docs/xz-demo.gif)
 
 ## Install
 
