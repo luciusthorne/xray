@@ -65,6 +65,13 @@ def severity(sink, sources, privileged=False):
     return "low"
 
 
+def _flat(argv_labels):
+    out = set()
+    for item in argv_labels:
+        out |= set(item) if isinstance(item, (list, tuple, set)) else {item}
+    return out
+
+
 def _resolve(name, caller):
     if "/" in name:
         path = Path(name) if Path(name).is_absolute() else Path(caller).parent / name
@@ -90,7 +97,8 @@ def analyze(command, argv=True, env=True, max_depth=4, max_files=50):
     seen = set()
     while queue and len(report.followed) < max_files:
         path, argv_labels, env_labels, env_default, chain, depth = queue.pop(0)
-        key = (path, tuple(sorted(argv_labels)), tuple(sorted((k, tuple(sorted(v))) for k, v in env_labels.items())))
+        argv_key = tuple(tuple(sorted(item)) if isinstance(item, (list, tuple, set)) else item for item in argv_labels)
+        key = (path, argv_key, tuple(sorted((k, tuple(sorted(v))) for k, v in env_labels.items())))
         if key in seen:
             continue
         seen.add(key)
@@ -105,7 +113,7 @@ def analyze(command, argv=True, env=True, max_depth=4, max_files=50):
             from .elftaint import leads as elf_leads
 
             found, _how = elf_leads(path, limit=10) if (chain or path == root) else ([], None)
-            labels = sorted(set(argv_labels) | {label for values in env_labels.values() for label in values})
+            labels = sorted(_flat(argv_labels) | {label for values in env_labels.values() for label in values})
             for lead in found:
                 via = f" via {' -> '.join(lead.via)}" if lead.via else ""
                 sources = sorted(set(labels) | {lead.kind if lead.kind != "input" else "stdin"})
@@ -122,7 +130,7 @@ def analyze(command, argv=True, env=True, max_depth=4, max_files=50):
                 classes = data.get("classes") or {}
                 able = [cls for cls in ("shell", "exec", "dynload") if cls in classes]
                 if able:
-                    labels = sorted(set(argv_labels) | {label for values in env_labels.values() for label in values})
+                    labels = sorted(_flat(argv_labels) | {label for values in env_labels.values() for label in values})
                     report.findings.append({
                         "file": path, "line": None, "sink": "binary",
                         "detail": "a compiled program receives input and can "
@@ -132,12 +140,12 @@ def analyze(command, argv=True, env=True, max_depth=4, max_files=50):
                         "sources": labels, "expression": None, "chain": chain,
                         "severity": severity("binary", labels), "basis": "guessed",
                     })
-            report.followed.append((path, kind, sorted(set(argv_labels))))
+            report.followed.append((path, kind, sorted(_flat(argv_labels))))
             continue
         else:
             report.blind_spots.append(f"{path}: {kind} files are not analysed for taint")
             continue
-        report.followed.append((path, kind, sorted(set(argv_labels)) + sorted(env_labels)))
+        report.followed.append((path, kind, sorted(_flat(argv_labels)) + sorted(env_labels)))
         for item in findings:
             item["chain"] = chain
             item["severity"] = severity(item["sink"], item["sources"], privileged)
@@ -154,9 +162,11 @@ def analyze(command, argv=True, env=True, max_depth=4, max_files=50):
                 # an interpreter: the first non-option argument is the program it runs
                 continue
             labels = sorted({label for values in arguments for label in values})
+            tainted = [str(position) for position, values in enumerate(arguments, 1) if values]
             step = {"file": path, "line": line,
-                    "detail": f"passes input to {Path(target).name} as arguments ({', '.join(labels)})"}
-            queue.append((target, labels, {}, False, [*chain, step], depth + 1))
+                    "detail": f"passes input to {Path(target).name} as argument {', '.join(tainted)} ({', '.join(labels)})"}
+            positional = [list(values) for values in arguments]  # $1 / sys.argv[1] get exactly what was passed there
+            queue.append((target, positional, {}, False, [*chain, step], depth + 1))
         if exported:
             for name, per_argument, line in calls:
                 target = _resolve(name, path)

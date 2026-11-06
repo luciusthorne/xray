@@ -41,6 +41,20 @@ DANGEROUS_ARGS = frozenset(["rm", "chmod", "chown", "mv", "cp", "dd", "find", "x
                             "scp", "curl", "wget", "git", "sed", "awk", "perl", "python", "python3"])
 
 
+def split_argv(spec):
+    """(labels of any argument, [labels per position] or None) from an argv taint description.
+
+    spec is either a list of labels (every argument carries them) or a list
+    of label lists, one per argument position starting at $1 / sys.argv[1].
+    """
+
+    spec = list(spec or [])
+    if spec and all(isinstance(item, (list, tuple, set)) for item in spec):
+        positions = [set(item) for item in spec]
+        return set().union(*positions), positions
+    return set(spec), None
+
+
 @dataclass
 class ShellTaint:
     findings: list = field(default_factory=list)
@@ -106,7 +120,7 @@ class _Analysis:
             if _SELF_DIR.search(word.raw) or re.search(r"\$\(\s*cd\s+\S*dirname", word.raw)
         }
         self.functions = set(result.functions)
-        self.argv = set(argv_labels)
+        self.argv, self.argv_positions = split_argv(argv_labels)
         self.env = env_labels
         self.env_default = env_default
         self.vars = {}       # (scope, name) -> labels
@@ -156,7 +170,12 @@ class _Analysis:
 
     def positional(self, which, scope):
         if scope is None:
-            return set(self.argv) if which != "0" else set()
+            if which == "0":
+                return set()
+            if which in ("@", "*") or self.argv_positions is None:
+                return set(self.argv)
+            index = int(which) - 1
+            return set(self.argv_positions[index]) if index < len(self.argv_positions) else set()
         params = self.params.get(scope, {})
         if which in ("@", "*"):
             out = set()
