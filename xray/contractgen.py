@@ -129,6 +129,13 @@ def add_observed(contract, observed, home=None):
 
     for path in observed.exec:
         _upgrade(contract, "exec", portable(os.path.realpath(path), home))
+    for path in getattr(observed, "probed", ()):
+        # The run checked whether it could execute this (test -x). Mechanisms that mount the rest of the
+        # system no-exec (systemd NoExecPaths) change that answer, so the file is listed; minimize drops it
+        # again when no workload depends on it.
+        real = os.path.realpath(path)
+        if Path(real).is_file() and not _baseline(real, home):
+            _upgrade(contract, "exec", portable(real, home), "observed: tested as executable (test -x)")
 
     reads = []
     listed = []
