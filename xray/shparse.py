@@ -57,6 +57,7 @@ class SimpleCommand:
     words: tuple
     line: int
     assignments: tuple = ()
+    function: str | None = None  # the function whose body holds the command
 
 
 @dataclass
@@ -67,6 +68,10 @@ class ParseResult:
     # variable name -> list of assigned values: a str for a static scalar,
     # a tuple of Words for an array, None when the value is not static
     assignments: dict = field(default_factory=dict)
+    # every assignment, for data flow: (variable, Word, line, function)
+    assignment_sites: list = field(default_factory=list)
+    # for/select loops: (variable, item Words, line, function)
+    loops: list = field(default_factory=list)
 
 
 class _Parser:
@@ -78,6 +83,15 @@ class _Parser:
         self.result = result if result is not None else ParseResult()
         self.heredocs = []
         self._newlines = [index for index, ch in enumerate(text) if ch == "\n"]
+        self.pending_function = None
+        self.braces = []  # one entry per open { group: the function it is the body of, or None
+        self.subshell_function = None
+
+    def current_function(self):
+        for name in reversed(self.braces):
+            if name is not None:
+                return name
+        return self.subshell_function
 
     # -- positions ---------------------------------------------------------
     def line_at(self, pos):
@@ -152,7 +166,11 @@ class _Parser:
                     self.skip_arith()
                 else:
                     self.i += 1
+                    outer, pending = self.subshell_function, self.pending_function
+                    if pending is not None:
+                        self.subshell_function, self.pending_function = pending, None
                     self.parse_list(close=")")
+                    self.subshell_function = outer
                 command_position = False
                 continue
             if command_position:
@@ -199,6 +217,13 @@ class _Parser:
             return True
         reserved = word.value if word.static and word.raw == word.value else None
 
+        if reserved == "{":
+            self.braces.append(self.pending_function)
+            self.pending_function = None
+            return True
+        if reserved == "}" and self.braces:
+            self.braces.pop()
+            return False
         if reserved in _LEADING:
             if reserved in ("time", "!"):
                 self.skip_blanks()
@@ -221,21 +246,33 @@ class _Parser:
             if self.startswith("(("):
                 self.skip_arith()
                 return False
-            self.read_word()
-            while True:
-                self.skip_blanks()
-                if self.i >= self.n or self.s[self.i] in ";\n&|#":
-                    return False
-                item = self.read_word()
-                if item is None:
-                    self.i += 1
-                elif item.static and item.value == "do":
-                    return True
+            variable = self.read_word()
+            items, seen_in = [], False
+            try:
+                while True:
+                    self.skip_blanks()
+                    if self.i >= self.n or self.s[self.i] in ";\n&|#":
+                        return False
+                    item = self.read_word()
+                    if item is None:
+                        self.i += 1
+                    elif item.static and item.value == "do":
+                        return True
+                    elif item.static and item.value == "in" and not seen_in:
+                        seen_in = True
+                    else:
+                        items.append(item)
+            finally:
+                if variable is not None:
+                    # "for x; do" iterates over the positional parameters
+                    words = tuple(items) if seen_in else (Word('"$@"', False, '"$@"'),)
+                    self.result.loops.append((variable.value, words, line, self.current_function()))
         if reserved == "function":
             self.skip_blanks()
             name = self.read_word()
             if name is not None:
                 self.result.functions.setdefault(name.value, line)
+                self.pending_function = name.value
             self.skip_blanks()
             if self.startswith("("):
                 self.skip_empty_parens()
@@ -246,6 +283,7 @@ class _Parser:
 
         if word.static and self.function_parens():
             self.result.functions.setdefault(word.value, line)
+            self.pending_function = word.value
             return True
         self.simple_command(word, line)
         return False
@@ -335,8 +373,9 @@ class _Parser:
             if name == "PATH":
                 self.result.path_lines.append(line)
             self.result.assignments.setdefault(name, []).append(_assigned(word))
+            self.result.assignment_sites.append((name, word, line, self.current_function()))
         if rest:
-            self.result.commands.append(SimpleCommand(tuple(rest), line, tuple(assignments)))
+            self.result.commands.append(SimpleCommand(tuple(rest), line, tuple(assignments), self.current_function()))
 
     # -- redirections and here-documents -------------------------------------
     def redirect_at(self):
@@ -629,7 +668,9 @@ class _Parser:
                 j += 1
         inner = self.s[self.i + 1:min(j, self.n)]
         inner = re.sub(r"\\([\\`$])", r"\1", inner)
-        _Parser(inner, self.line_at(self.i + 1), self.result).parse_list()
+        child = _Parser(inner, self.line_at(self.i + 1), self.result)
+        child.subshell_function = self.current_function()
+        child.parse_list()
         self.i = min(j + 1, self.n)
         value.append(self.s[start:self.i])
 

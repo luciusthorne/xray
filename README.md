@@ -10,6 +10,7 @@ xray why curl libssl                  # the chain from a command to a library or
 xray contract generate jq --trace -o jq.contract -- . data.json
 xray contract enforce jq.contract -- . data.json
 xray drift old.pkg.tar.zst new.pkg.tar.zst
+xray taint ./install.sh               # untrusted input reaching code, across shell and Python
 ```
 
 XRAY never claims a program is safe: every report lists its blind spots. It also keeps its older views — source lookup, call graphs, an HTML graph viewer — described below.
@@ -98,6 +99,17 @@ xray contract minimize xdg-mime.contract -o xdg-mime.min -- query default text/p
 - `check` rebuilds the evidence and lists everything the program now reaches that the contract does not allow — a new command, a library a rebuilt binary started loading — with the chain of proof; with `--trace`, also what a real run did. `--strict` counts a changed program file (SHA-256) as a breach.
 - `enforce` runs the program under Landlock (unprivileged; per-file execute/read/write rights and TCP ports) and, when `[net]` is `none`, in a private network namespace via bubblewrap. `--read`/`--write` add paths for one run; `--dry-run` prints the rules.
 - `minimize` removes every entry the workload does not need, by re-running it under the shrinking contract until any further removal changes its exit status or output. What remains is marked `required`: a contract proven minimal for that workload.
+
+## Taint: input reaching code, across languages
+
+```sh
+xray taint ./deploy.sh          # exit 1 when a high-severity path is found
+xray taint --scan               # every shell and Python command on PATH
+```
+
+`xray taint` follows untrusted input — a program's arguments, standard input, network downloads (`$(curl …)`, `requests`, `urlopen`, web request data) and environment variables — to sinks that run code: a command named by input, `eval`, `sh -c`, `source`, `trap`, Python `os.system`/`shell=True`, a program named by input, `eval`/`exec`, `pickle`/`yaml.load`. Flow is followed through variables, arrays (element by element), loops, `read`, function arguments and return values, and **across programs**: when a script passes tainted data to another script as arguments or exports it, that program is analysed with those inputs, so `tool.sh`'s `$1` handed to `helper.py` and run with `shell=True` is one finding with the chain through both files. A compiled program that receives input is reported with what its capability profile says it can do.
+
+Severity follows trust boundaries: network input reaching code is **high**; any input into a setuid program is high; a command-line tool's own arguments or stdin reaching `eval` or a shell is **medium** (quoting bugs, or callers passing untrusted data); environment-only input is low, and a wrapper that runs the command it was given (`"$@"`) is info. Low and info findings are listed with `--all`. On this project's development machine `--scan` read 969 commands and reported 2 high findings — `bash -c "$(curl …)"` installers — and 321 medium leads in 85 commands. Every finding is inferred from code: a lead to review, not proof.
 
 ## Drift, what-if and the capability log
 
@@ -225,6 +237,7 @@ xray/
 ├── project_graph.py
 ├── provenance.py
 ├── pyexec.py
+├── pytaint.py
 ├── python_analyzer.py
 ├── references.py
 ├── relationships.py
@@ -236,8 +249,10 @@ xray/
 ├── shellmetrics.py
 ├── shellscan.py
 ├── shparse.py
+├── shtaint.py
 ├── sourcelookup.py
 ├── symbols.py
+├── taint.py
 ├── textjson.py
 ├── trace.py
 ├── treesitter_analyzers.py
