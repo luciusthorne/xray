@@ -1,0 +1,28 @@
+{
+  "name": "xray-trust",
+  "displayName": "XRAY: what programs can do",
+  "description": "Taint findings for shell and Python, the evidence graph of any program, and capability contract checks, from the xray CLI.",
+  "version": "0.1.0",
+  "publisher": "luciusthorne",
+  "license": "Apache-2.0",
+  "repository": {"type": "git", "url": "https://github.com/luciusthorne/xray"},
+  "engines": {"vscode": "^1.85.0"},
+  "categories": ["Linters", "Other"],
+  "activationEvents": ["onLanguage:shellscript", "onLanguage:python"],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {"command": "xray.taint", "title": "XRAY: Check this file for untrusted input reaching code"},
+      {"command": "xray.inspect", "title": "XRAY: Show the evidence graph of this file"},
+      {"command": "xray.contractCheck", "title": "XRAY: Check a capability contract"}
+    ],
+    "configuration": {
+      "title": "XRAY",
+      "properties": {
+        "xray.path": {"type": "string", "default": "xray", "description": "Path to the xray command."},
+        "xray.taintOnSave": {"type": "boolean", "default": true, "description": "Run xray taint when a shell or Python file is saved."},
+        "xray.showLow": {"type": "boolean", "default": false, "description": "Also show low and info taint findings."}
+      }
+    }
+  }
+}
