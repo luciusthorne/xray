@@ -116,7 +116,7 @@ Severity follows trust boundaries: network input reaching code is **high**; any 
 ## Drift, what-if and the capability log
 
 ```sh
-xray drift old.pkg.tar.zst new.pkg.tar.zst      # or two files, two directories, installed:NAME
+xray drift old.pkg.tar.zst new.pkg.tar.zst      # or .deb/.rpm, two files, two directories, installed:NAME
 xray whatif upgrade new.pkg.tar.zst             # drift from the installed version, and who reaches what changed
 xray whatif remove openssl                      # which scanned programs reach the package
 xray log add --from-cache                       # every archive in /var/cache/pacman/pkg
@@ -128,6 +128,8 @@ xray log verify
 A capability profile reads a file's contents only: for ELF files the libraries it needs, its search paths, the calls it imports grouped into classes (`net`, `exec`, `shell`, `dynload`, `identity`, `ptrace`, `kernel`), its IFUNC resolvers and constructors (code that runs before `main`), and its setuid bit; for scripts the commands they run. `drift` compares two versions file by file and lists every **gain**. Rebuilt libraries whose names differ only by version or build hash are paired, not reported as new.
 
 The capability log is JSON Lines in `~/.local/share/xray/capability-log.jsonl` (`$XRAY_LOG`): one entry per package archive with the profile of every file, each entry holding the hash of the one before. `verify` recomputes the chain; publishing the head hash pins the history. On this project's development machine the pacman cache gave 447 archives of 385 packages and 15 gains between consecutive versions.
+
+**Against the real backdoor:** [docs/real-xz.md](docs/real-xz.md) runs XRAY on Debian's actual backdoored liblzma5 5.6.0/5.6.1 packages, the clean releases around them, and Arch's builds of the same versions (where the payload was not injected). `drift` names the loader hook in both backdoored builds and in none of the clean ones; the same rule finds nothing else in 1,019 archives of the 500 most popular Arch packages or on a full desktop install. `demo/real-xz/run.sh` reproduces it from hash-pinned downloads.
 
 [`demo/xz-style`](demo/xz-style/README.md) re-enacts the 2024 xz backdoor pattern with a harmless toy library and shows drift, the log, a contract break, a traced breach and enforcement stopping the payload.
 

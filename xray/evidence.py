@@ -284,6 +284,17 @@ def _said(what, path, lines, via):
     return Evidence("inferred", "shell-parse", f"{detail} via {via}", path, lines[0])
 
 
+def _ifunc_count(path):
+    import subprocess
+
+    try:
+        done = subprocess.run(["readelf", "--dyn-syms", "-W", str(path)], capture_output=True, text=True,
+                              errors="replace", check=False, env={**os.environ, "LC_ALL": "C"}, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return 0
+    return sum(1 for line in done.stdout.splitlines() if " IFUNC " in line and " UND " not in line)
+
+
 def _resolution_detail(soname, found):
     where = {
         "rpath": "DT_RPATH",
@@ -566,6 +577,14 @@ class _Builder:
                 self.graph.nodes[path].attrs[kind.lower()] = list(entries)
             for message in search_path_risks(entries, origin, kind, scan.elf_class, info.st_uid if info else 0):
                 self.graph.risk(path, message)
+        if self.graph.nodes[path].kind == "library":
+            from .profile import loader_hook
+
+            ifuncs = _ifunc_count(path)
+            facts = {"kind": "elf", "soname": Path(path).name, "needed": list(scan.needed), "ifuncs": ifuncs}
+            if loader_hook(facts, path):
+                self.graph.risk(path, f"links the dynamic loader and has {ifuncs} IFUNC resolver(s): code that runs "
+                                      "inside the loader before main, the pattern of the 2024 xz backdoor")
         inherited = () if scan.runpath or self.graph.nodes[path].kind != "library" else self.root_rpath
         for soname in scan.needed:
             soname_id = self.graph.add_node(f"soname:{soname}", "soname", soname).id

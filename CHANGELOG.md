@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Detect the xz backdoor's loader hook: a library outside glibc that links the dynamic loader and has IFUNC resolvers. `drift` reports it as a gain and `inspect`/`scan` list it under "Worth a look". Checked on Debian's real backdoored liblzma5 5.6.0/5.6.1 (flagged), every clean liblzma build around them and Arch's builds of the same versions (not flagged), and 1,019 archives of the top 500 Arch packages and a full desktop install (no false positives). See docs/real-xz.md and demo/real-xz/run.sh.
+- `drift` and the capability log read Debian `.deb` packages.
 - Add `xray inspect CMD --html`: the evidence graph as a self-contained interactive page with edges styled by basis, per-link evidence, the strongest path to any node, blind spots and findings; `#node=NAME` deep links.
 - Add `xray taint COMMAND` and `xray taint --scan`: untrusted input (arguments, stdin, network downloads, web request data, environment) followed to code-running sinks in shell and Python, through variables, arrays, loops, functions and returns, and across programs that pass tainted arguments or exported variables to each other. Severity follows trust boundaries (network or setuid: high; arguments into eval or a shell: medium).
 - The shell parser records which function each command belongs to, every assignment site, and for/select loops.
