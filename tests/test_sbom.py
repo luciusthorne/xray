@@ -30,14 +30,15 @@ def test_cyclonedx_lists_files_packages_and_evidenced_dependencies(tmp_path, mon
     refs = {component["bom-ref"]: component for component in bom["components"]}
     assert refs["package:demo"]["purl"] == "pkg:alpm/arch/demo@1.0-1"
     assert refs[str(helper)]["hashes"][0]["alg"] == "SHA-256"
-    assert {"ref": str(tool), "dependsOn": [str(helper)]} in bom["dependencies"]
-    assert {"ref": str(helper), "dependsOn": ["package:demo"]} in bom["dependencies"]
+    depends = {entry["ref"]: entry["dependsOn"] for entry in bom["dependencies"]}
+    assert str(helper) in depends[str(tool)]  # the interpreter is listed too
+    assert "package:demo" in depends[str(helper)]
     links = [item for item in bom["metadata"]["properties"] if item["name"].startswith("xray:link:")]
     assert links and "runs [inferred] via helper" in links[0]["value"]
 
 
 def test_spdx_files_are_relative_with_sha1_and_ownership_is_not_contains(tmp_path, monkeypatch):
-    graph, _tool, helper = graph_of(tmp_path, monkeypatch)
+    graph, _tool, _helper = graph_of(tmp_path, monkeypatch)
     doc = spdx(graph)
 
     assert doc["spdxVersion"] == "SPDX-2.3"
