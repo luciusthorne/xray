@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add capability contracts ([spec](docs/contract-spec.md)): `xray contract generate` (from the evidence graph, plus a strace-observed run with `--trace`), `check` (breaches with proof chains; `--trace` checks a real run; `--strict` flags a changed program), `enforce` (Landlock file and TCP rules, unprivileged, plus a private network namespace when the contract allows no network) and `minimize` (delta debugging over entries until every remaining one is required by the workload).
+- `#!/usr/bin/env NAME` scripts now link to `env` itself (declared) as well as the interpreter it finds on PATH.
 - Add the evidence graph and two verbs. `xray inspect <command>` shows what a command reaches (commands, sourced files, Python and Perl imports, interpreters, shared libraries, owning packages) with the proof for every link — method, file and line, and a basis of observed, declared, inferred or guessed — plus its blind spots; `--trace` merges a real run and lists what static reading missed. `xray why <command> <target>` prints the proof chains to a file, command, library or package.
 - The shell reader no longer reports a command named `_` when a command substitution is itself run (`$(printf "$cmd")`); it counts as a command built at runtime.
 - Python import resolution keeps the line of each import; package ownership can be looked up for many files in one pacman call.
