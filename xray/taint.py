@@ -102,7 +102,22 @@ def analyze(command, argv=True, env=True, max_depth=4, max_files=50):
             findings, calls = python_taint(path, argv_labels, env_labels, env_default)
             exported = {}
         elif kind == "elf":
-            if chain:
+            from .elftaint import leads as elf_leads
+
+            found, _how = elf_leads(path, limit=10) if (chain or path == root) else ([], None)
+            labels = sorted(set(argv_labels) | {label for values in env_labels.values() for label in values})
+            for lead in found:
+                via = f" via {' -> '.join(lead.via)}" if lead.via else ""
+                sources = sorted(set(labels) | {lead.kind if lead.kind != "input" else "stdin"})
+                report.findings.append({
+                    "file": path, "line": None, "sink": "binary",
+                    "detail": f"in {lead.function}, {lead.source.symbol}() is followed by {lead.sink.symbol}(){via}"
+                              f" (input at {lead.source.location or hex(lead.source.address)},"
+                              f" sink at {lead.sink.location or hex(lead.sink.address)})",
+                    "sources": sources, "expression": None, "chain": chain,
+                    "severity": "medium" if lead.kind == "network" else "low", "basis": "guessed",
+                })
+            if chain and not found:
                 data = profile(path)
                 classes = data.get("classes") or {}
                 able = [cls for cls in ("shell", "exec", "dynload") if cls in classes]
@@ -152,7 +167,7 @@ def analyze(command, argv=True, env=True, max_depth=4, max_files=50):
                                   [*chain, step], depth + 1))
     merged = {}
     for item in report.findings:
-        key = (item["file"], item["line"], item["sink"])
+        key = (item["file"], item["line"], item["sink"], item["detail"] if item["line"] is None else "")
         if key not in merged:
             merged[key] = item
             continue
