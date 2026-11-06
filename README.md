@@ -100,6 +100,7 @@ xray contract minimize xdg-mime.contract -o xdg-mime.min -- query default text/p
 - `generate` fills `[exec]` and `[load]` from the evidence graph; with `--trace` it also runs the workload under strace and adds what the run executed, read, wrote and connected to (home paths become `~/`, temporary files become `/tmp/**`).
 - `check` rebuilds the evidence and lists everything the program now reaches that the contract does not allow — a new command, a library a rebuilt binary started loading — with the chain of proof; with `--trace`, also what a real run did. `--strict` counts a changed program file (SHA-256) as a breach.
 - `enforce` runs the program under Landlock (unprivileged; per-file execute/read/write rights and TCP ports) and, when `[net]` is `none`, in a private network namespace via bubblewrap. `--read`/`--write` add paths for one run; `--dry-run` prints the rules.
+- `generate --workloads FILE` and `minimize --workloads FILE` take one command line per line: the contract covers every workload, and minimization keeps an entry when any workload needs it.
 - `minimize` removes every entry the workload does not need, by re-running it under the shrinking contract until any further removal changes its exit status or output. What remains is marked `required`: a contract proven minimal for that workload.
 
 ## Taint: input reaching code, across languages

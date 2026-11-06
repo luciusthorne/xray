@@ -96,6 +96,17 @@ def from_graph(graph, contract=None):
     return contract
 
 
+BROAD_DIRECTORIES = frozenset(["/", "/usr", "/usr/lib", "/usr/lib64", "/usr/share", "/usr/bin", "/usr/local",
+                               "/etc", "/var", "/var/lib", "/home", "/root", "/opt", "/srv", "/mnt", "/media", "/run",
+                               "/tmp", "/boot", "/lib", "/lib64", "/bin", "/sbin"])
+
+
+def _too_broad(path, home):
+    """Directories so high up that granting their whole tree would make the contract meaningless."""
+
+    return path in BROAD_DIRECTORIES or path == os.path.realpath(home) or path.count("/") <= 1
+
+
 def _collapse(paths, threshold):
     """Group many paths in one directory into dir/*; keep the rest as they are."""
 
@@ -120,9 +131,14 @@ def add_observed(contract, observed, home=None):
         _upgrade(contract, "exec", portable(os.path.realpath(path), home))
 
     reads = []
+    listed = []
     for path in observed.read:
         real = os.path.realpath(path)
         if _baseline(path, home) or _baseline(real, home) or not Path(real).exists():
+            continue
+        if Path(real).is_dir() and _too_broad(real, home):
+            # A path entry grants a directory and everything beneath it: listing / must not grant all of /.
+            listed.append(portable(real, home))
             continue
         value = portable(real, home)
         if value in contract.values("exec") or value in contract.values("load"):
@@ -133,6 +149,10 @@ def add_observed(contract, observed, home=None):
             reads.append(real)
     for value in _collapse(reads, threshold=5):
         _upgrade(contract, "read", portable(value, home))
+    for value in listed:
+        note = f"the run listed {value}; not granted, since that would grant everything beneath it"
+        if note not in contract.notes:
+            contract.notes.append(note)
 
     writes = []
     for path in observed.write:
@@ -162,8 +182,12 @@ def _upgrade(contract, section, value, comment="observed"):
     contract.add(section, value, comment)
 
 
-def generate(path, argv=None, depth=4, limit=300, timeout=30, packages=True):
-    """Return a Contract for the program at path, from static evidence and an optional traced run."""
+def generate(path, argv=None, depth=4, limit=300, timeout=30, packages=True, workloads=None):
+    """Return a Contract for the program at path, from static evidence and optional traced runs.
+
+    argv is one workload; workloads is a list of them, each traced and
+    added to the contract (the union of what every run did).
+    """
 
     from .evidence import build_evidence_graph
 
@@ -178,7 +202,23 @@ def generate(path, argv=None, depth=4, limit=300, timeout=30, packages=True):
             contract.package = graph.nodes[link.target].label
     pin_capabilities(contract)
     today = datetime.date.today().isoformat()
-    if argv is None:
+    if workloads:
+        from .observe import observe_run
+
+        for args in workloads:
+            observed = observe_run([graph.root, *args], timeout=timeout)
+            add_observed(contract, observed)
+            run = shlex.join([Path(graph.root).name, *args])
+            if observed.timed_out:
+                contract.notes.append(f"workload `{run}` was stopped after {timeout}s")
+            elif observed.status:
+                contract.notes.append(f"workload `{run}` exited with status {observed.status}")
+            else:
+                contract.notes.append(f"workload `{run}`")
+        pin_capabilities(contract)
+        contract.generated = f"{today} from static evidence and {len(workloads)} traced runs"
+        contract.workload = f"{len(workloads)} workloads (listed below)"
+    elif argv is None:
         contract.generated = f"{today} from static evidence"
         contract.notes.append("no run was traced: [read], [write] and [net] hold only what was observed (nothing)")
     else:

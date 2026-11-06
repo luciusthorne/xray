@@ -299,3 +299,16 @@ def test_generate_with_a_traced_run_records_reads_and_writes(tmp_path):
     assert portable(str(out)) in contract.values("write") or any(v.endswith("/**") for v in contract.values("write"))
     assert os.path.realpath(shutil.which("cat")) in contract.values("exec")
     assert contract.workload == "tool"
+
+
+def test_listing_a_broad_directory_does_not_grant_everything_beneath_it(tmp_path):
+    home = tmp_path / "home"
+    (home / ".config").mkdir(parents=True)
+    (home / ".config" / "tool.conf").write_text("x")
+    observed = Observed(read=["/", "/usr", str(home), str(home / ".config" / "tool.conf")])
+
+    contract = add_observed(Contract("/usr/bin/tool"), observed, home=str(home))
+
+    assert contract.values("read") == ["~/.config/tool.conf"]
+    assert any("listed /;" in note for note in contract.notes)
+    assert not contract.allows("read", "/etc/shadow")

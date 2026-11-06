@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `xray contract generate --workloads FILE` and `minimize --workloads FILE`: contracts from many workloads; an entry is required when any workload needs it.
+- Fix: a traced run that lists a broad directory (`/`, `/usr`, `/etc`, the home directory, …) no longer adds it to `[read]`, which granted everything beneath it; the listing is recorded as a note.
 - Add a GitHub Action (`action.yml`): runs an XRAY command, writes the job summary, fails on a non-zero exit; self-tested in CI. See docs/github-action.md.
 - Add the pacman hook: `xray hook pacman` (run by pacman before installing upgrades) reports what each upgrade gains and re-checks contract pins, and in block mode stops upgrades with strong gains or broken contracts; `xray hook install` prints the install commands and uses a root-owned copy of XRAY.
 - Cross-distribution study (docs/crossdistro-study.md): 241 Arch packages compared with Debian's builds of the same releases. Constructors are now a weak difference in `xray compare` (build flags change them in 7% of packages).
