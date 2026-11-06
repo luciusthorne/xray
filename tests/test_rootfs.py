@@ -45,7 +45,7 @@ def test_built_root_runs_the_commands_and_nothing_else(tmp_path, capsys):
     listing = sorted(f"{path.relative_to(root)}{' -> ' + str(path.readlink()) if path.is_symlink() else ''}"
                      for path in root.rglob("*"))
     assert status == 0, f"{capsys.readouterr().out}\nroot contents:\n" + "\n".join(listing)
-    assert "check `ls /`: ok" in capsys.readouterr().out or True
+    assert rootfs.check(root, "ls /").returncode == 0
     assert rootfs.check(root, "cat /etc/hostname").returncode != 0  # cat was not asked for
 
 

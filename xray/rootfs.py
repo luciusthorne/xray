@@ -93,12 +93,15 @@ def needed_files(commands=(), contracts=(), depth=8, limit=2000):
         if path is None:
             raise FileNotFoundError(command)
         entry_paths.add(str(path))
+        on_path = shutil.which(command) if "/" not in command else None
+        if on_path:
+            entry_paths.add(on_path)  # the name as found on PATH, often a link (/usr/bin/ls -> .../coreutils/ls)
         graph = build_evidence_graph(str(path), max_depth=depth, max_files=limit, packages=False, shared=shared)
         for node in graph.nodes.values():
             if node.id.startswith("/") and Path(node.id).is_file():
                 files.add(node.id)
             if node.kind == "command" and node.attrs.get("resolved") is not False:
-                found = locate(node.label)
+                found = shutil.which(node.label) or locate(node.label)
                 if found:
                     entry_paths.add(str(found))
         for link in graph.links.values():
