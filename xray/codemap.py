@@ -634,7 +634,7 @@ def _definition_start(lines, hint, short):
     return hint
 
 
-def function_code(cmap, function, max_lines=400):
+def function_code(cmap, function, max_lines=400, numbered=True):
     """(header, numbered lines) for one function's source, or None when the file can't be read."""
 
     local = fetch_source(cmap, function.file)
@@ -650,10 +650,10 @@ def function_code(cmap, function, max_lines=400):
     start = _definition_start(lines, function.line, short)
     end = body_end(lines, start, _language(function.file)) or min(len(lines), start + 40)
     shown = lines[start - 1:end]
-    numbered = [f"{n:5d}  {text}" for n, text in enumerate(shown[:max_lines], start)]
+    body = [f"{n:5d}  {text}" if numbered else text for n, text in enumerate(shown[:max_lines], start)]
     if len(shown) > max_lines:
-        numbered.append(f"... and {len(shown) - max_lines} more lines")
-    return f"{function.file}:{start} (source from {_where(function.file, cmap)})", numbered
+        body.append(f"... and {len(shown) - max_lines} more lines")
+    return f"{function.file}:{start} (source from {_where(function.file, cmap)})", body
 
 
 def _where(file, cmap=None):
@@ -668,7 +668,7 @@ def _where(file, cmap=None):
     return "debuginfod"
 
 
-def function_view(cmap, wanted, name):
+def function_view(cmap, wanted, name, numbered=True):
     """Lines for --code FUNCTION, or None when nothing in the map matches."""
 
     found = find_functions(cmap, wanted)
@@ -688,7 +688,7 @@ def function_view(cmap, wanted, name):
             lines.append(f"  ... and {len(places) - 30} more")
         return lines
     function = next(iter(places.values()))
-    shown = function_code(cmap, function)
+    shown = function_code(cmap, function, numbered=numbered)
     if shown is None:
         return [(f"{function.name} is defined at {function.file}:{function.line}, "
                 "but that file is not on this machine and could not be fetched")]
@@ -700,7 +700,7 @@ def function_view(cmap, wanted, name):
     return lines + [""] + numbered
 
 
-def file_view(cmap, wanted, name, max_lines=2000):
+def file_view(cmap, wanted, name, max_lines=2000, numbered=True):
     """Lines for --code FILE: the functions it defines, then its text. None when no file matches."""
 
     files = find_file(cmap, wanted)
@@ -723,10 +723,10 @@ def file_view(cmap, wanted, name, max_lines=2000):
         return lines + ["", "The file itself is not on this machine and could not be fetched."]
     text = local.read_text(encoding="utf-8", errors="replace").splitlines()
     where = _where(file, cmap)
-    numbered = [f"{n:5d}  {line}" for n, line in enumerate(text[:max_lines], 1)]
+    body = [f"{n:5d}  {line}" if numbered else line for n, line in enumerate(text[:max_lines], 1)]
     if len(text) > max_lines:
-        numbered.append(f"... and {len(text) - max_lines} more lines")
-    return lines + ["", f"Source ({len(text)} lines, from {where}):"] + numbered
+        body.append(f"... and {len(text) - max_lines} more lines")
+    return lines + ["", f"Source ({len(text)} lines, from {where}):"] + body
 
 
 # -- call graph ---------------------------------------------------------------

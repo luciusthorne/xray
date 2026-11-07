@@ -154,7 +154,15 @@ def graph_data(
             edges.add((str(node), key, edge_kind, status, name))
 
     if functions and root_kind == "elf":
-        found = disasm_result(root)
+        from xray import codemap
+
+        try:
+            cmap = codemap.code_map(root)
+        except (OSError, ValueError):
+            cmap = None
+        table = [(f.address, f.size, f.symbol) for f in cmap.functions] if cmap is not None else None
+        found = disasm_result(root, table=table) if table else disasm_result(root)
+        known = {f.symbol: f for f in cmap.functions} if cmap is not None else {}
         count = 0
 
         def function_node(name):
@@ -178,10 +186,35 @@ def graph_data(
                 "symbols": [],
                 "metadata": {"package": None},
             }
+            mapped = known.get(name)
+            if mapped is not None:
+                nodes[key]["label"] = codemap._base(mapped.name) or mapped.name
+                nodes[key]["metadata"].update(
+                    name=mapped.name, file=mapped.file, line=mapped.line,
+                    origin=codemap._origin(cmap, mapped.file)[0] if mapped.file else None,
+                )
 
             return key
 
-        for caller, callees in sorted((found.calls if found else {}).items()):
+        def is_program(symbol):
+            mapped = known.get(symbol)
+            return bool(mapped and mapped.file and codemap._origin(cmap, mapped.file)[0] == "program")
+
+        def rank(item):
+            mapped = known.get(item[0])
+            readable = codemap._base(mapped.name) if mapped else item[0]
+            entry = readable in ("main", "main.main") or readable.endswith("::main")
+            if mapped is None or not mapped.file:
+                return (2, not entry, item[0])
+            return (0 if is_program(item[0]) else 3, not entry, item[0])
+
+        calls = found.calls if found else {}
+        # Entry points and the program's own functions get nodes first; library callees use what is left.
+        for caller, _callees in sorted(calls.items(), key=rank):
+            if known and is_program(caller):
+                function_node(caller)
+
+        for caller, callees in sorted(calls.items(), key=rank):
             source = function_node(caller)
 
             if source is None:

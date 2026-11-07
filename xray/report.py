@@ -81,8 +81,21 @@ def report_lines(path, markdown=False):
     files = cached_source_files(path)
     code_command = f"xray {shlex.quote(str(path))} --code"
 
+    mapped = None
+    if not files and kind == "elf":
+        from xray import codemap
+
+        try:
+            cmap = codemap.code_map(path)
+        except (OSError, ValueError):
+            cmap = None
+        if cmap is not None and cmap.files:
+            mapped = codemap.overview_lines(cmap, shlex.quote(str(path)), limit=12)
+
     if files:
         lines += [f"{bullet}{f} ({len(n)} function(s))" for f, n in files.items()]
+    elif mapped:
+        lines += ["```", *mapped, "```"] if markdown else mapped
     elif kind == "elf":
         if local_source_roots():
             guidance = (

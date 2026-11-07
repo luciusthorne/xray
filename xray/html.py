@@ -28,7 +28,7 @@ _TEMPLATE = r"""<!doctype html>
   .tabbar button { background: none; color: var(--muted); border: 0; padding: 4px 10px; cursor: pointer; }
   .tabbar button.on { color: var(--fg); border-bottom: 2px solid #f2c14e; }
   .muted { color: var(--muted); }
-  #notice { position: absolute; top: 8px; left: 8px; padding: 6px 10px;
+  #notice { position: absolute; bottom: 36px; left: 8px; padding: 6px 10px;
             background: var(--notice); border-radius: 4px; font-size: 12px; }
   #legend { position: absolute; bottom: 8px; left: 8px; font-size: 12px; }
   #legend span { margin-right: 12px; }
@@ -124,7 +124,8 @@ _TEMPLATE = r"""<!doctype html>
   var nodes = [], byId = {}, links = [];
 
   function addNode(id, kind, extra) {
-    var n = { id: id, kind: kind, hollow: false, x: 0, y: 0, vx: 0, vy: 0, info: extra };
+    var n = { id: id, kind: kind, hollow: false, x: 0, y: 0, vx: 0, vy: 0, info: extra,
+              label: extra && extra.label ? extra.label : undefined };
     nodes.push(n);
     byId[id] = n;
     return n;
@@ -151,8 +152,10 @@ _TEMPLATE = r"""<!doctype html>
     var radius = 60 + nodes.length * 4;
     n.x = Math.cos(angle) * radius;
     n.y = Math.sin(angle) * radius;
-    var parts = (n.label || n.id).split("/");
-    n.label = parts[parts.length - 1] || n.id;
+    if (!(n.info && n.info.label)) {
+      var parts = (n.label || n.id).split("/");
+      n.label = parts[parts.length - 1] || n.id;
+    }
   });
 
   function make(tag, attrs, parent) {
@@ -848,7 +851,7 @@ _SERVE_JS = r'''
 
   function langOfFile(name) {
     var ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
-    if (["c", "h", "cc", "cpp", "cxx", "hpp", "hh"].indexOf(ext) >= 0) return "c";
+    if (["c", "h", "cc", "cpp", "cxx", "hpp", "hh", "rs", "go", "zig"].indexOf(ext) >= 0) return "c";
     if (ext === "py") return "python";
     if (ext === "pl" || ext === "pm") return "perl";
     if (ext === "sh" || ext === "bash") return "sh";
@@ -896,8 +899,11 @@ _SERVE_JS = r'''
     }
     if (n.kind !== "function") return;
     var name = n.id.slice(n.id.lastIndexOf(":") + 1);
+    var meta = (n.info && n.info.metadata) || {};
     var box = document.createElement("div");
-    box.innerHTML = '<p><button id="b-src" type="button">Show source</button> ' +
+    box.innerHTML = (meta.file ? '<p class="muted">' + esc(meta.name || name) + '<br>defined at ' + esc(meta.file) +
+        (meta.line ? ':' + meta.line : '') + (meta.origin ? ' (' + esc(meta.origin) + ')' : '') + '</p>' : '') +
+      '<p><button id="b-src" type="button">Show source</button> ' +
       '<button id="b-asm" type="button">Show disassembly</button></p>' +
       '<pre id="b-out" style="white-space:pre-wrap;font-size:11px"></pre>';
     panel.appendChild(box);
@@ -906,7 +912,7 @@ _SERVE_JS = r'''
       out.textContent = "Loading...";
       fetch("/api/" + kind + "?name=" + encodeURIComponent(name) + "&cmd=" + encodeURIComponent(data.root))
         .then(function (r) { return r.text(); })
-        .then(function (t) { show(out, t, kind === "source" ? "c" : "asm"); })
+        .then(function (t) { show(out, t, kind === "source" ? (meta.file ? langOfFile(meta.file) || "c" : "c") : "asm"); })
         .catch(function () { out.textContent = "Request failed"; });
     }
     document.getElementById("b-src").addEventListener("click", function () { load("source"); });

@@ -36,6 +36,12 @@ def _local_host(value):
     return False
 
 
+def _unavailable(lines):
+    from xray.codeview import _source_unavailable
+
+    return _source_unavailable(lines)
+
+
 def make_server(path, data, port=0):
     """Return an HTTP server bound to 127.0.0.1 for a command and the ones it leads to.
 
@@ -138,12 +144,39 @@ def make_server(path, data, port=0):
 
             binary = Path(cmd)
 
+            def mapped():
+                from xray import codemap
+
+                with lock:
+                    key = ("map", cmd)
+                    if key not in cache:
+                        try:
+                            cache[key] = codemap.code_map(binary)
+                        except (OSError, ValueError):
+                            cache[key] = None
+                    return cache[key]
+
             if url.path in ("/api/files", "/api/file"):
                 with lock:
                     if cmd not in cache:
                         cache[cmd] = source_files(binary)
 
                 files, source_root = cache[cmd]
+
+                if files is None:
+                    from xray import codemap
+
+                    cmap = mapped()
+                    if cmap is not None and cmap.files:
+                        if url.path == "/api/files":
+                            return self.reply(200, json.dumps({"files": {f: len(fs) for f, fs in sorted(cmap.files.items())}}),
+                                              "application/json")
+                        wanted = arg("path")
+                        if wanted not in cmap.files:
+                            return self.reply(404, "unknown file")
+                        with lock:
+                            view = codemap.file_view(cmap, wanted, binary.name, numbered=False)
+                        return self.reply(200, "\n".join(view or ["unknown file"]))
 
                 if url.path == "/api/files":
                     body = (
@@ -166,14 +199,26 @@ def make_server(path, data, port=0):
             if name is None:
                 return self.reply(400, "missing name")
 
-            if name not in {e[2] for e in read_function_table(binary) or debuginfod_function_table(binary)}:
-                return self.reply(404, "unknown function")
+            known = {e[2] for e in read_function_table(binary) or debuginfod_function_table(binary)}
+            cmap = None
+            if name not in known:
+                cmap = mapped()
+                if cmap is None or name not in {f.symbol for f in cmap.functions}:
+                    return self.reply(404, "unknown function")
 
             with lock:
                 if url.path == "/api/source":
-                    lines = source_lines(binary, name)
+                    lines = source_lines(binary, name) if name in known else []
                 else:
                     lines = function_lines(binary, name)
+
+            if url.path == "/api/source" and _unavailable(lines):
+                from xray import codemap
+
+                cmap = cmap or mapped()
+                view = codemap.function_view(cmap, name, binary.name, numbered=False) if cmap is not None else None
+                if view:
+                    lines = view
 
             self.reply(200, "\n".join(lines))
 

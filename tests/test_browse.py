@@ -65,10 +65,11 @@ def test_python_function_names(tmp_path):
 
 
 @pytest.mark.skipif(not Path("/usr/bin/ls").exists(), reason="needs /usr/bin/ls")
-def test_elf_menu_offers_toolchain():
-    text = drive(Path("/usr/bin/ls"), ["5", "q"])
+def test_elf_menu_offers_toolchain_and_call_graph():
+    text = drive(Path("/usr/bin/ls"), ["6", "q"])
 
-    assert "5. Toolchain" in text
+    assert "5. Call graph" in text
+    assert "6. Toolchain" in text
     assert "Language:" in text
 
 
