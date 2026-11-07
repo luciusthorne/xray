@@ -131,6 +131,50 @@ def _debug_function_table(lib, client, build_id):
     return debug_file, table
 
 
+def build_id(binary):
+    """The binary's GNU build ID (lowercase hex), or None."""
+    return _build_id(binary)
+
+
+def debug_file_and_table(binary):
+    """(build_id, debug file, function table) from debuginfod, or None."""
+    if not configured():
+        return None
+    lib = _library()
+    if lib is None:
+        return None
+    identity = _build_id(binary)
+    if identity is None:
+        return None
+    client = _begin(lib)
+    if not client:
+        return None
+    try:
+        debug_file, table = _debug_function_table(lib, client, identity)
+    finally:
+        lib.debuginfod_end(client)
+    if debug_file is None:
+        return None
+    return identity, debug_file, tuple(table)
+
+
+def source_file(identity, filename):
+    """Cached local copy of one source file of a build, fetched from debuginfod, or None."""
+    if not configured() or not identity:
+        return None
+    lib = _library()
+    if lib is None:
+        return None
+    client = _begin(lib)
+    if not client:
+        return None
+    try:
+        found = _lookup(lib, client, identity, filename)
+    finally:
+        lib.debuginfod_end(client)
+    return found if found is not None and found.is_file() else None
+
+
 def function_table(binary):
     """Return (address, size, name) rows from the binary's debuginfod debug file.
 

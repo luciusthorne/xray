@@ -1,0 +1,141 @@
+"""Code map of compiled programs: names, files, lines and source for any DWARF language."""
+
+import io
+import shutil
+import subprocess
+import tarfile
+
+import pytest
+
+from xray import codemap
+from xray.codemap import _base, body_end, crate_source, origin, rust_std_source
+
+
+@pytest.mark.parametrize("name, base", [
+    ("<rg::search::SearchWorker<termcolor::Buffer>>::search_reader::<grep_cli::Reader>", "rg::search::SearchWorker::search_reader"),
+    ("anyhow::error::object_downcast::<&str>", "anyhow::error::object_downcast"),
+    ("<alloc::vec::Vec<T> as core::ops::drop::Drop>::drop", "alloc::vec::Vec::drop"),
+    ("Runner::_runner(void*) [clone .lto_priv.0]", "Runner::_runner"),
+    ("main", "main"),
+])
+def test_base_names(name, base):
+    assert _base(name) == base
+
+
+@pytest.mark.parametrize("path, expected", [
+    ("/usr/src/debug/rust/rustc-1.97.0-src/library/core/src/fmt/mod.rs", ("standard library", "Rust standard library")),
+    ("/rustc/0123456789abcdef0123456789abcdef01234567/library/std/src/io.rs", ("standard library", "Rust standard library")),
+    ("/build/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/anyhow-1.0.103/src/error.rs", ("dependency", "anyhow 1.0.103")),
+    ("/usr/include/c++/15.2.1/bits/basic_string.h", ("standard library", "C++ standard library")),
+    ("/usr/include/stdio.h", ("system headers", "system headers")),
+    ("/usr/src/debug/grep/grep/src/grep.c", ("program", None)),
+])
+def test_origin(path, expected):
+    assert origin(path) == expected
+
+
+RUST = '''fn tricky<'a>(s: &'a str) -> char {
+    let open = '{';
+    let quote = '\\'';
+    let raw = r#"}"# ;
+    // } in a comment
+    /* } in a block */
+    if s.is_empty() { return '}'; }
+    'outer: loop { break 'outer; }
+    open
+}
+fn after() {}
+'''
+
+
+def test_body_end_rust_lifetimes_chars_raw_strings_and_comments():
+    lines = RUST.splitlines()
+    assert body_end(lines, 1, "rust") == 10
+
+
+def test_body_end_c_and_go():
+    c = 'int f(void) {\n  char c = \'{\';\n  puts("}");\n  return 0;\n}\n'.splitlines()
+    assert body_end(c, 1, "c") == 5
+    go = 'func f() {\n\ts := `}`\n\t_ = s\n}\n'.splitlines()
+    assert body_end(go, 1, "go") == 4
+
+
+def _tar(members, mode):
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode=mode) as archive:
+        for name, data in members.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+    return buffer.getvalue()
+
+
+def test_crate_source_extracts_one_member(tmp_path, monkeypatch):
+    monkeypatch.setenv("XRAY_CACHE_DIR", str(tmp_path))
+    urls = []
+    archive = _tar({"anyhow-1.0.103/src/error.rs": b"fn x() {}\n", "anyhow-1.0.103/src/lib.rs": b""}, "w:gz")
+
+    def fetch(url):
+        urls.append(url)
+        return archive
+
+    file = "/build/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/anyhow-1.0.103/src/error.rs"
+    got = crate_source(file, fetch=fetch)
+    assert got.read_text() == "fn x() {}\n"
+    assert urls == ["https://static.crates.io/crates/anyhow/anyhow-1.0.103.crate"]
+    assert crate_source(file, fetch=lambda url: pytest.fail("cached")) == got
+    assert crate_source(file.replace("src/error.rs", "../../etc/passwd"), fetch=fetch) is None
+
+
+def test_rust_std_source_uses_the_exact_version(tmp_path, monkeypatch):
+    monkeypatch.setenv("XRAY_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(codemap, "_local_rust_library", lambda version: None)
+    member = "rust-src-1.97.0/rust-src/lib/rustlib/src/rust/library/core/src/fmt/mod.rs"
+    archive = _tar({member: b"pub fn write() {}\n"}, "w:xz")
+    urls = []
+    file = "/usr/src/debug/rust/rustc-1.97.0-src/library/core/src/fmt/mod.rs"
+    got = rust_std_source(file, fetch=lambda url: urls.append(url) or archive)
+    assert got.read_text() == "pub fn write() {}\n"
+    assert urls == ["https://static.rust-lang.org/dist/rust-src-1.97.0.tar.xz"]
+
+
+PROGRAM = r'''#include <stdio.h>
+
+static int helper(int x)
+{
+    const char *brace = "}";
+    return x + (brace[0] == '}');
+}
+
+int main(void)
+{
+    printf("%d\n", helper(1));
+    return 0;
+}
+'''
+
+
+@pytest.mark.skipif(not all(shutil.which(t) for t in ("cc", "addr2line", "c++filt", "readelf")),
+                    reason="needs cc and binutils")
+def test_code_map_of_a_local_program_with_debug_info(tmp_path):
+    source = tmp_path / "tool.c"
+    source.write_text(PROGRAM)
+    binary = tmp_path / "tool"
+    subprocess.run(["cc", "-g", "-O0", "-o", str(binary), str(source)], check=True)
+
+    cmap = codemap.code_map(binary, online=False)
+    assert cmap is not None and cmap.via == "the binary's symbol table"
+    names = {f.name: f for f in cmap.located()}
+    assert names["main"].file == str(source) and names["main"].line == 10
+    assert names["helper"].line == 4
+
+    overview = "\n".join(codemap.overview_lines(cmap, "tool"))
+    assert "Program: 1 file(s)" in overview
+
+    view = codemap.function_view(cmap, "helper", "tool")
+    assert view[1].endswith("tool.c:3 (source from this machine)")
+    assert view[-1].strip().endswith("}") and "return x" in view[-2]
+
+    listing = codemap.file_view(cmap, "tool.c", "tool")
+    assert any(line.strip().endswith("main") for line in listing[:6])
+    assert codemap.function_view(cmap, "nothing_here", "tool") is None

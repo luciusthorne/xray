@@ -54,7 +54,14 @@ xray reach liblzma
 xray contract generate jq -o jq.contract
 ```
 
-Running `xray` by itself reads XRAY's own CLI source and suggests follow-up commands. Running `xray <command>` gives that command's overview and suggests code, calls, chains, dependency, cycle, path, and JSON queries. For ELF commands with configured debuginfod, `xray <command> --code` lists function names, and `--code <function>` reads the matching C source.
+Running `xray` by itself reads XRAY's own CLI source and suggests follow-up commands. Running `xray <command>` gives that command's overview and suggests code, calls, chains, dependency, cycle, path, and JSON queries. For compiled commands, `xray <command> --code` gives a code map: every function with its readable name, source file and line, grouped into the program's own files, its dependencies (Rust crates) and the standard library. `--code <file>` lists the functions a file defines and shows the file; `--code <function>` shows that function's source. This works for C, C++ and Rust (any language with DWARF line information), from the binary's own debug information or the debug file a debuginfod server has for its build ID; Rust dependency source comes from the crate's crates.io archive and Rust standard library source from the matching `rust-src`. Programs with names but no line information get their functions grouped by namespace.
+
+```
+xray rg --code                         # 52 program files, 21 crates, the Rust standard library
+xray rg --code core/main.rs            # the functions in main.rs, then the file
+xray rg --code rg::main                # ripgrep's main, from its source
+xray btop --code clean_quit            # C++
+```
 
 ## Evidence graph: `inspect`, `why`, `scan` and `reach`
 
@@ -297,6 +304,7 @@ xray/
 ├── chain.py
 ├── classify.py
 ├── cli.py
+├── codemap.py
 ├── codeview.py
 ├── command_analyzers.py
 ├── commandproject.py

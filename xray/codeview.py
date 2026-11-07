@@ -66,8 +66,18 @@ def code_lines(path, name=None, asm=False, say=lambda text: None):
     kind = command_kind(path)
 
     if kind == "elf":
+        from xray.codemap import SOURCE_SUFFIXES
+
+        if name is not None and name.endswith(SOURCE_SUFFIXES) and not name.endswith((".c", ".h")):
+            mapped = _code_map_view(path, name, say)
+            if mapped is not None:
+                return mapped
         if name is None or name.endswith((".c", ".h")):
             lines = files_lines(path, name, say=say)
+            if _source_unavailable(lines):
+                mapped = _code_map_view(path, name, say)
+                if mapped is not None:
+                    return mapped
             if name is None and _source_unavailable(lines):
                 try:
                     from xray.debuginfod import configured, function_names
@@ -114,6 +124,11 @@ def code_lines(path, name=None, asm=False, say=lambda text: None):
         lines = source_lines(path, name, say=say)
 
         if _source_unavailable(lines):
+            mapped = _code_map_view(path, name, say)
+            if mapped is not None:
+                if asm:
+                    mapped += ["", "Disassembly:", *function_lines(path, name)]
+                return mapped
             return _assembly_fallback(path, lines, name)
 
         if asm:
@@ -212,6 +227,28 @@ def _brace_end(lines, line):
             return None
 
     return None
+
+
+def _code_map_view(path, name, say):
+    """--code through the code map (any DWARF language: C, C++, Rust, ...), or None."""
+
+    from xray import codemap
+
+    try:
+        say("Building the code map (function names and source lines)")
+        cmap = codemap.code_map(path)
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+        return None
+    if cmap is None:
+        return None
+    label = path.name
+    if name is None:
+        return codemap.overview_lines(cmap, label)
+    if name.endswith(codemap.SOURCE_SUFFIXES):
+        view = codemap.file_view(cmap, name, label)
+        if view is not None:
+            return view
+    return codemap.function_view(cmap, name, label)
 
 
 def _source_unavailable(lines):
