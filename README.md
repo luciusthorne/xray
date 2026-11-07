@@ -1,8 +1,19 @@
 # XRAY
 
-**Contracts for what software may do — with evidence, checked, and enforced.**
+**Read the code of any Linux command — its files, functions and call graph — and prove what it can do.**
 
-XRAY explains what a Linux program can do and proves each step: which commands a script runs and on which line, which libraries a binary loads and why the loader picks them, what a real run read, wrote and connected to. It writes that down as a reviewable capability contract, checks the program against it, enforces it with Landlock (no root), and shrinks it to what a workload provably needs. Across package versions it shows what software newly became able to do, and records it in a tamper-evident log.
+Point XRAY at a command and it shows you the code behind it: which language it is written in, which source files it was built from, every function with its file and line, the function's source, and which function calls which. That works for compiled programs (C, C++, Rust, Go) using the debug information and build data the binary and your distribution already publish, and for scripts (shell, Python, Perl, Ruby, JavaScript, TypeScript, Lua) read directly.
+
+```sh
+xray rg --code                        # ripgrep: 52 source files, 21 crates, the Rust standard library
+xray rg --code core/main.rs           # the functions in one file, then the file
+xray rg --code rg::main               # one function's source
+xray rg --callgraph rg::search        # what it calls and what calls it, each with file:line
+xray gh --code main.main              # Go, source from the module proxy at the exact version
+xray xdg-mime --callgraph             # shell: functions, the commands each one runs
+```
+
+Then XRAY answers what the code can do, with proof: which commands a script runs and on which line, which libraries a binary loads and why the loader picks them, what a real run read, wrote and connected to. It writes that down as a reviewable capability contract, checks the program against it, enforces it with Landlock (no root), and shrinks it to what a workload provably needs. Across package versions it shows what software newly became able to do.
 
 ```sh
 xray inspect xdg-open                 # everything it reaches, with the proof for every link
@@ -13,7 +24,7 @@ xray drift old.pkg.tar.zst new.pkg.tar.zst
 xray taint ./install.sh               # untrusted input reaching code, across shell and Python
 ```
 
-XRAY never claims a program is safe: every report lists its blind spots. It also keeps its older views — source lookup, call graphs, an HTML graph viewer — described below.
+XRAY never claims a program is safe: every report lists its blind spots, and every link says how it was found — observed in a run, declared by metadata, inferred from code, or guessed.
 
 ![xray catching an xz-style library backdoor: drift, the capability log, a contract break, a traced breach, and enforcement stopping the payload](docs/xz-demo.gif)
 
