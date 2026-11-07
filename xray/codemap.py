@@ -101,8 +101,25 @@ def _locate(debug_file, addresses):
         if not path or path.startswith("??") or not line.isdigit() or int(line) == 0:
             out.append((None, None))
         else:
-            out.append((posixpath.normpath(path), int(line)))
+            out.append((_collapse_repeat(posixpath.normpath(path)), int(line)))
     return out
+
+
+def _collapse_repeat(path):
+    """debian/build/src/debian/build/src/x.c -> debian/build/src/x.c.
+
+    Relative, prefix-mapped build paths (Debian's reproducible builds) come out of
+    addr2line with the build directory twice.
+    """
+
+    if path.startswith("/"):
+        return path  # absolute paths are real (Arch keeps /usr/src/debug/grep/grep/...)
+    parts = path.split("/")
+    for size in range(len(parts) // 2, 1, -1):  # a repeat of two or more folders, never one
+        for start in range(len(parts) - 2 * size + 1):
+            if parts[start:start + size] == parts[start + size:start + 2 * size]:
+                return _collapse_repeat("/".join(parts[:start + size] + parts[start + 2 * size:]))
+    return path
 
 
 def _has_line_info(path):
@@ -315,7 +332,9 @@ def _namespace_lines(cmap, name, limit):
     sample = [f for key in own for f in groups[key]][:limit]
     if sample:
         lines += ["", "Some of the program's functions:"] + [f"  {f.name}" for f in sample]
-    lines += ["", f"Machine code of one: xray {name} --disasm-function NAME (needs rizin)  ·  calls: xray {name} --disasm"]
+    lines += ["", (f"Source of one: xray {name} --code NAME  (searched by name in the upstream source its package "
+                  "was built from; a guess, labelled)"),
+              f"Machine code of one: xray {name} --disasm-function NAME (needs rizin)  ·  calls: xray {name} --disasm"]
     return lines
 
 
@@ -536,7 +555,15 @@ def fetch_source(cmap, file):
         return None
     from xray import debuginfod
 
-    return debuginfod.source_file(cmap.build_id, file)
+    found = debuginfod.source_file(cmap.build_id, file)
+    if found is None and shutil.which("dpkg-query"):
+        # Debian's debuginfod has no source; sources.debian.org has the patched tree.
+        from xray import debsource
+
+        found = debsource.source_file(cmap.binary, file)
+        if found is not None:
+            cmap.where_from[file] = "sources.debian.org (Debian's patched source)"
+    return found
 
 
 def _language(file):

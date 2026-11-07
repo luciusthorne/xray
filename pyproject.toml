@@ -4,12 +4,42 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xray-trust"
-description = "Explain what Linux commands, scripts and binaries do, with evidence"
+description = "Read the code of any Linux command: its files, functions, call graph and what it can do, with evidence"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 dynamic = ["version"]
+authors = [{ name = "Luciusthorne" }]
+keywords = [
+    "linux", "code-reading", "call-graph", "source-code", "elf", "debuginfod", "rust", "go",
+    "shell", "lisp", "security", "sandbox", "landlock", "supply-chain", "sbom",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Security",
+    "Topic :: Software Development :: Debuggers",
+    "Topic :: Software Development :: Disassemblers",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Utilities",
+]
+
+[project.urls]
+Homepage = "https://github.com/luciusthorne/xray"
+Source = "https://github.com/luciusthorne/xray"
+Issues = "https://github.com/luciusthorne/xray/issues"
+Changelog = "https://github.com/luciusthorne/xray/blob/main/CHANGELOG.md"
 
 [project.scripts]
 xray = "xray.cli:main"
