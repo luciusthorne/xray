@@ -11,7 +11,7 @@ from pathlib import Path
 
 from xray.analysis_cache import cache_home
 from xray.entrypoints import command_kind
-from xray.minidebug import read_function_table
+from xray.minidebug import debuginfod_function_table, read_function_table
 from xray.provenance import package_of
 
 # Folders holding a separate or non-installed implementation of the same
@@ -109,13 +109,48 @@ def _tree_size(root):
     )
 
 
+def _brace_lines(lines, start=0, stop=None):
+    """Yield (index, braces) where braces is the line's code with comments,
+    string and character literals removed, so '{' in "%{x}" or a comment
+    does not shift the nesting depth."""
+    in_comment = False
+    for index in range(start, len(lines) if stop is None else min(stop, len(lines))):
+        line = lines[index]
+        if not in_comment and line.lstrip().startswith("#"):
+            yield index, ""
+            continue
+        out = []
+        i, n = 0, len(line)
+        while i < n:
+            if in_comment:
+                end = line.find("*/", i)
+                if end < 0:
+                    break
+                in_comment, i = False, end + 2
+                continue
+            char = line[i]
+            if line.startswith("/*", i):
+                in_comment, i = True, i + 2
+            elif line.startswith("//", i):
+                break
+            elif char in "\"'":
+                i += 1
+                while i < n and line[i] != char:
+                    i += 2 if line[i] == "\\" else 1
+                i += 1
+            else:
+                if char in "{}":
+                    out.append(char)
+                i += 1
+        yield index, "".join(out)
+
+
 def _top_level_lines(lines):
     """Yield source lines with their brace depth before that line."""
     depth = 0
-    for index, line in enumerate(lines):
+    for index, braces in _brace_lines(lines):
         yield index, depth
-        if not line.lstrip().startswith("#"):
-            depth = max(0, depth + line.count("{") - line.count("}"))
+        depth = max(0, depth + braces.count("{") - braces.count("}"))
 
 
 _TEST_DIRS = {"test", "tests", "testsuite", "gnulib-tests", "examples", "demos", "doc"}
@@ -198,8 +233,10 @@ def find_definition(root, name, max_lines=120, prefer=()):
     return path, start + 1, shown, len(found) - 1
 
 
-def find_definition_file(path, name, max_lines=120):
-    """Find one top-level C function in a specific source file."""
+def find_definition_file(path, name, max_lines=120, near=None):
+    """Find one top-level C function in a specific source file.
+
+    near is a 1-based line (from DWARF); the closest definition wins."""
     path = Path(path)
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -216,6 +253,8 @@ def find_definition_file(path, name, max_lines=120):
     if not matches:
         return None
 
+    if near is not None:
+        matches.sort(key=lambda match: abs(match[0] + 1 - near))
     index, end = matches[0]
     start = index
     if index > 0:
@@ -305,11 +344,11 @@ def find_macro_definition(root, name, max_lines=120):
 def _body_end(lines, index):
     depth = 0
 
-    for j in range(index, min(index + 2000, len(lines))):
+    for j, braces in _brace_lines(lines, index, index + 2000):
         line = lines[j]
         had_body = depth > 0
-        depth += line.count("{") - line.count("}")
-        if (had_body or "{" in line) and depth == 0:
+        depth += braces.count("{") - braces.count("}")
+        if (had_body or "{" in braces) and depth == 0:
             return j
         if depth > 0:
             continue
@@ -543,7 +582,7 @@ def _source_lines_locked(path, name, say, max_lines):
     if command_kind(path) != "elf":
         return ["Not an ELF binary: --source reads ELF only"]
 
-    known = {entry[2] for entry in read_function_table(path)}
+    known = {entry[2] for entry in read_function_table(path) or debuginfod_function_table(path)}
     plain = base_name(name)
 
     for root in local_source_roots():
@@ -569,8 +608,8 @@ def _source_lines_locked(path, name, say, max_lines):
             say("Querying configured debuginfod servers for function source")
             remote = function_source(path, name)
             if remote is not None:
-                source_name, cached_source, _line_hint = remote
-                result = find_definition_file(cached_source, plain, max_lines)
+                source_name, cached_source, line_hint = remote
+                result = find_definition_file(cached_source, plain, max_lines, near=line_hint)
                 if result is not None:
                     _file, line, shown, others = result
                     header = [f"{source_name}:{line}", "(source from debuginfod)"]

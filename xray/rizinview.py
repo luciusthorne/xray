@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 
 from xray.entrypoints import command_kind
-from xray.minidebug import read_function_table
+from xray.minidebug import debuginfod_function_table, read_function_table
 
 INSTALL_HINT = "rizin not found: install the rizin package to use --disasm-function"
 
@@ -22,7 +22,7 @@ def function_lines(path, name, timeout=30, max_lines=200):
     if command_kind(path) != "elf":
         return ["Not an ELF binary: --disasm-function reads ELF only"]
 
-    table = read_function_table(path)
+    table = read_function_table(path) or debuginfod_function_table(path)
 
     if not table:
         return ["No function names in this binary (it has no .gnu_debugdata)"]

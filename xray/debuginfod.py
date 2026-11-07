@@ -131,6 +131,28 @@ def _debug_function_table(lib, client, build_id):
     return debug_file, table
 
 
+def function_table(binary):
+    """Return (address, size, name) rows from the binary's debuginfod debug file.
+
+    The debug file comes from the same build (same build ID), so its
+    addresses match the installed binary."""
+    if not configured():
+        return ()
+    lib = _library()
+    if lib is None:
+        return ()
+    build_id = _build_id(binary)
+    if build_id is None:
+        return ()
+    client = _begin(lib)
+    if not client:
+        return ()
+    try:
+        return tuple(_debug_function_table(lib, client, build_id)[1])
+    finally:
+        lib.debuginfod_end(client)
+
+
 def function_names(binary):
     """Return function names from configured debuginfod data, if available."""
     if not configured():

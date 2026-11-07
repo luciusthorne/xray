@@ -9,7 +9,7 @@ from xray.entrypoints import command_kind
 from xray.graphjson import graph_data
 from xray.html import render_html
 from xray.locate import locate
-from xray.minidebug import read_function_table
+from xray.minidebug import debuginfod_function_table, read_function_table
 from xray.rizinview import function_lines
 from xray.sourcelookup import file_lines, source_files, source_lines
 
@@ -166,7 +166,7 @@ def make_server(path, data, port=0):
             if name is None:
                 return self.reply(400, "missing name")
 
-            if name not in {e[2] for e in read_function_table(binary)}:
+            if name not in {e[2] for e in read_function_table(binary) or debuginfod_function_table(binary)}:
                 return self.reply(404, "unknown function")
 
             with lock:
