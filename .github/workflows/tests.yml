@@ -76,6 +76,8 @@ jobs:
               "tests/test_calls.py",
               "test_programs/cycle_a.py",
               "xray/cli.py",
+              "editors/emacs/xray.el",
+              "editors/emacs/xray-tests.el",
           )
           for item in expected:
               assert item in relative, f"missing from sdist: {item}"
