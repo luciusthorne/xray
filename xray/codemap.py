@@ -256,6 +256,7 @@ def overview_lines(cmap, name, limit=40):
         lines.append(f"  xray {name} --code {example_file}      a file, with the functions it defines")
     if example_function:
         lines.append(f"  xray {name} --code '{example_function}'      one function's code")
+    lines.append(f"  xray {name} --callgraph               which function calls which, with files and lines")
     return lines
 
 
@@ -327,7 +328,10 @@ def _base(name):
     base = _strip_generics(name)
     while "::::" in base:
         base = base.replace("::::", "::")
-    return base.strip(":").strip()
+    base = base.strip(":").strip()
+    if " " in base and not base.startswith(("virtual thunk", "non-virtual thunk", "covariant return")):
+        base = base.rsplit(" ", 1)[-1]  # C++ template functions carry their return type: "void ns::f"
+    return base
 
 
 def find_functions(cmap, wanted):
@@ -681,3 +685,131 @@ def file_view(cmap, wanted, name, max_lines=2000):
     if len(text) > max_lines:
         numbered.append(f"... and {len(text) - max_lines} more lines")
     return lines + ["", f"Source ({len(text)} lines, from {where}):"] + numbered
+
+
+# -- call graph ---------------------------------------------------------------
+
+_GROUP_ORDER = {"program": 0, "dependency": 1, "standard library": 2, "system headers": 3, "import": 4, "?": 5}
+
+
+def _entry(function, prefix):
+    """(group, short readable name, place) for a function."""
+
+    if function is None:
+        return "?", "?", ""
+    short = _base(function.name) or function.name
+    if not function.file:
+        return "program", short, ""
+    return origin(function.file)[0], short, f"{_short(function.file, prefix)}:{function.line}"
+
+
+def _is_cold(function):
+    return bool(re.search(r"\.cold\b", function.name + " " + function.symbol))
+
+
+def callgraph_lines(cmap, calls, name, focus=None, indirect=0, limit=60, per_function=12):
+    """Which function calls which, with files and lines.
+
+    calls maps a caller's symbol to the symbols (or name@plt imports) it calls
+    directly, from disassembly; indirect calls (function pointers, vtables,
+    trait objects) cannot be followed and are counted instead. Generic copies
+    of one function are merged under its readable name.
+    """
+
+    by_symbol = {function.symbol: function for function in cmap.functions}
+    prefix = _program_prefix(cmap.files)
+
+    def entry(symbol):
+        if symbol.endswith("@plt"):
+            return "import", _base(_demangle([symbol[:-4]])[0]) or symbol[:-4], "shared library"
+        return _entry(by_symbol.get(symbol), prefix)
+
+    def rows(symbols, arrow):
+        merged = {}
+        for symbol in symbols:
+            group, short, place = entry(symbol)
+            key = (group, short)
+            if key in merged:
+                merged[key][2] += 1
+            else:
+                merged[key] = [place, group, 1]
+        ordered = sorted(merged.items(), key=lambda item: (_GROUP_ORDER.get(item[0][0], 9), item[0][1]))
+        out = []
+        for (group, short), (place, _, copies) in ordered[:per_function]:
+            note = f" ×{copies}" if copies > 1 else ""
+            out.append(f"    {arrow} {short}{note}  ({place})" if place else f"    {arrow} {short}{note}")
+        if len(ordered) > per_function:
+            out.append(f"    ... and {len(ordered) - per_function} more")
+        return out, len(ordered)
+
+    callers_of = defaultdict(set)
+    for caller, callees in calls.items():
+        for callee in callees:
+            callers_of[callee].add(caller)
+
+    if focus is not None:
+        found = find_functions(cmap, focus) or [f for f in cmap.functions if focus in (f.name, f.symbol, _base(f.name))]
+        found = [f for f in found if not _is_cold(f)] or found
+        if not found:
+            return [f"No function named {focus!r} (see xray {name} --code for the map)"]
+        groups = defaultdict(list)
+        for function in found:
+            groups[(_base(function.name), function.file, function.line)].append(function)
+        lines = []
+        for (short, file, line), copies in list(groups.items())[:5]:
+            out = set().union(*(calls.get(f.symbol, ()) for f in copies))
+            into = set().union(*(callers_of.get(f.symbol, set()) for f in copies))
+            where = f"  ({_short(file, prefix)}:{line})" if file else ""
+            out_rows, out_count = rows(out, "→")
+            in_rows, in_count = rows(into, "←")
+            lines += ["", f"{short}{where}" + (f"  [{len(copies)} compiled copies]" if len(copies) > 1 else ""),
+                      f"  calls ({out_count}):"]
+            lines += out_rows or ["    nothing directly"]
+            lines.append(f"  called by ({in_count}):")
+            lines += in_rows or ["    nothing directly (an entry point, or reached through a pointer)"]
+        if len(groups) > 5:
+            lines.append(f"... and {len(groups) - 5} more functions match {focus!r}")
+        lines += ["", f"Indirect calls not followed: {indirect:,} (function pointers, vtables, trait objects)",
+                  f"Read one: xray {name} --code NAME"]
+        return lines[1:]
+
+    own = [f for f in cmap.functions
+           if f.symbol in calls and not _is_cold(f) and (f.file is None or origin(f.file)[0] == "program")]
+    own.sort(key=lambda f: (f.file or "~", f.line or 0, f.name))
+    total = sum(len(callees) for callees in calls.values())
+    lines = [(f"{len(calls):,} functions make {total:,} direct calls; the program's own functions "
+             f"({len(own):,}) file by file. Indirect calls not followed: {indirect:,}.")]
+    current, shown = object(), set()
+    count = 0
+    for function in own:
+        key = (_base(function.name), function.file, function.line)
+        if key in shown:
+            continue
+        shown.add(key)
+        if count >= limit:
+            break
+        count += 1
+        if function.file != current:
+            current = function.file
+            lines += ["", _short(current, prefix) if current else "(no source location)"]
+        out_rows, _ = rows(calls[function.symbol], "→")
+        lines.append(f"  {key[0]}  (line {function.line})" if function.line else f"  {key[0]}")
+        lines += out_rows
+    if len(own) > count:
+        lines.append(f"\n... more functions not shown (limit {limit}); pick one with --callgraph FUNCTION")
+    lines += ["", f"One function, both directions: xray {name} --callgraph FUNCTION"]
+    return lines
+
+
+def elf_callgraph(path, focus=None):
+    """--callgraph for a compiled program, or None when it has no function names."""
+
+    from xray.disasm import disasm_result
+
+    cmap = code_map(path)
+    if cmap is None:
+        return None
+    found = disasm_result(path, timeout=120)
+    if found is None:
+        return ["objdump could not read this binary"]
+    return callgraph_lines(cmap, found.calls, Path(path).name, focus, found.indirect)

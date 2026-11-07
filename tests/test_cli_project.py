@@ -106,6 +106,15 @@ def test_project_option_rejects_shell_script(tmp_path, option):
 def test_extra_argument_is_rejected(tmp_path):
     main = make_project(tmp_path)
 
+    result = run_xray(tmp_path, str(main), "--complexity", "extra")
+
+    assert result.returncode == 2
+
+
+def test_callgraph_function_argument_is_for_compiled_programs(tmp_path):
+    main = make_project(tmp_path)
+
     result = run_xray(tmp_path, str(main), "--callgraph", "extra")
 
     assert result.returncode == 2
+    assert "compiled programs" in result.stderr

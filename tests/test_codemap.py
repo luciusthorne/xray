@@ -4,6 +4,7 @@ import io
 import shutil
 import subprocess
 import tarfile
+from pathlib import Path
 
 import pytest
 
@@ -139,3 +140,46 @@ def test_code_map_of_a_local_program_with_debug_info(tmp_path):
     listing = codemap.file_view(cmap, "tool.c", "tool")
     assert any(line.strip().endswith("main") for line in listing[:6])
     assert codemap.function_view(cmap, "nothing_here", "tool") is None
+
+
+def test_template_return_type_is_dropped():
+    assert _base("void Logger::error<char const*>(std::basic_string_view<char>)") == "Logger::error"
+
+
+@pytest.mark.skipif(not all(shutil.which(t) for t in ("cc", "addr2line", "c++filt", "readelf", "objdump")),
+                    reason="needs cc and binutils")
+def test_callgraph_of_a_local_program(tmp_path):
+    from xray.disasm import disasm_result
+
+    source = tmp_path / "tool.c"
+    source.write_text(PROGRAM)
+    binary = tmp_path / "tool"
+    subprocess.run(["cc", "-g", "-O0", "-fno-inline", "-o", str(binary), str(source)], check=True)
+    cmap = codemap.code_map(binary, online=False)
+    found = disasm_result(binary)
+
+    lines = codemap.callgraph_lines(cmap, found.calls, "tool", focus="main", indirect=found.indirect)
+    text = "\n".join(lines)
+    assert lines[0].startswith("main  (") and "tool.c:10" in lines[0]
+    assert "→ helper  (tool.c:4)" in text
+    assert "→ printf" in text and "shared library" in text
+
+    back = "\n".join(codemap.callgraph_lines(cmap, found.calls, "tool", focus="helper"))
+    assert "← main  (tool.c:10)" in back
+
+    whole = "\n".join(codemap.callgraph_lines(cmap, found.calls, "tool"))
+    assert "tool.c" in whole and "  main  (line 10)" in whole
+
+
+def test_callgraph_merges_generic_copies():
+    functions = [
+        codemap.Function("a::run", "s_run", 1, 1, "/src/p/a.rs", 3),
+        codemap.Function("a::Thing<u8>::go", "s_go1", 2, 1, "/src/p/a.rs", 9),
+        codemap.Function("a::Thing<u16>::go", "s_go2", 3, 1, "/src/p/a.rs", 9),
+    ]
+    cmap = codemap.CodeMap(Path("/bin/x"), functions, "test",
+                           files={"/src/p/a.rs": functions})
+    lines = codemap.callgraph_lines(cmap, {"s_run": ("s_go1", "s_go2", "malloc@plt")}, "x", focus="a::run")
+    text = "\n".join(lines)
+    assert "→ a::Thing::go ×2" in text
+    assert "→ malloc  (shared library)" in text

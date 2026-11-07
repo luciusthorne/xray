@@ -61,6 +61,7 @@ xray rg --code                         # 52 program files, 21 crates, the Rust s
 xray rg --code core/main.rs            # the functions in main.rs, then the file
 xray rg --code rg::main                # ripgrep's main, from its source
 xray btop --code clean_quit            # C++
+xray rg --callgraph rg::search         # what it calls and what calls it, with files and lines
 ```
 
 ## Evidence graph: `inspect`, `why`, `scan` and `reach`
