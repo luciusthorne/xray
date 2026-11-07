@@ -17,6 +17,23 @@ def function_names(path, kind):
     """Names --code accepts for this file (outer definitions first)."""
 
     if kind == "elf":
+        from xray import codemap
+
+        try:
+            cmap = codemap.code_map(path)
+        except (OSError, ValueError):
+            cmap = None
+        if cmap is not None and cmap.files:
+            # Readable names, the program's own first (in file and line order), then the rest.
+            def rank(function):
+                group = codemap._origin(cmap, function.file)[0] if function.file else "program"
+                return (codemap._GROUP_ORDER.get(group, 9), function.file or "~", function.line or 0)
+
+            return list(dict.fromkeys(
+                codemap._base(function.name) or function.name
+                for function in sorted(cmap.functions, key=rank)
+                if not codemap._is_cold(function)
+            ))
         from xray.minidebug import debuginfod_function_table, read_function_table
 
         return list(dict.fromkeys(entry[2] for entry in read_function_table(path) or debuginfod_function_table(path)))
@@ -66,7 +83,13 @@ def _views(path, kind):
         from xray.fingerprint import toolchain_lines
         from xray.uses import uses_lines
 
+        def callgraph():
+            from xray.codemap import elf_callgraph
+
+            return elf_callgraph(path) or ["No function names in this binary"]
+
         views += [
+            ("Call graph", callgraph),
             ("Toolchain", lambda: toolchain_lines(path)),
             ("Uses", lambda: uses_lines(path)),
         ]
