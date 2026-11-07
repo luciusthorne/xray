@@ -36,6 +36,22 @@ def _purl(label, manager):
         return f"pkg:alpm/arch/{name}@{version}" if version else f"pkg:alpm/arch/{name}"
     if manager == "rpm":
         return f"pkg:rpm/{name}@{version}" if version else f"pkg:rpm/{name}"
+    if manager == "dpkg":
+        vendor = _os_id() or "debian"
+        return f"pkg:deb/{vendor}/{name}@{version}" if version else f"pkg:deb/{vendor}/{name}"
+    return None
+
+
+def _os_id():
+    """ID from /etc/os-release (debian, ubuntu, ...), for package URLs."""
+
+    try:
+        with open("/etc/os-release", encoding="utf-8") as release:
+            for line in release:
+                if line.startswith("ID="):
+                    return line.split("=", 1)[1].strip().strip('"') or None
+    except OSError:
+        return None
     return None
 
 

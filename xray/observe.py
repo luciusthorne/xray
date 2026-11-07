@@ -22,8 +22,14 @@ from .errors import AnalysisError
 _CALLS = (
     "execve,execveat,open,openat,openat2,creat,mkdir,mkdirat,unlink,unlinkat,rename,renameat,renameat2,"
     "rmdir,symlink,symlinkat,link,linkat,truncate,chdir,fchdir,socket,connect,bind,clone,clone3,fork,vfork,"
-    "access,faccessat,faccessat2"
+    "access,faccessat,faccessat2,"
+    # the dangerous calls a contract's [syscalls] section may deny (xray/seccomp.py)
+    "ptrace,process_vm_readv,process_vm_writev,pidfd_getfd,init_module,finit_module,delete_module,kexec_load,"
+    "kexec_file_load,mount,umount2,pivot_root,chroot,setns,unshare,move_mount,open_tree,fsopen,fsconfig,fsmount,"
+    "mount_setattr,reboot,swapon,swapoff,settimeofday,clock_settime,clock_adjtime,adjtimex,acct,quotactl,bpf,"
+    "perf_event_open,userfaultfd,keyctl,add_key,request_key,iopl,ioperm,open_by_handle_at,name_to_handle_at"
 )
+_DANGEROUS = frozenset(_CALLS.split(",")[_CALLS.split(",").index("ptrace"):])
 _LINE = re.compile(r"^(?P<pid>\d+)\s+(?P<call>\w+)\((?P<args>.*)\)\s+=\s+(?P<ret>-?\d+|\?)(?P<rest>.*)$")
 _UNFINISHED = re.compile(r"^(?P<pid>\d+)\s+(?P<head>.*) <unfinished \.\.\.>$")
 _RESUMED = re.compile(r"^(?P<pid>\d+)\s+<\.\.\. (?P<call>\w+) resumed>(?P<tail>.*)$")
@@ -43,6 +49,7 @@ class Observed:
     write: list = field(default_factory=list)
     net: list = field(default_factory=list)  # (kind, protocol, port-or-path)
     probed: list = field(default_factory=list)  # files the run tested for execute permission (test -x)
+    syscalls: list = field(default_factory=list)  # dangerous system calls the run made (xray/seccomp.py)
     status: int | None = None
     timed_out: bool = False
 
@@ -93,6 +100,8 @@ def parse_capabilities(text, cwd):
         pid, call, args, ret = match.group("pid"), match.group("call"), match.group("args"), match.group("ret")
         if root_pid is None:
             root_pid = pid
+        if call in _DANGEROUS and call not in observed.syscalls:
+            observed.syscalls.append(call)
         code = int(ret) if ret != "?" else -1
         strings = [_unescape(item) for item in _STRING.findall(args)]
         first_arg = args.split(",", 1)[0].strip()

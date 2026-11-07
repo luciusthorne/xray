@@ -62,15 +62,101 @@ def _pacman_package(path):
     return next((line.strip() for line in version.stdout.splitlines() if line.strip()), None)
 
 
+def _usrmerge_aliases(path):
+    """The path itself, then its other name on a merged-/usr system.
+
+    Debian's dpkg database keeps the path a package shipped (/bin/ls) while
+    the file is reached as /usr/bin/ls, and the other way round.
+    """
+
+    out = [path]
+    for short in ("/bin/", "/sbin/", "/lib/", "/lib32/", "/lib64/", "/libx32/"):
+        if path.startswith(short):
+            out.append("/usr" + path)
+        elif path.startswith("/usr" + short):
+            out.append(path[4:])
+    return out
+
+
+def _dpkg_owner_lines(paths):
+    """{queried path: package (name or name:arch)} from one dpkg-query -S call."""
+
+    try:
+        result = subprocess.run(
+            ["dpkg-query", "-S", "--", *paths],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=False,
+        )
+    except OSError:
+        return {}
+    wanted = set(paths)
+    owners = {}
+    for line in result.stdout.splitlines():
+        if line.startswith("diversion by "):
+            continue
+        packages, separator, file = line.partition(": ")
+        if separator and file in wanted and packages and file not in owners:
+            owners[file] = packages.split(", ")[0].strip()
+    return owners
+
+
+def _dpkg_versions(packages):
+    """{package (as given): "name version"} from one dpkg-query -W call."""
+
+    packages = sorted(set(packages))
+    if not packages:
+        return {}
+    try:
+        result = subprocess.run(
+            ["dpkg-query", "-W", "-f", "${binary:Package} ${Package} ${Version}\n", "--", *packages],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=False,
+        )
+    except OSError:
+        return {}
+    versions = {}
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 3:
+            qualified, name, version = parts
+            versions[qualified] = versions[name] = f"{name} {version}"
+    return {package: versions[package] for package in packages if package in versions}
+
+
+def _dpkg_owners(paths):
+    """{path: ("dpkg", "name version")} for the paths a dpkg package owns."""
+
+    if shutil.which("dpkg-query") is None:
+        return {}
+    aliases = {path: _usrmerge_aliases(path) for path in paths}
+    lines = _dpkg_owner_lines(sorted({alias for names in aliases.values() for alias in names}))
+    owner = {}
+    for path, names in aliases.items():
+        found = next((lines[name] for name in names if name in lines), None)
+        if found:
+            owner[path] = found
+    versions = _dpkg_versions(owner.values())
+    return {path: ("dpkg", versions[package]) for path, package in owner.items() if package in versions}
+
+
+def _dpkg_package(path):
+    found = _dpkg_owners([path])
+    return found[path][1] if path in found else None
+
+
 def package_of(path):
     """Return the installed package that owns a file, or None.
 
-    RPM systems return name-version-release.arch. Pacman systems return
-    the package manager's ``name version`` line. Unowned files return None.
+    RPM systems return name-version-release.arch. Pacman and dpkg (Debian,
+    Ubuntu) systems return ``name version``. Unowned files return None.
     """
 
     resolved = str(Path(path).resolve())
-    return _rpm_package(resolved) or _pacman_package(resolved)
+    return _rpm_package(resolved) or _pacman_package(resolved) or _dpkg_package(resolved)
 
 
 def package_manager(path):
@@ -80,6 +166,8 @@ def package_manager(path):
         return "rpm"
     if _pacman_package(resolved):
         return "pacman"
+    if _dpkg_package(resolved):
+        return "dpkg"
     return None
 
 
@@ -87,8 +175,8 @@ def packages_of(paths):
     """Return {path: (manager, "name version")} for files owned by a package.
 
     One package-manager call covers every path. Paths are used as
-    given (resolve them first). Unowned files, and systems without rpm
-    or pacman, are simply left out.
+    given (resolve them first). Unowned files, and systems without rpm,
+    pacman or dpkg, are simply left out.
     """
 
     paths = [str(path) for path in paths]
@@ -101,9 +189,11 @@ def packages_of(paths):
             return owned
 
     if shutil.which("pacman") is not None:
-        return _pacman_owners(paths)
+        owned = _pacman_owners(paths)
+        if owned:
+            return owned
 
-    return {}
+    return _dpkg_owners(paths)
 
 
 _OWNER_FORMAT = "%{NAME} %{VERSION}-%{RELEASE}.%{ARCH}\n"
