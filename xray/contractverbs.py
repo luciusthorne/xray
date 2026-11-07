@@ -17,7 +17,8 @@ USAGE = """usage: xray contract generate <command> [-o FILE] [--trace -- ARGS...
        xray contract check <contract> [--trace -- ARGS...] [--strict] [--json]
        xray contract enforce <contract> [--read PATH] [--write PATH] [--dry-run] -- ARGS...
        xray contract minimize <contract> [-o FILE] [--all] [--max-runs N] -- ARGS...
-       xray contract systemd <contract> [--dropin] [--run] [-- ARGS...]"""
+       xray contract systemd <contract> [--dropin] [--run] [-- ARGS...]
+       xray contract kubernetes <contract> [--name NAME] [--image IMAGE] [-o DIR] [-- ARGS...]"""
 
 
 def _split(argv):
@@ -59,6 +60,11 @@ def _parser(name):
                             help="run the program now with systemd-run --user under these settings")
         parser.add_argument("--hide-home", action="store_true",
                             help="hide the home directory except the contract's [read] entries (stricter; see docs)")
+    if name == "kubernetes":
+        parser.add_argument("--name", help="resource name (default: from the program's file name)")
+        parser.add_argument("--image", help="container image that holds the program")
+        parser.add_argument("-o", "--output", metavar="DIR",
+                            help="write NAME.yaml (and NAME.seccomp.json for [syscalls]) into DIR")
     if name == "minimize":
         parser.add_argument("-o", "--output", metavar="FILE")
         parser.add_argument("--workloads", metavar="FILE", help="keep every workload in FILE working (one per line)")
@@ -76,7 +82,7 @@ def run_contract(argv):
         print(USAGE)
         return 0
     name, rest = argv[0], argv[1:]
-    if name not in ("generate", "check", "enforce", "minimize", "systemd"):
+    if name not in ("generate", "check", "enforce", "minimize", "systemd", "kubernetes"):
         raise CLIError(USAGE)
     options_argv, workload = _split(rest)
     parser = _parser(name)
@@ -88,7 +94,7 @@ def run_contract(argv):
         raise CLIError(f"usage: {parser.format_usage().strip()}") from None
     try:
         return {"generate": _generate, "check": _check, "enforce": _enforce, "minimize": _minimize,
-                "systemd": _systemd}[name](options, workload)
+                "systemd": _systemd, "kubernetes": _kubernetes}[name](options, workload)
     except ContractError as error:
         raise CLIError(f"contract: {error}") from None
 
@@ -529,3 +535,25 @@ def _systemd(options, workload):
     # systemd-run starts from a clean environment; run_command passes the desktop and locale settings
     # programs read, so the run takes the same code path it took when the contract was made.
     return subprocess.run(systemd.run_command(contract, args, options.hide_home), check=False).returncode
+
+
+def _kubernetes(options, workload):
+    from . import kubernetes
+
+    contract = load_contract(options.contract)
+    name = options.name or kubernetes.resource_name(contract.program)
+    text, profile = kubernetes.manifests(contract, name, options.image, workload or [])
+    if not options.output:
+        print(text, end="")
+        if profile:
+            print(f"# the seccomp profile is written with -o DIR ({name}.seccomp.json)", file=sys.stderr)
+        return 0
+    folder = Path(options.output)
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{name}.yaml").write_text(text, encoding="utf-8")
+    written = [f"{name}.yaml"]
+    if profile:
+        (folder / f"{name}.seccomp.json").write_text(profile, encoding="utf-8")
+        written.append(f"{name}.seccomp.json")
+    print(f"wrote {', '.join(str(folder / item) for item in written)}")
+    return 0
