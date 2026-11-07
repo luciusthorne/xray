@@ -90,6 +90,7 @@ _TEMPLATE = r"""<!doctype html>
     <button id="cycles" type="button">Highlight cycles</button>
     <button id="theme" type="button">Light theme</button>
     <button id="impact" type="button">Show impact</button>
+    <button id="fit" type="button" title="Zoom to show the whole graph">Fit</button>
     <div id="hint">Shift-click a node to trace the shortest path from the selected one.</div>
   </div>
 </div>
@@ -197,12 +198,31 @@ _TEMPLATE = r"""<!doctype html>
       l.t.vx -= (dx / d) * f; l.t.vy -= (dy / d) * f;
     });
     nodes.forEach(function (n) {
-      n.vx -= n.x * 0.004; n.vy -= n.y * 0.004;
+      n.vx -= n.x * 0.012; n.vy -= n.y * 0.012;
       if (!n.fixed) { n.x += n.vx * alpha; n.y += n.vy * alpha; }
       n.vx *= 0.82; n.vy *= 0.82;
     });
-    alpha = Math.max(alpha * 0.992, 0.03);
+    // cool to a stop: a settled layout stays put and the page stops using CPU
+    alpha = alpha * 0.985;
+    if (alpha < 0.004) alpha = 0;
     draw();
+  }
+
+  var running = false, userMoved = false, fitted = false;
+
+  function loop() {
+    if (alpha > 0 || (drag && drag.node)) {
+      tick();
+      requestAnimationFrame(loop);
+      return;
+    }
+    running = false;
+    if (!fitted && !userMoved) { fitted = true; fit(); }
+  }
+
+  function reheat(value) {
+    alpha = Math.max(alpha, value);
+    if (!running) { running = true; requestAnimationFrame(loop); }
   }
 
   function draw() {
@@ -221,11 +241,39 @@ _TEMPLATE = r"""<!doctype html>
   function applyView() {
     view.setAttribute("transform", "translate(" + panX + "," + panY + ") scale(" + scale + ")");
   }
+  // The area of the stage not covered by the floating controls and legend.
+  function freeArea() {
+    var box = svg.getBoundingClientRect();
+    var top = 0, bottom = box.height;
+    var controls = document.getElementById("controls");
+    if (controls && !controls.hidden) top = Math.min(box.height / 2, controls.getBoundingClientRect().bottom - box.top + 8);
+    var legend = document.getElementById("legend");
+    if (legend && legend.offsetHeight) bottom = Math.max(top + 40, legend.getBoundingClientRect().top - box.top - 8);
+    return { top: top, bottom: bottom, width: box.width };
+  }
   function centre() {
-    panX = svg.clientWidth / 2; panY = svg.clientHeight / 2; applyView();
+    var area = freeArea();
+    panX = area.width / 2; panY = (area.top + area.bottom) / 2; applyView();
+  }
+  // Zoom and pan so every visible node fits in the free area.
+  function fit() {
+    var shownNodes = nodes.filter(function (n) { return !n.el.classList.contains("gone"); });
+    if (!shownNodes.length) { centre(); return; }
+    var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    shownNodes.forEach(function (n) {
+      x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y);
+      x1 = Math.max(x1, n.x + 9 + 7 * Math.min(n.label.length, 40)); y1 = Math.max(y1, n.y);
+    });
+    var area = freeArea(), margin = 24;
+    var w = Math.max(x1 - x0, 1), h = Math.max(y1 - y0, 1);
+    scale = Math.min(6, Math.max(0.15, Math.min((area.width - 2 * margin) / w, (area.bottom - area.top - 2 * margin) / h)));
+    panX = area.width / 2 - ((x0 + x1) / 2) * scale;
+    panY = (area.top + area.bottom) / 2 - ((y0 + y1) / 2) * scale;
+    applyView();
   }
   centre();
-  window.addEventListener("resize", centre);
+  function relayout() { if (userMoved) applyView(); else if (fitted) fit(); else centre(); }
+  window.addEventListener("resize", relayout);
 
   svg.addEventListener("wheel", function (ev) {
     ev.preventDefault();
@@ -236,6 +284,7 @@ _TEMPLATE = r"""<!doctype html>
     panX = mx - (mx - panX) * (next / scale);
     panY = my - (my - panY) * (next / scale);
     scale = next;
+    userMoved = true;
     applyView();
   }, { passive: false });
 
@@ -244,6 +293,7 @@ _TEMPLATE = r"""<!doctype html>
   svg.addEventListener("mousedown", function (ev) {
     if (ev.target !== svg) return;
     drag = { pan: true, x: ev.clientX, y: ev.clientY };
+    userMoved = true;
     svg.classList.add("panning");
   });
 
@@ -251,6 +301,7 @@ _TEMPLATE = r"""<!doctype html>
     ev.stopPropagation();
     drag = { node: n, moved: false };
     n.fixed = true;
+    reheat(0);
   }
 
   window.addEventListener("mousemove", function (ev) {
@@ -264,7 +315,7 @@ _TEMPLATE = r"""<!doctype html>
       drag.node.x = (ev.clientX - rect.left - panX) / scale;
       drag.node.y = (ev.clientY - rect.top - panY) / scale;
       drag.moved = true;
-      alpha = Math.max(alpha, 0.3);
+      reheat(0.3);
       draw();
     }
   });
@@ -638,11 +689,12 @@ __SERVE__
     if (!resizing) return;
     var w = Math.min(700, Math.max(240, window.innerWidth - ev.clientX));
     panel.style.width = w + "px";
-    centre();
+    relayout();
   });
   window.addEventListener("mouseup", function () { resizing = false; });
 
-  (function loop() { tick(); requestAnimationFrame(loop); })();
+  document.getElementById("fit").addEventListener("click", function () { userMoved = false; fit(); });
+  reheat(1);
 })();
 </script>
 </body>
