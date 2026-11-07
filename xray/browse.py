@@ -88,6 +88,16 @@ def _views(path, kind):
 
         views.append(("Call graph", shell_callgraph))
 
+    if kind in ("perl", "ruby", "javascript", "typescript", "lua"):
+        def named_callgraph():
+            from xray.scriptgraph import callgraph_lines, symbol_graph
+
+            graph = symbol_graph(path, kind)
+            return (["Calls found by name (name( / obj.name( / bare names in Perl and Ruby)", ""]
+                    + callgraph_lines(graph, Path(path).name)) if graph else ["No functions found"]
+
+        views.append(("Call graph", named_callgraph))
+
     if kind == "elf":
         from xray.fingerprint import toolchain_lines
         from xray.uses import uses_lines
