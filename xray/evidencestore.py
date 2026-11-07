@@ -23,7 +23,7 @@ import sqlite3
 import time
 from pathlib import Path
 
-FACTS_VERSION = 5  # bump when the shape or meaning of stored facts changes
+FACTS_VERSION = 6  # bump when the shape or meaning of stored facts changes
 
 
 def cache_dir():

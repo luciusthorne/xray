@@ -12,7 +12,7 @@ from .contract import BASELINE_DEVICES, BASELINE_READ, Contract, Entry, matches
 from .evidencestore import file_sha256
 
 EXEC_LINKS = ("runs", "interpreter")
-LOAD_LINKS = ("needs", "imports", "sources", "includes")
+LOAD_LINKS = ("needs", "dlopens", "imports", "sources", "includes")
 TEMP_DIRS = ("/tmp", "/var/tmp", "/dev/shm")
 
 

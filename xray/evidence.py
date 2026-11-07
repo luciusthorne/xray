@@ -48,6 +48,7 @@ LINK_KINDS = (
     "includes",      # C #include
     "interpreter",   # shebang or PT_INTERP: what executes this file
     "needs",         # ELF DT_NEEDED: binary or library -> soname
+    "dlopens",       # ELF dlopen metadata note: binary or library -> soname it may load on demand
     "resolves_to",   # soname or command name -> the file the system picks
     "owned_by",      # file -> installed package
     "executed",      # observed in a traced run
@@ -599,6 +600,33 @@ class _Builder:
             if found.path is None:
                 self.graph.nodes[soname_id].attrs["resolved"] = False
                 continue
+            target_id = self.file_node(found.path, depth)
+            if target_id:
+                self.graph.add_link(
+                    soname_id, target_id, "resolves_to",
+                    Evidence("inferred", found.method, _resolution_detail(soname, found)),
+                )
+        for entry in scan.dlopen:
+            found = None
+            for soname in entry.sonames:
+                found = resolve_library(
+                    soname, origin, scan.rpath, scan.runpath, inherited,
+                    scan.elf_class, scan.nodeflib, self.ld_entries(), secure=secure,
+                )
+                if found.path is not None:
+                    break
+            soname_id = self.graph.add_node(f"soname:{soname}", "soname", soname).id
+            what = f"feature {entry.feature}, {entry.priority}" if entry.feature else entry.priority
+            self.graph.add_link(
+                path, soname_id, "dlopens",
+                Evidence("declared", "elf-dlopen-note",
+                         f"dlopen metadata ({what}): may load {' or '.join(entry.sonames)} on demand", path),
+            )
+            if found is None or found.path is None:
+                if not any(link.kind == "resolves_to" for link in self.graph.outgoing(soname_id)):
+                    self.graph.nodes[soname_id].attrs["resolved"] = False
+                continue
+            self.graph.nodes[soname_id].attrs.pop("resolved", None)
             target_id = self.file_node(found.path, depth)
             if target_id:
                 self.graph.add_link(

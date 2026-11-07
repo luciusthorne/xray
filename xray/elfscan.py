@@ -1,5 +1,7 @@
+import json
 import os
 import re
+import struct
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,6 +43,108 @@ class ElfScan:
     runpath: tuple = ()
     elf_class: int = 64
     nodeflib: bool = False
+    dlopen: tuple = ()  # DlopenEntry: libraries loaded on demand (FDO dlopen metadata notes)
+
+
+@dataclass(frozen=True)
+class DlopenEntry:
+    """One entry of an FDO dlopen metadata note (.note.dlopen).
+
+    The program may load one of sonames (tried in order) when the feature is
+    used. Spec: https://uapi-group.org/specifications/specs/elf_dlopen_metadata/
+    """
+
+    feature: str
+    priority: str
+    sonames: tuple
+    description: str = ""
+
+
+NT_FDO_DLOPEN_METADATA = 0x407C0C0A
+_MAX_NOTE_BYTES = 1 << 20
+
+
+def parse_note_section(data, little=True, align=4):
+    """Yield (name, type, desc) for each note in a SHT_NOTE section's bytes."""
+
+    order = "<" if little else ">"
+    align = 8 if align == 8 else 4
+    pad = lambda size: (size + align - 1) & ~(align - 1)
+    offset = 0
+    while offset + 12 <= len(data):
+        namesz, descsz, kind = struct.unpack_from(order + "III", data, offset)
+        offset += 12
+        name = data[offset:offset + namesz].rstrip(b"\0").decode("ascii", "replace")
+        offset += pad(namesz)
+        if offset + descsz > len(data):
+            return
+        yield name, kind, data[offset:offset + descsz]
+        offset += pad(descsz)
+
+
+def parse_dlopen_payload(desc):
+    """DlopenEntry tuple from one note's JSON payload; malformed entries are skipped."""
+
+    try:
+        items = json.loads(desc.rstrip(b"\0").decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return ()
+    if not isinstance(items, list):
+        return ()
+    out = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        sonames = item.get("soname")
+        if not isinstance(sonames, list) or not sonames or not all(isinstance(s, str) and s for s in sonames):
+            continue
+        priority = item.get("priority", "recommended")
+        out.append(DlopenEntry(
+            str(item.get("feature", "")), priority if isinstance(priority, str) else "recommended",
+            tuple(sonames), str(item.get("description", "")),
+        ))
+    return tuple(out)
+
+
+def read_dlopen_notes(path):
+    """Libraries an ELF file declares it may dlopen, from FDO dlopen metadata notes."""
+
+    try:
+        with open(path, "rb") as handle:
+            ident = handle.read(64)
+            if len(ident) < 52 or ident[:4] != b"\x7fELF":
+                return ()
+            is64, little = ident[4] == 2, ident[5] == 1
+            order = "<" if little else ">"
+            if is64:
+                shoff, = struct.unpack_from(order + "Q", ident, 0x28)
+                shentsize, shnum = struct.unpack_from(order + "HH", ident, 0x3A)
+                layout, width = order + "IIQQQQIIQQ", 64
+            else:
+                shoff, = struct.unpack_from(order + "I", ident, 0x20)
+                shentsize, shnum = struct.unpack_from(order + "HH", ident, 0x2E)
+                layout, width = order + "IIIIIIIIII", 40
+            if not shoff or shentsize < width or not 0 < shnum < 65280:
+                return ()
+            handle.seek(shoff)
+            table = handle.read(shentsize * shnum)
+            entries = []
+            for index in range(shnum):
+                if (index + 1) * shentsize > len(table):
+                    break
+                fields = struct.unpack_from(layout, table, index * shentsize)
+                # same field order in both classes: name, type, flags, addr, offset, size, link, info, addralign
+                sh_type, sh_offset, sh_size, sh_align = fields[1], fields[4], fields[5], fields[8]
+                if sh_type != 7 or not 0 < sh_size <= _MAX_NOTE_BYTES:
+                    continue
+                handle.seek(sh_offset)
+                data = handle.read(sh_size)
+                for name, kind, desc in parse_note_section(data, little, sh_align):
+                    if name == "FDO" and kind == NT_FDO_DLOPEN_METADATA:
+                        entries.extend(parse_dlopen_payload(desc))
+            return tuple(entries)
+    except (OSError, struct.error):
+        return ()
 
 
 def parse_dynamic(text):
@@ -155,4 +259,5 @@ def scan_elf(path):
         runpath,
         elf_class(path),
         nodeflib,
+        read_dlopen_notes(path),
     )
