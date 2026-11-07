@@ -278,7 +278,7 @@ def disasm_lines(path, timeout=30, max_callers=40, max_callees=10):
     return lines
 
 
-def disasm_result(path, timeout=30):
+def disasm_result(path, timeout=30, table=None):
     """Return the DisasmResult for an ELF binary, or None.
 
     None when the file is not ELF, objdump is missing or too slow, or
@@ -306,4 +306,6 @@ def disasm_result(path, timeout=30):
     except (OSError, subprocess.SubprocessError):
         return None
 
-    return parse_calls(result.stdout, read_function_table(path) or debuginfod_function_table(path))
+    if table is None:
+        table = read_function_table(path) or debuginfod_function_table(path)
+    return parse_calls(result.stdout, table)

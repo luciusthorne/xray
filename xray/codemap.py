@@ -51,6 +51,8 @@ class CodeMap:
     build_id: str | None = None
     debug_file: Path | None = None
     files: dict = field(default_factory=dict)   # file -> [Function], in line order
+    go: object = None                            # gocode.GoInfo for Go programs
+    where_from: dict = field(default_factory=dict)  # file -> where its source came from
 
     def located(self):
         return [function for function in self.functions if function.file]
@@ -127,6 +129,24 @@ def code_map(path, online=True):
     if key in _CACHE:
         return _CACHE[key]
 
+    from xray import gocode
+
+    go_functions, go_info = gocode.go_functions(path)
+    if go_functions:
+        functions = [
+            Function(gocode.go_base(name), name, address, size, file, line)
+            for address, size, name, file, line in sorted(go_functions)
+        ]
+        files = defaultdict(list)
+        for function in functions:
+            if function.file:
+                files[function.file].append(function)
+        for listed in files.values():
+            listed.sort(key=lambda function: (function.line or 0, function.name))
+        result = CodeMap(path, functions, "the Go runtime's function table (.gopclntab)", files=dict(files), go=go_info)
+        _CACHE[key] = result
+        return result
+
     table, debug_file, via, build_id = read_function_table(path), None, "the binary's symbol table", None
     if table and _has_line_info(path):
         debug_file = path
@@ -181,7 +201,20 @@ def origin(file):
     return "program", None
 
 
+def _origin(cmap, file):
+    if cmap is not None and cmap.go is not None:
+        from xray import gocode
+
+        return gocode.origin(file, cmap.go)
+    return origin(file)
+
+
 def _short(file, prefix):
+    from xray.gocode import _DEP
+
+    go_dependency = _DEP.match(file)
+    if go_dependency:
+        return go_dependency["inner"]
     for pattern in (_CARGO_CRATE, _CARGO_GIT, _RUST_VENDOR):
         match = pattern.search(file)
         if match:
@@ -194,10 +227,10 @@ def _short(file, prefix):
     return file
 
 
-def _program_prefix(files):
+def _program_prefix(files, cmap=None):
     """Common directory of the program's own files, so they print as project paths."""
 
-    own = [file for file in files if origin(file)[0] == "program"]
+    own = [file for file in files if _origin(cmap, file)[0] == "program"]
     if not own:
         return ""
     prefix = posixpath.commonpath(own) if len(own) > 1 else posixpath.dirname(own[0])
@@ -210,7 +243,7 @@ def overview_lines(cmap, name, limit=40):
     """Files grouped by origin with their function counts."""
 
     located = cmap.located()
-    prefix = _program_prefix(cmap.files)
+    prefix = _program_prefix(cmap.files, cmap)
     lines = [
         (f"Code map of {name}: {len(cmap.functions):,} functions, {len(located):,} located in "
         f"{len(cmap.files):,} source files (names and lines from {cmap.via})"),
@@ -221,7 +254,7 @@ def overview_lines(cmap, name, limit=40):
 
     groups = defaultdict(lambda: defaultdict(list))
     for file, functions in cmap.files.items():
-        group, label = origin(file)
+        group, label = _origin(cmap, file)
         groups[group][label].append((file, functions))
 
     def file_rows(entries, indent="  "):
@@ -249,7 +282,7 @@ def overview_lines(cmap, name, limit=40):
             lines.append("")
             lines.append(f"{label}: {len(entries)} file(s), {sum(len(f) for _, f in entries):,} function(s)")
     example_file = _short(max(program, key=lambda item: len(item[1]))[0], prefix) if program else None
-    example_function = next((f.name for f in located if origin(f.file)[0] == "program" and "main" in f.name),
+    example_function = next((f.name for f in located if _origin(cmap, f.file)[0] == "program" and "main" in f.name),
                             located[0].name if located else None)
     lines += ["", "Next"]
     if example_file:
@@ -478,8 +511,15 @@ def crate_source(file, fetch=None):
 
 
 def fetch_source(cmap, file):
-    """Local path of a source file: on this machine, from debuginfod, or (Rust crates) from crates.io."""
+    """Local path of a source file: on this machine, from debuginfod, from crates.io or rust-src
+    (Rust), or from the Go module proxy and Go repository (Go)."""
 
+    if cmap.go is not None:
+        from xray import gocode
+
+        found, where = gocode.source(file, cmap.go)
+        cmap.where_from[file] = where
+        return found
     if Path(file).is_file():
         return Path(file)
     if _CARGO_CRATE.search(file) or _RUST_VENDOR.search(file):
@@ -613,10 +653,12 @@ def function_code(cmap, function, max_lines=400):
     numbered = [f"{n:5d}  {text}" for n, text in enumerate(shown[:max_lines], start)]
     if len(shown) > max_lines:
         numbered.append(f"... and {len(shown) - max_lines} more lines")
-    return f"{function.file}:{start} (source from {_where(function.file)})", numbered
+    return f"{function.file}:{start} (source from {_where(function.file, cmap)})", numbered
 
 
-def _where(file):
+def _where(file, cmap=None):
+    if cmap is not None and file in cmap.where_from:
+        return cmap.where_from[file]
     if Path(file).is_file():
         return "this machine"
     if _CARGO_CRATE.search(file) or _RUST_VENDOR.search(file):
@@ -680,7 +722,7 @@ def file_view(cmap, wanted, name, max_lines=2000):
     if local is None:
         return lines + ["", "The file itself is not on this machine and could not be fetched."]
     text = local.read_text(encoding="utf-8", errors="replace").splitlines()
-    where = _where(file)
+    where = _where(file, cmap)
     numbered = [f"{n:5d}  {line}" for n, line in enumerate(text[:max_lines], 1)]
     if len(text) > max_lines:
         numbered.append(f"... and {len(text) - max_lines} more lines")
@@ -692,7 +734,7 @@ def file_view(cmap, wanted, name, max_lines=2000):
 _GROUP_ORDER = {"program": 0, "dependency": 1, "standard library": 2, "system headers": 3, "import": 4, "?": 5}
 
 
-def _entry(function, prefix):
+def _entry(function, prefix, cmap=None):
     """(group, short readable name, place) for a function."""
 
     if function is None:
@@ -700,7 +742,7 @@ def _entry(function, prefix):
     short = _base(function.name) or function.name
     if not function.file:
         return "program", short, ""
-    return origin(function.file)[0], short, f"{_short(function.file, prefix)}:{function.line}"
+    return _origin(cmap, function.file)[0], short, f"{_short(function.file, prefix)}:{function.line}"
 
 
 def _is_cold(function):
@@ -717,12 +759,12 @@ def callgraph_lines(cmap, calls, name, focus=None, indirect=0, limit=60, per_fun
     """
 
     by_symbol = {function.symbol: function for function in cmap.functions}
-    prefix = _program_prefix(cmap.files)
+    prefix = _program_prefix(cmap.files, cmap)
 
     def entry(symbol):
         if symbol.endswith("@plt"):
             return "import", _base(_demangle([symbol[:-4]])[0]) or symbol[:-4], "shared library"
-        return _entry(by_symbol.get(symbol), prefix)
+        return _entry(by_symbol.get(symbol), prefix, cmap)
 
     def rows(symbols, arrow):
         merged = {}
@@ -774,7 +816,7 @@ def callgraph_lines(cmap, calls, name, focus=None, indirect=0, limit=60, per_fun
         return lines[1:]
 
     own = [f for f in cmap.functions
-           if f.symbol in calls and not _is_cold(f) and (f.file is None or origin(f.file)[0] == "program")]
+           if f.symbol in calls and not _is_cold(f) and (f.file is None or _origin(cmap, f.file)[0] == "program")]
     own.sort(key=lambda f: (f.file or "~", f.line or 0, f.name))
     total = sum(len(callees) for callees in calls.values())
     lines = [(f"{len(calls):,} functions make {total:,} direct calls; the program's own functions "
@@ -809,7 +851,8 @@ def elf_callgraph(path, focus=None):
     cmap = code_map(path)
     if cmap is None:
         return None
-    found = disasm_result(path, timeout=120)
+    table = [(f.address, f.size, f.symbol) for f in cmap.functions] if cmap.go is not None else None
+    found = disasm_result(path, timeout=120, table=table)
     if found is None:
         return ["objdump could not read this binary"]
     return callgraph_lines(cmap, found.calls, Path(path).name, focus, found.indirect)
