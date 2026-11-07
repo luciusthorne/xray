@@ -52,3 +52,15 @@ Most languages fit one of three places:
   call graph.
 - **Its own format** (Go's `.gopclntab`, Lisp's S-expressions): a reader of
   its own, like `xray/gocode.py` or `xray/lisp.py`.
+
+## Releasing
+
+1. In one pull request: set `xray/__init__.py` to the new version and turn the
+   top of `CHANGELOG.md` into `## X.Y.Z`. Merge it when CI passes.
+2. Tag the merge commit and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+3. `.github/workflows/release.yml` checks that the tag matches the version,
+   builds and checks the distributions, creates the GitHub release with the
+   changelog section, and publishes to PyPI through trusted publishing when the
+   repository variable `PYPI_PUBLISHING` is `enabled`.
+4. Move the GitHub Action's major tag: `git tag -f v1 vX.Y.Z && git push -f origin v1`.
+5. Update the AUR package (`xray-trust`) with the sha256 of the sdist on PyPI.

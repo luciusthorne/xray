@@ -26,7 +26,7 @@ xray taint ./install.sh               # untrusted input reaching code, across sh
 
 XRAY never claims a program is safe: every report lists its blind spots, and every link says how it was found — observed in a run, declared by metadata, inferred from code, or guessed.
 
-![xray catching an xz-style library backdoor: drift, the capability log, a contract break, a traced breach, and enforcement stopping the payload](docs/xz-demo.gif)
+![xray catching an xz-style library backdoor: drift, the capability log, a contract break, a traced breach, and enforcement stopping the payload](https://raw.githubusercontent.com/luciusthorne/xray/main/docs/xz-demo.gif)
 
 ## Install
 
