@@ -3,13 +3,18 @@ import subprocess
 from pathlib import Path
 
 from xray import command_analyzers, python_analyzer  # noqa: F401
-from xray.analyzers import registry
 from xray.disasm import assembly_lines
 from xray.entrypoints import command_kind
 from xray.perlscan import scan_perl
 from xray.rizinview import function_lines
 from xray.shellscan import function_lines as shell_function_lines
 from xray.sourcelookup import files_lines, source_lines
+
+
+def _plugin_kinds():
+    from xray.analyzers import plugin_kinds
+
+    return plugin_kinds()
 
 
 def _numbered(lines, start=1, limit=400):
@@ -137,8 +142,13 @@ def code_lines(path, name=None, asm=False, say=lambda text: None):
         return lines
 
     try:
-        text = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
+        if kind == "lisp":
+            from xray.lisp import read_text
+
+            text = read_text(path).splitlines()  # also .el.gz
+        else:
+            text = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except (OSError, EOFError):
         return [f"Unable to read {path}"]
 
     if name is None:
@@ -159,8 +169,10 @@ def code_lines(path, name=None, asm=False, say=lambda text: None):
     elif kind == "perl":
         line = dict(scan_perl(path).subs).get(name)
         end = _brace_end(text, line)
-    elif kind in {"ruby", "javascript", "lua", "typescript", "c"}:
-        analyzer = registry.analyzer_for(path)
+    elif kind in {"ruby", "javascript", "lua", "typescript", "c", "lisp"} or kind in _plugin_kinds():
+        from xray.analyzers import analyzer_for
+
+        analyzer = analyzer_for(path)
         symbol = next(
             (symbol for symbol in analyzer.symbols(path) if symbol.name == name),
             None,
@@ -249,12 +261,46 @@ def _code_map_view(path, name, say):
         if view is not None:
             return view
     view = codemap.function_view(cmap, name, label)
+    if view is None and not cmap.files and cmap.functions:
+        view = _upstream_view(path, cmap, name, say)
     if view is None and cmap.go is not None:
         # Machine code of a whole Go binary helps no one; the function was probably inlined.
         return [(f"No function named {name!r} in {label}'s function table: the compiler may have inlined it, "
                 "or the name differs."),
                 f"See the map: xray {label} --code   ·   a file's functions: xray {label} --code FILE.go"]
     return view
+
+
+def _upstream_view(path, cmap, name, say):
+    """--code NAME for a binary with names but no line information: search the
+    upstream source its package was built from (a by-name guess, labelled)."""
+
+    from xray import codemap, upstream
+
+    wanted = [f for f in cmap.functions if name in (f.name, f.symbol)
+              or codemap._base(f.name) == name or codemap._base(f.name).endswith("::" + name)]
+    wanted = [f for f in wanted if not codemap._is_cold(f)] or wanted
+    if not wanted:
+        return None
+    qualified = codemap._base(wanted[0].name)
+    say("Looking for the upstream source this package was built from")
+    info = upstream.find_upstream(path)
+    if info is None:
+        return [f"{qualified} is in {path.name}, which has no line information and no package to fetch source for."]
+    if info.problem is None:
+        say(f"Fetching {info.archives[0][1]}")
+        upstream.prepare(info)
+    if info.problem is not None or info.root is None:
+        return [f"{qualified} is in {path.name}, which has no line information.",
+                f"Upstream source not available: {info.problem}"]
+    found = upstream.find_definition(info.root, qualified)
+    if found is None:
+        return [(f"{qualified}: no definition found by name in {info.archives[0][0]} "
+                "(inlined, generated or defined through a macro)."), upstream.note(info)]
+    file, start, lines = found
+    shown = [f"{n:5d}  {text}" for n, text in enumerate(lines, start)]
+    others = f" ({len(wanted)} functions share this name)" if len(wanted) > 1 else ""
+    return [qualified + others, f"{file.relative_to(info.root)}:{start}", upstream.note(info), ""] + shown
 
 
 def _source_unavailable(lines):

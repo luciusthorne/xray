@@ -197,6 +197,12 @@ def check_contract(contract, graph, observed=None, strict=False):
             item = {"section": section, "value": real, "how": "observed", "detail": f"{section} during the traced run"}
             if item not in breaches:
                 breaches.append(item)
+        for name in observed.syscalls:
+            if name in contract.values("syscalls"):
+                item = {"section": "syscalls", "value": name, "how": "observed",
+                        "detail": f"the traced run called {name}, which the contract denies"}
+                if item not in breaches:
+                    breaches.append(item)
         for kind, protocol, where in observed.net:
             allowed = contract.net_allows("unix") if kind == "unix" else contract.net_allows(kind, protocol, where)
             if not allowed:

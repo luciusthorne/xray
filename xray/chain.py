@@ -3,6 +3,8 @@ from pathlib import Path
 from xray.analyzers import registry
 from xray.entrypoints import command_kind
 
+from .analyzers import plugin_kinds
+
 
 def _children(path, kind):
     """Return (name, target, target_kind) for what a file runs or needs.
@@ -97,8 +99,8 @@ def chain_lines(
             lines.append(label)
 
             if target_kind in (
-                "shell", "elf", "python", "perl", "ruby", "javascript", "lua", "typescript", "c"
-            ):
+                "shell", "elf", "python", "perl", "ruby", "javascript", "lua", "typescript", "c", "lisp"
+            ) or target_kind in plugin_kinds():
                 extra = "    " if last else "│   "
                 walk(target, target_kind, depth + 1, prefix + extra)
 

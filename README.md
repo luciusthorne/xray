@@ -1,8 +1,19 @@
 # XRAY
 
-**Contracts for what software may do — with evidence, checked, and enforced.**
+**Read the code of any Linux command — its files, functions and call graph — and prove what it can do.**
 
-XRAY explains what a Linux program can do and proves each step: which commands a script runs and on which line, which libraries a binary loads and why the loader picks them, what a real run read, wrote and connected to. It writes that down as a reviewable capability contract, checks the program against it, enforces it with Landlock (no root), and shrinks it to what a workload provably needs. Across package versions it shows what software newly became able to do, and records it in a tamper-evident log.
+Point XRAY at a command and it shows you the code behind it: which language it is written in, which source files it was built from, every function with its file and line, the function's source, and which function calls which. That works for compiled programs (C, C++, Rust, Go) using the debug information and build data the binary and your distribution already publish, and for scripts (shell, Python, Perl, Ruby, JavaScript, TypeScript, Lua) read directly.
+
+```sh
+xray rg --code                        # ripgrep: 52 source files, 21 crates, the Rust standard library
+xray rg --code core/main.rs           # the functions in one file, then the file
+xray rg --code rg::main               # one function's source
+xray rg --callgraph rg::search        # what it calls and what calls it, each with file:line
+xray gh --code main.main              # Go, source from the module proxy at the exact version
+xray xdg-mime --callgraph             # shell: functions, the commands each one runs
+```
+
+Then XRAY answers what the code can do, with proof: which commands a script runs and on which line, which libraries a binary loads and why the loader picks them, what a real run read, wrote and connected to. It writes that down as a reviewable capability contract, checks the program against it, enforces it with Landlock (no root), and shrinks it to what a workload provably needs. Across package versions it shows what software newly became able to do.
 
 ```sh
 xray inspect xdg-open                 # everything it reaches, with the proof for every link
@@ -13,7 +24,7 @@ xray drift old.pkg.tar.zst new.pkg.tar.zst
 xray taint ./install.sh               # untrusted input reaching code, across shell and Python
 ```
 
-XRAY never claims a program is safe: every report lists its blind spots. It also keeps its older views — source lookup, call graphs, an HTML graph viewer — described below.
+XRAY never claims a program is safe: every report lists its blind spots, and every link says how it was found — observed in a run, declared by metadata, inferred from code, or guessed.
 
 ![xray catching an xz-style library backdoor: drift, the capability log, a contract break, a traced breach, and enforcement stopping the payload](docs/xz-demo.gif)
 
@@ -54,7 +65,7 @@ xray reach liblzma
 xray contract generate jq -o jq.contract
 ```
 
-Running `xray` by itself reads XRAY's own CLI source and suggests follow-up commands. Running `xray <command>` gives that command's overview and suggests code, calls, chains, dependency, cycle, path, and JSON queries. For compiled commands, `xray <command> --code` gives a code map: every function with its readable name, source file and line, grouped into the program's own files, its dependencies (Rust crates) and the standard library. `--code <file>` lists the functions a file defines and shows the file; `--code <function>` shows that function's source. This works for C, C++ and Rust (any language with DWARF line information), from the binary's own debug information or the debug file a debuginfod server has for its build ID; Rust dependency source comes from the crate's crates.io archive and Rust standard library source from the matching `rust-src`. Go programs need no debug file: every Go binary carries the runtime's function table (`.gopclntab`) and its build information, so names, files and lines come from the binary itself, dependency and main-module source from the Go module proxy at the exact versions, and standard library source from the Go repository at the exact release. Programs with names but no line information get their functions grouped by namespace.
+Running `xray` by itself reads XRAY's own CLI source and suggests follow-up commands. Running `xray <command>` gives that command's overview and suggests code, calls, chains, dependency, cycle, path, and JSON queries. For compiled commands, `xray <command> --code` gives a code map: every function with its readable name, source file and line, grouped into the program's own files, its dependencies (Rust crates) and the standard library. `--code <file>` lists the functions a file defines and shows the file; `--code <function>` shows that function's source. This works for C, C++ and Rust (any language with DWARF line information), from the binary's own debug information or the debug file a debuginfod server has for its build ID; Rust dependency source comes from the crate's crates.io archive and Rust standard library source from the matching `rust-src`. On Debian, where the debuginfod server has no source, it comes from sources.debian.org at the package's exact version, Debian's patches included. Go programs need no debug file: every Go binary carries the runtime's function table (`.gopclntab`) and its build information, so names, files and lines come from the binary itself, dependency and main-module source from the Go module proxy at the exact versions, and standard library source from the Go repository at the exact release. Programs with names but no line information get their functions grouped by namespace, and `--code NAME` searches the upstream source their pacman package was built from (the archive named in Arch's `.SRCINFO`, checksum verified) for that function by name — a labelled guess, since patches and build options can differ (`xray Hyprland --code CHyprCtl::getReply`).
 
 ```
 xray rg --code                         # 52 program files, 21 crates, the Rust standard library
@@ -66,6 +77,7 @@ xray gh --code main.main               # Go, source from the module proxy
 xray fzf --callgraph main.main         # Go call graph
 xray xdg-mime --callgraph defapp_generic   # shell: functions it calls, commands it runs, who calls it
 xray aclocal --callgraph               # Perl, Ruby, JavaScript, TypeScript, Lua: calls found by name
+xray subr-x.el.gz --callgraph string-limit   # Lisp (Emacs Lisp, Scheme, Common Lisp, Clojure): exact calls from S-expressions
 ```
 
 ## Evidence graph: `inspect`, `why`, `scan` and `reach`
@@ -114,6 +126,7 @@ xray contract minimize xdg-mime.contract -o xdg-mime.min -- query default text/p
 - `generate` fills `[exec]` and `[load]` from the evidence graph; with `--trace` it also runs the workload under strace and adds what the run executed, read, wrote and connected to (home paths become `~/`, temporary files become `/tmp/**`).
 - `check` rebuilds the evidence and lists everything the program now reaches that the contract does not allow — a new command, a library a rebuilt binary started loading — with the chain of proof; with `--trace`, also what a real run did. `--strict` counts a changed program file (SHA-256) as a breach.
 - `enforce` runs the program under Landlock (unprivileged; per-file execute/read/write rights and TCP ports) and, when `[net]` is `none`, in a private network namespace via bubblewrap. `--read`/`--write` add paths for one run; `--dry-run` prints the rules.
+- `[syscalls]` (contract version 2) denies dangerous system calls the program shows no sign of needing — debugging other processes, kernel modules, mounts and namespaces, `bpf`, keyrings and the like — unless the program or a library it loads imports the C function for it or a traced run made it. `enforce` blocks them with a seccomp filter (they fail with `EPERM`), `contract systemd` writes `SystemCallFilter=`, and `check --trace` reports a run that makes one.
 - `generate --workloads FILE` and `minimize --workloads FILE` take one command line per line: the contract covers every workload, and minimization keeps an entry when any workload needs it.
 - `contract systemd FILE [-- ARGS]` turns a contract into a systemd unit (`--dropin` for an existing service, `--run` to run it now with `systemd-run --user`): `[exec]`/`[load]` become `NoExecPaths=/` plus `ExecPaths=` for exactly those files, `[write]` becomes `ProtectSystem=strict` with `ReadWritePaths=`, `[net]` becomes `PrivateNetwork=`/`RestrictAddressFamilies=`/`SocketBindAllow=`. systemd does not limit reads (`--hide-home` hides the home directory except the contract's reads), and its no-exec mounts make `test -x` fail for anything outside `[exec]` — which is why runs are traced for execute-permission probes, and why `minimize --enforcer systemd` exists: minimize with the mechanism you deploy with.
 - `contract kubernetes FILE [--image IMAGE] [-o DIR] [-- ARGS]` writes a Pod and a NetworkPolicy from a contract: no privilege escalation, a read-only root file system, non-root, every capability dropped (`NET_BIND_SERVICE` kept only for a bind below 1024), `[write]` locations as `emptyDir` volumes, `[net]` as the only allowed traffic (`none` denies all), and `[syscalls]` as a seccomp profile written next to it. Per-file read and exec rights have no Kubernetes equivalent; `contract enforce` inside the container keeps them. Output validates with kubeconform `-strict`.
@@ -175,9 +188,17 @@ xray hook install     # prints the commands that install the hook (needs root)
 
 pacman runs the hook after downloading and before installing. For every package being upgraded it compares the new archive in the cache with the installed version and re-checks the capability pins of the contracts in `/etc/xray/contracts`. In `mode = report` (the default, in `/etc/xray/hook.conf`) it lists the gains; in `mode = block` it stops the upgrade on a strong gain or a broken contract, except for packages on the `allow` line. Because pacman runs hooks as root, `xray hook install` points the hook at a root-owned copy of XRAY, never a user-writable one.
 
+### Plugins
+
+Other packages can teach XRAY a new language: an analyzer offered under the `xray.analyzers` entry point group gets `--report`, `--code`, `--callgraph`, `inspect`/`why`/`reach` and `--serve` for its files, the same as XRAY's own script languages. `xray plugins` lists what loaded and why anything failed; a broken plugin is skipped, never fatal. See docs/plugins.md.
+
 ### In VS Code
 
 `editors/vscode` is a small extension (plain JavaScript, no build step) that runs the `xray` command: `xray taint` findings on save as diagnostics in shell and Python files, the evidence graph of the current file in a panel, and contract checks. `npx @vscode/vsce package` in that folder builds the `.vsix`.
+
+### In Emacs
+
+`editors/emacs/xray.el` (Emacs 27.1+, no dependencies) puts XRAY's code views in Emacs: `M-x xray` opens a menu; `xray-code`, `xray-code-at-point` and `xray-callgraph` show a command's files, functions, code and call graph in an `*xray*` buffer where function names, files and locations are buttons (`RET` follows, `c` shows the call graph of the name at point, `g` reruns); `xray-inspect`, `xray-why`, `xray-reach` and `xray-serve` cover the evidence graph; `xray-flymake-setup` shows `xray taint` findings while you edit shell and Python scripts. See `editors/emacs/README.md`.
 
 ### In CI
 
@@ -253,7 +274,7 @@ Contracts, capability profiles, drift and compare reports, and capability log he
 | Lua, TypeScript, C | Symbols and imports/includes | Neovim with the relevant Tree-sitter parsers installed |
 | ELF | Linked libraries, dynamic symbols, imports, exports, retained function symbols, and command graph | `readelf`; `objdump` for disassembly; `rizin` for annotated function disassembly; configured debuginfod can supply DWARF names and source for stripped binaries |
 
-Package ownership lookup supports RPM and pacman. Named ELF source lookup checks configured local trees, then `libdebuginfod` when `DEBUGINFOD_URLS` is configured, then RPM/DNF source packages. The debuginfod client uses the system cache and limits an individual lookup to 20 seconds and 128 MiB by default; elfutils, a client library, and server-side source data are required. If none provide source, `--code` falls back to labeled machine-code disassembly. Optional system tools include `file`, `strace`, `objdump`, `rizin`, `rpm`, `dnf`, and elfutils.
+Package ownership lookup supports RPM, pacman and dpkg (Debian, Ubuntu; merged-/usr paths are matched both ways). Named ELF source lookup checks configured local trees, then `libdebuginfod` when `DEBUGINFOD_URLS` is configured, then RPM/DNF source packages. The debuginfod client uses the system cache and limits an individual lookup to 20 seconds and 128 MiB by default; elfutils, a client library, and server-side source data are required. If none provide source, `--code` falls back to labeled machine-code disassembly. Optional system tools include `file`, `strace`, `objdump`, `rizin`, `rpm`, `dnf`, and elfutils.
 
 For packages whose source XRAY cannot retrieve automatically, set `XRAY_SOURCE_PATH` to one or more existing source-tree directories (separated with `:` on Linux). `xray <command> --code <function>` and `--source` search those trees first; `--code` and `--inspect` can list files and functions matched to the binary's available symbols. XRAY reads these directories without executing their build scripts. On systems with configured debuginfod servers, XRAY can also use ELF build IDs and DWARF line tables to fetch the exact source file for a named function, without running package scripts.
 
@@ -322,6 +343,7 @@ xray/
 ├── contractverbs.py
 ├── coupling.py
 ├── crossbuild.py
+├── debsource.py
 ├── debuginfod.py
 ├── dependencies.py
 ├── disasm.py
@@ -347,6 +369,7 @@ xray/
 ├── identify.py
 ├── javascript_analyzer.py
 ├── kubernetes.py
+├── lisp.py
 ├── landlock.py
 ├── launchgraph.py
 ├── libresolve.py
@@ -374,6 +397,7 @@ xray/
 ├── sbom.py
 ├── scan.py
 ├── scriptgraph.py
+├── seccomp.py
 ├── serve.py
 ├── shellmetrics.py
 ├── shellscan.py
@@ -388,6 +412,7 @@ xray/
 ├── treesitter_analyzers.py
 ├── unused.py
 ├── unused_symbols.py
+├── upstream.py
 ├── uses.py
 └── verbs.py
 ```

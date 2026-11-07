@@ -189,6 +189,33 @@ def _upgrade(contract, section, value, comment="observed"):
     contract.add(section, value, comment)
 
 
+def deny_syscalls(contract, observed=()):
+    """Fill [syscalls] with dangerous calls nothing in the contract shows a need for.
+
+    The program and every ELF file under [exec] and [load] are read for their
+    imported C functions; a call whose wrapper is imported anywhere, or that a
+    traced run made, stays allowed.
+    """
+
+    from .contract import expand_home
+    from .elfscan import scan_elf
+    from .seccomp import denials
+
+    imports, direct = set(), []
+    for section in ("exec", "load"):
+        for value in contract.values(section):
+            names = scan_elf(expand_home(value)).imports
+            imports.update(names)
+            if "syscall" in names:
+                direct.append(Path(value).name)
+    for name, reason in denials(imports, observed):
+        contract.add("syscalls", name, f"inferred: {reason}; nothing here imports it")
+    if direct:
+        contract.notes.append(
+            f"{', '.join(sorted(set(direct))[:6])} call syscall() directly and could reach a denied call; "
+            "check a real run with `xray contract check --trace` or `minimize`")
+
+
 def generate(path, argv=None, depth=4, limit=300, timeout=30, packages=True, workloads=None):
     """Return a Contract for the program at path, from static evidence and optional traced runs.
 
@@ -209,12 +236,14 @@ def generate(path, argv=None, depth=4, limit=300, timeout=30, packages=True, wor
             contract.package = graph.nodes[link.target].label
     pin_capabilities(contract)
     today = datetime.date.today().isoformat()
+    used = []
     if workloads:
         from .observe import observe_run
 
         for args in workloads:
             observed = observe_run([graph.root, *args], timeout=timeout)
             add_observed(contract, observed)
+            used.extend(observed.syscalls)
             run = shlex.join([Path(graph.root).name, *args])
             if observed.timed_out:
                 contract.notes.append(f"workload `{run}` was stopped after {timeout}s")
@@ -233,6 +262,7 @@ def generate(path, argv=None, depth=4, limit=300, timeout=30, packages=True, wor
 
         observed = observe_run([graph.root, *argv], timeout=timeout)
         add_observed(contract, observed)
+        used.extend(observed.syscalls)
         pin_capabilities(contract)
         contract.generated = f"{today} from static evidence and a traced run"
         contract.workload = shlex.join([Path(graph.root).name, *argv])
@@ -240,4 +270,5 @@ def generate(path, argv=None, depth=4, limit=300, timeout=30, packages=True, wor
             contract.notes.append(f"the traced run was stopped after {timeout}s")
         elif observed.status:
             contract.notes.append(f"the traced run exited with status {observed.status}")
+    deny_syscalls(contract, used)
     return contract, graph

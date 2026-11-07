@@ -23,6 +23,7 @@ class ScriptGraph:
     commands: dict = field(default_factory=dict)       # caller -> {command: [lines]}
     sources: dict = field(default_factory=dict)        # caller -> {file: [lines]}
     dynamic: int = 0
+    other: str = "runs {n} command(s)"                 # how the non-own calls are introduced
 
 
 def shell_graph(path):
@@ -114,7 +115,7 @@ def callgraph_lines(graph, name, focus=None, per_function=20):
         commands = graph.commands.get(function, {})
         if commands:
             names = sorted(commands)
-            out.append(f"  runs {len(names)} command(s): " + ", ".join(names[:per_function])
+            out.append("  " + graph.other.format(n=len(names)) + ": " + ", ".join(names[:per_function])
                        + (" …" if len(names) > per_function else ""))
         for file, lines in sorted(graph.sources.get(function, {}).items()):
             out.append(f"  sources {file}  ({_where(lines)})")
@@ -161,11 +162,23 @@ _COMMENTS = {
 }
 
 
+def _plugin_comments(kind):
+    """(line comment, (block open, block close) or None) a plugin analyzer declares as `comments`."""
+
+    from xray.analyzers import load_builtin_analyzers, registry
+
+    load_builtin_analyzers()
+    for analyzer in registry._analyzers:
+        if kind in getattr(analyzer, "kinds", ()) and getattr(analyzer, "comments", None):
+            return analyzer.comments
+    return None
+
+
 def _blank_comments_and_strings(lines, kind):
     """Lines of the same length with comments and string contents replaced by spaces,
     so a function name inside a string or comment is not read as a call."""
 
-    line_comment, block = _COMMENTS.get(kind, ("#", None))
+    line_comment, block = _COMMENTS.get(kind) or _plugin_comments(kind) or ("#", None)
     quotes = "\"'`" if kind in ("javascript", "typescript") else "\"'"
     out, in_block = [], False
     for text in lines:
@@ -279,3 +292,19 @@ def symbol_graph(path, kind):
     graph = ScriptGraph(path, spans)
     graph.calls = {k: {n: sorted(set(v)) for n, v in d.items()} for k, d in calls.items()}
     return graph
+
+
+def lisp_graph(path):
+    """ScriptGraph for a Lisp file: exact calls read from its S-expressions."""
+
+    from xray import lisp
+
+    found = lisp.call_graph(path)
+    if found is None:
+        return None
+    source, inner, outer = found
+    functions = {d.name: (d.line, d.end) for d in source.defs if d.kind in ("function", "method")}
+    if not functions and not inner and not outer:
+        return None
+    return ScriptGraph(Path(path), functions, calls=inner, commands=outer,
+                       other="uses {n} other function(s), macro(s) and special form(s)")
