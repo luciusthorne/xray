@@ -3,7 +3,6 @@ import subprocess
 from pathlib import Path
 
 from xray import command_analyzers, python_analyzer  # noqa: F401
-from xray.analyzers import registry
 from xray.disasm import assembly_lines
 from xray.entrypoints import command_kind
 from xray.perlscan import scan_perl
@@ -137,8 +136,13 @@ def code_lines(path, name=None, asm=False, say=lambda text: None):
         return lines
 
     try:
-        text = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
+        if kind == "lisp":
+            from xray.lisp import read_text
+
+            text = read_text(path).splitlines()  # also .el.gz
+        else:
+            text = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except (OSError, EOFError):
         return [f"Unable to read {path}"]
 
     if name is None:
@@ -159,8 +163,10 @@ def code_lines(path, name=None, asm=False, say=lambda text: None):
     elif kind == "perl":
         line = dict(scan_perl(path).subs).get(name)
         end = _brace_end(text, line)
-    elif kind in {"ruby", "javascript", "lua", "typescript", "c"}:
-        analyzer = registry.analyzer_for(path)
+    elif kind in {"ruby", "javascript", "lua", "typescript", "c", "lisp"}:
+        from xray.analyzers import analyzer_for
+
+        analyzer = analyzer_for(path)
         symbol = next(
             (symbol for symbol in analyzer.symbols(path) if symbol.name == name),
             None,

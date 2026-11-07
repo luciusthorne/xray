@@ -97,7 +97,7 @@ def chain_lines(
             lines.append(label)
 
             if target_kind in (
-                "shell", "elf", "python", "perl", "ruby", "javascript", "lua", "typescript", "c"
+                "shell", "elf", "python", "perl", "ruby", "javascript", "lua", "typescript", "c", "lisp"
             ):
                 extra = "    " if last else "│   "
                 walk(target, target_kind, depth + 1, prefix + extra)

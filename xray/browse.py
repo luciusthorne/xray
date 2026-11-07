@@ -88,6 +88,15 @@ def _views(path, kind):
 
         views.append(("Call graph", shell_callgraph))
 
+    if kind == "lisp":
+        def lisp_callgraph():
+            from xray.scriptgraph import callgraph_lines, lisp_graph
+
+            graph = lisp_graph(path)
+            return callgraph_lines(graph, Path(path).name) if graph else ["No Lisp forms read"]
+
+        views.append(("Call graph", lisp_callgraph))
+
     if kind in ("perl", "ruby", "javascript", "typescript", "lua"):
         def named_callgraph():
             from xray.scriptgraph import callgraph_lines, symbol_graph

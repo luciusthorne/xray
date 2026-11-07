@@ -77,6 +77,7 @@ xray gh --code main.main               # Go, source from the module proxy
 xray fzf --callgraph main.main         # Go call graph
 xray xdg-mime --callgraph defapp_generic   # shell: functions it calls, commands it runs, who calls it
 xray aclocal --callgraph               # Perl, Ruby, JavaScript, TypeScript, Lua: calls found by name
+xray subr-x.el.gz --callgraph string-limit   # Lisp (Emacs Lisp, Scheme, Common Lisp, Clojure): exact calls from S-expressions
 ```
 
 ## Evidence graph: `inspect`, `why`, `scan` and `reach`
@@ -356,6 +357,7 @@ xray/
 ├── html.py
 ├── identify.py
 ├── javascript_analyzer.py
+├── lisp.py
 ├── landlock.py
 ├── launchgraph.py
 ├── libresolve.py

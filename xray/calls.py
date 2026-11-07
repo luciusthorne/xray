@@ -153,7 +153,7 @@ def _treesitter_lines(path, kind):
         else:
             imports.append(f"- {edge.name} -> not resolved")
 
-    label = {"lua": "Lua", "typescript": "TypeScript", "c": "C"}[kind]
+    label = {"lua": "Lua", "typescript": "TypeScript", "c": "C", "lisp": "Lisp"}[kind]
     return (
         _section(f"{label} symbols:", symbols)
         + _section("Literal imports:", imports)
@@ -193,7 +193,10 @@ def calls_lines(path, max_imports=20):
     if kind == "javascript":
         return _javascript_lines(path)
 
-    if kind in {"lua", "typescript", "c"}:
+    if kind in {"lua", "typescript", "c", "lisp"}:
+        from . import analyzers
+
+        analyzers.load_builtin_analyzers()
         return _treesitter_lines(path, kind)
 
     return [

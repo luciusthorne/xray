@@ -148,7 +148,7 @@ def report_lines(path, markdown=False):
                     "disassembly when source/debug data is unavailable"
                 )
         lines.append(f"{bullet}{_code_span(guidance) if markdown else guidance}")
-    elif kind in {"shell", "perl", "ruby", "javascript", "lua", "typescript", "c", "python", "script"}:
+    elif kind in {"shell", "perl", "ruby", "javascript", "lua", "typescript", "c", "python", "lisp", "script"}:
         lines.append(
             f"{bullet}Script text: {_code_span(str(path))}; display it with "
             f"{_code_span(code_command)}"

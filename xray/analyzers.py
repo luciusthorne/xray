@@ -82,6 +82,7 @@ def load_builtin_analyzers():
     from . import (
         command_analyzers,  # noqa: F401
         javascript_analyzer,  # noqa: F401
+        lisp,  # noqa: F401
         python_analyzer,  # noqa: F401
         ruby_analyzer,  # noqa: F401
         treesitter_analyzers,  # noqa: F401
