@@ -115,6 +115,19 @@ def report_lines(path, markdown=False):
                     "Pacman-owned source is not fetched automatically; --code falls "
                     "back to objdump disassembly when source/debug data is unavailable"
                 )
+        elif manager == "dpkg":
+            from xray.debuginfod import configured as debuginfod_configured
+
+            if debuginfod_configured():
+                guidance = (
+                    "Debian package; --code reads names, files and source from "
+                    "the configured debuginfod server"
+                )
+            else:
+                guidance = (
+                    "Debian package; for source set DEBUGINFOD_URLS=https://debuginfod.debian.net "
+                    "(Ubuntu: https://debuginfod.ubuntu.com) and --code reads it from there"
+                )
         elif package:
             guidance = (
                 "RPM source package not cached; named --code tries debuginfod, "

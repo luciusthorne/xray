@@ -129,7 +129,7 @@ def _add_packages(graph, owners):
             continue
         manager, owner = owned
         package = graph.add_node(f"package:{owner.split()[0]}", "package", owner, manager=manager)
-        query = "pacman -Qo" if manager == "pacman" else "rpm -qf"
+        query = {"pacman": "pacman -Qo", "rpm": "rpm -qf", "dpkg": "dpkg-query -S"}.get(manager, manager)
         graph.add_link(node.id, package.id, "owned_by", Evidence("declared", manager, f"{query}: {owner}"))
 
 
