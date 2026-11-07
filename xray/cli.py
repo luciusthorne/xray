@@ -98,7 +98,7 @@ def print_help():
     print("  --relationships        Show calls and other symbol relationships")
     print("  --unused               Show imports that appear unused")
     print("  --complexity           Show function complexity and nesting")
-    print("  --callgraph            Show which functions each function calls")
+    print("  --callgraph [function] Which function calls which (Python, and C/C++/Rust binaries with names)")
     print("  --unused-symbols       Show definitions that appear unused (whole folder)")
     print("  --coupling             Show fan-in and fan-out of modules")
     print("  --call-coupling        Show calls in and out of each module")
@@ -1039,6 +1039,19 @@ PYTHON_ONLY_QUERIES = {
 
 
 def query_callgraph(context):
+    if command_kind(context.path) == "elf":
+        from xray.codemap import elf_callgraph
+
+        args = sys.argv[3:]
+        focus = args[0] if args else None
+        print(f"Building the code map and reading calls of {context.path.name}", file=sys.stderr)
+        lines = elf_callgraph(context.path, focus)
+        if lines is None:
+            raise TargetError(f"No function names in {context.path} (stripped, and no debuginfod debug file)")
+        print_view(f"Call graph of {context.path.name}" + (f": {focus}" if focus else ""), lines)
+        return
+    if sys.argv[3:]:
+        raise CLIError("--callgraph FUNCTION is for compiled programs; for Python use: xray <file> --callgraph")
     print_view(
         f"Call graph of {context.source_node}",
         callgraph_lines(context.path),
@@ -1271,6 +1284,10 @@ def run():
         if len(rest) > 1 or len(sys.argv) > 5:
             raise CLIError("Usage: xray <command> --code [<function or file>] [--asm]")
 
+    elif query == "--callgraph":
+        if len(sys.argv) > 4 or (len(sys.argv) == 4 and sys.argv[3].startswith("-")):
+            raise CLIError("Usage: xray <command> --callgraph [<function>]")
+
     elif query in ("--report", "--inspect"):
         if len(sys.argv) > 4 or (len(sys.argv) == 4 and sys.argv[3] != "--md"):
             raise CLIError("Usage: xray <command> --report [--md]")
@@ -1353,7 +1370,9 @@ def run():
     if on_command:
         source_node = str(Path(path).resolve())
 
-    if query in PYTHON_ONLY_QUERIES and analysis is None:
+    if query in PYTHON_ONLY_QUERIES and analysis is None and not (
+        query == "--callgraph" and command_kind(Path(path)) == "elf"
+    ):
         raise TargetError(f"Not a Python file: {path}")
 
     show_banner = query not in ("--json", "--graph-json", "--html", "--serve", "--browse") and not (
