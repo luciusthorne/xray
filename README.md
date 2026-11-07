@@ -116,6 +116,7 @@ xray contract minimize xdg-mime.contract -o xdg-mime.min -- query default text/p
 - `enforce` runs the program under Landlock (unprivileged; per-file execute/read/write rights and TCP ports) and, when `[net]` is `none`, in a private network namespace via bubblewrap. `--read`/`--write` add paths for one run; `--dry-run` prints the rules.
 - `generate --workloads FILE` and `minimize --workloads FILE` take one command line per line: the contract covers every workload, and minimization keeps an entry when any workload needs it.
 - `contract systemd FILE [-- ARGS]` turns a contract into a systemd unit (`--dropin` for an existing service, `--run` to run it now with `systemd-run --user`): `[exec]`/`[load]` become `NoExecPaths=/` plus `ExecPaths=` for exactly those files, `[write]` becomes `ProtectSystem=strict` with `ReadWritePaths=`, `[net]` becomes `PrivateNetwork=`/`RestrictAddressFamilies=`/`SocketBindAllow=`. systemd does not limit reads (`--hide-home` hides the home directory except the contract's reads), and its no-exec mounts make `test -x` fail for anything outside `[exec]` — which is why runs are traced for execute-permission probes, and why `minimize --enforcer systemd` exists: minimize with the mechanism you deploy with.
+- `contract kubernetes FILE [--image IMAGE] [-o DIR] [-- ARGS]` writes a Pod and a NetworkPolicy from a contract: no privilege escalation, a read-only root file system, non-root, every capability dropped (`NET_BIND_SERVICE` kept only for a bind below 1024), `[write]` locations as `emptyDir` volumes, `[net]` as the only allowed traffic (`none` denies all), and `[syscalls]` as a seccomp profile written next to it. Per-file read and exec rights have no Kubernetes equivalent; `contract enforce` inside the container keeps them. Output validates with kubeconform `-strict`.
 - `minimize` removes every entry the workload does not need, by re-running it under the shrinking contract until any further removal changes its exit status or output. It also runs each workload unconfined first and warns when even the full contract changes the result. What remains is marked `required`: a contract proven minimal for that workload.
 
 ## Taint: input reaching code, across languages
@@ -286,6 +287,8 @@ Single-file `--json` includes `schema_version`, file identity, analyzer, symbols
 
 ## Safety and limits
 
+XRAY is for Linux: it reads ELF binaries, Linux package managers (pacman, RPM, dpkg) and Linux-only mechanisms (Landlock, seccomp, bubblewrap, systemd). macOS (Mach-O, launchd, the macOS sandbox) and Windows are not supported, and there are no plans for them; XRAY can still read scripts from any system as files.
+
 Static analyzers read source without executing it. For ELF binaries, `--code` lists available function names from configured debuginfod when possible; request a name to read its source. Without source data, it displays bounded `objdump` machine code. `--trace` runs the selected command under `strace`, discards its output, and stops it after ten seconds; use it only when running that command is appropriate. `--uses` reports symbols a binary may call, not proof that it calls them at runtime.
 
 Named Python functions, async functions, classes, and qualified methods use AST spans including decorators, capped at 400 lines. Other script analyzers show the whole definition, using the end line reported by their parser (JavaScript, TypeScript, Ruby, Lua, C) or the matching closing brace (shell, Perl), capped at 400 lines; when no end is found, up to 60 lines are shown and labelled as such. ELF source lookup uses available debug/source data; when source is unavailable, `--code` displays bounded `objdump` disassembly and labels it as machine code rather than source.
@@ -343,6 +346,7 @@ xray/
 ├── html.py
 ├── identify.py
 ├── javascript_analyzer.py
+├── kubernetes.py
 ├── landlock.py
 ├── launchgraph.py
 ├── libresolve.py
