@@ -227,11 +227,13 @@ def symbol_graph(path, kind):
     analyzer = analyzer_for(path)
     if analyzer is None:
         return None
+    from xray.errors import XRAYError
+
     try:
         symbols = [s for s in analyzer.symbols(path) if s.kind in ("function", "method")]
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    except (OSError, ValueError, RuntimeError):
-        return None
+    except (OSError, ValueError, RuntimeError, XRAYError):
+        return None  # e.g. Lua and TypeScript need Neovim's Tree-sitter parsers
     if not symbols:
         return None
     spans = {}
