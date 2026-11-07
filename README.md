@@ -37,7 +37,25 @@ pipx install xray-trust    # or: python -m pip install xray-trust
 xray --help
 ```
 
+Every release is also on the [GitHub releases page](https://github.com/luciusthorne/xray/releases), for example:
+
+```sh
+pipx install https://github.com/luciusthorne/xray/releases/download/v1.1.0/xray_trust-1.1.0-py3-none-any.whl
+```
+
 From a checkout: `python -m pip install .`
+
+### Arch Linux
+
+The package is `xray-trust` (it conflicts with the `xray` package, which is Xray-core and also installs `/usr/bin/xray`). Until it is on the AUR, build it from this repository; `makepkg -si` installs the build tools it needs and then the package:
+
+```sh
+git clone https://github.com/luciusthorne/xray
+cd xray/packaging/arch
+makepkg -si
+```
+
+It installs XRAY, its license, and the Emacs package (`/usr/share/emacs/site-lisp/xray/`).
 
 Install test dependencies and run the full suite:
 

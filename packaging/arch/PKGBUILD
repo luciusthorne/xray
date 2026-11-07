@@ -1,0 +1,46 @@
+# Maintainer: luciusthorne <337453006+luciusthorne@users.noreply.github.com>
+pkgname=xray-trust
+_pyname=xray_trust
+pkgver=1.1.0
+pkgrel=1
+pkgdesc="Read the code of any Linux command: its files, functions, call graph and what it can do, with evidence"
+arch=('any')
+url="https://github.com/luciusthorne/xray"
+license=('Apache-2.0')
+depends=('python' 'binutils')
+makedepends=('python-build' 'python-installer' 'python-setuptools' 'python-wheel')
+checkdepends=('python-pytest')
+optdepends=(
+  'elfutils: function names and source from debuginfod servers'
+  'strace: --trace and contract generate --trace'
+  'bubblewrap: contract enforce for contracts that allow no network'
+  'rizin: --disasm-function'
+  'emacs: the xray Emacs package (M-x xray)'
+  'neovim: Tree-sitter analysis of Lua, TypeScript and C'
+  'nodejs: JavaScript analysis'
+  'ruby: Ruby analysis'
+  'git: --changes'
+)
+conflicts=('xray')  # Xray-core also installs /usr/bin/xray
+source=("https://github.com/luciusthorne/xray/releases/download/v${pkgver}/${_pyname}-${pkgver}.tar.gz"
+        "xray-${pkgver}.el::https://raw.githubusercontent.com/luciusthorne/xray/v${pkgver}/editors/emacs/xray.el")
+sha256sums=('333d604bfd460180d9d68b058d6edbdc51654c08d6d253d97cce4e3bd0c5642a'
+            'f57fac15ff3d4b0db94a33a64f2a3a9ae28ccd8b7f0ecf4f6767a4d54aa97f7b')
+
+build() {
+  cd "${_pyname}-${pkgver}"
+  python -m build --wheel --no-isolation
+}
+
+check() {
+  cd "${_pyname}-${pkgver}"
+  # the Emacs package's own tests need editors/, which this archive does not carry
+  python -m pytest -q --ignore=tests/test_emacs_package.py
+}
+
+package() {
+  cd "${_pyname}-${pkgver}"
+  python -m installer --destdir="$pkgdir" dist/*.whl
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 "$srcdir/xray-${pkgver}.el" "$pkgdir/usr/share/emacs/site-lisp/xray/xray.el"
+}
