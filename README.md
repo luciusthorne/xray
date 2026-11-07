@@ -179,6 +179,10 @@ pacman runs the hook after downloading and before installing. For every package 
 
 `editors/vscode` is a small extension (plain JavaScript, no build step) that runs the `xray` command: `xray taint` findings on save as diagnostics in shell and Python files, the evidence graph of the current file in a panel, and contract checks. `npx @vscode/vsce package` in that folder builds the `.vsix`.
 
+### In Emacs
+
+`editors/emacs/xray.el` (Emacs 27.1+, no dependencies) puts XRAY's code views in Emacs: `M-x xray` opens a menu; `xray-code`, `xray-code-at-point` and `xray-callgraph` show a command's files, functions, code and call graph in an `*xray*` buffer where function names, files and locations are buttons (`RET` follows, `c` shows the call graph of the name at point, `g` reruns); `xray-inspect`, `xray-why`, `xray-reach` and `xray-serve` cover the evidence graph; `xray-flymake-setup` shows `xray taint` findings while you edit shell and Python scripts. See `editors/emacs/README.md`.
+
 ### In CI
 
 ```yaml
