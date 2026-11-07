@@ -79,6 +79,15 @@ def _views(path, kind):
         ("Chain", lambda: chain_lines(path)),
     ]
 
+    if kind == "shell":
+        def shell_callgraph():
+            from xray.scriptgraph import callgraph_lines, shell_graph
+
+            graph = shell_graph(path)
+            return callgraph_lines(graph, Path(path).name) if graph else ["Could not parse this script"]
+
+        views.append(("Call graph", shell_callgraph))
+
     if kind == "elf":
         from xray.fingerprint import toolchain_lines
         from xray.uses import uses_lines

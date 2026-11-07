@@ -64,6 +64,7 @@ xray btop --code clean_quit            # C++
 xray rg --callgraph rg::search         # what it calls and what calls it, with files and lines
 xray gh --code main.main               # Go, source from the module proxy
 xray fzf --callgraph main.main         # Go call graph
+xray xdg-mime --callgraph defapp_generic   # shell: functions it calls, commands it runs, who calls it
 ```
 
 ## Evidence graph: `inspect`, `why`, `scan` and `reach`
@@ -367,6 +368,7 @@ xray/
 ├── ruby_analyzer.py
 ├── sbom.py
 ├── scan.py
+├── scriptgraph.py
 ├── serve.py
 ├── shellmetrics.py
 ├── shellscan.py

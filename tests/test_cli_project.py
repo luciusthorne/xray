@@ -92,7 +92,7 @@ def test_call_coupling_option(tmp_path):
     assert "- main.py: calls out" in result.stdout
 
 
-@pytest.mark.parametrize("option", PROJECT_OPTIONS)
+@pytest.mark.parametrize("option", [o for o in PROJECT_OPTIONS if o != "--callgraph"])
 def test_project_option_rejects_shell_script(tmp_path, option):
     script = write(tmp_path / "tool", "#!/bin/sh\necho hi\n")
 
@@ -101,6 +101,15 @@ def test_project_option_rejects_shell_script(tmp_path, option):
     assert result.returncode == 3
     assert "Not a Python file" in result.stderr
     assert result.stdout == ""
+
+
+def test_callgraph_reads_shell_scripts(tmp_path):
+    script = write(tmp_path / "tool", "#!/bin/sh\ngreet() {\n    echo hi\n}\ngreet\n")
+
+    result = run_xray(tmp_path, str(script), "--callgraph")
+
+    assert result.returncode == 0, result.stderr
+    assert "→ greet  (defined at line 2; called at line 5)" in result.stdout
 
 
 def test_extra_argument_is_rejected(tmp_path):
