@@ -91,6 +91,7 @@ class _RulesetAttr(ctypes.Structure):
 
 
 class _PathBeneath(ctypes.Structure):
+    _layout_ = "ms"  # packed like the kernel's struct; Python 3.14+ wants the layout named with _pack_
     _pack_ = 1
     _fields_ = [("allowed_access", ctypes.c_uint64), ("parent_fd", ctypes.c_int32)]
 
@@ -169,11 +170,20 @@ def main(argv=None):
         return 2
     with open(argv[0], encoding="utf-8") as handle:
         rules = json.load(handle)
+    # Load the seccomp code before Landlock: afterwards XRAY's own files may be unreadable.
+    from xray.seccomp import SeccompError, install
+
     try:
         restrict(rules)
     except LandlockError as error:
         print(f"xray: {error}", file=sys.stderr)
         return 125
+    if rules.get("seccomp_deny"):
+        try:
+            install(rules["seccomp_deny"])
+        except SeccompError as error:
+            print(f"xray: seccomp: {error}", file=sys.stderr)
+            return 125
     program = argv[2]
     try:
         os.execv(program, argv[2:])
