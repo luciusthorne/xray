@@ -94,6 +94,7 @@ def landlock_rules(contract, home=None, extra_read=(), extra_write=()):
             "bind": bind,
         },
         "scope_unix": "any" not in net and "unix" not in net,
+        "seccomp_deny": list(contract.values("syscalls")),
     }
     return rules
 
