@@ -1,8 +1,19 @@
 # XRAY
 
-**Contracts for what software may do — with evidence, checked, and enforced.**
+**Read the code of any Linux command — its files, functions and call graph — and prove what it can do.**
 
-XRAY explains what a Linux program can do and proves each step: which commands a script runs and on which line, which libraries a binary loads and why the loader picks them, what a real run read, wrote and connected to. It writes that down as a reviewable capability contract, checks the program against it, enforces it with Landlock (no root), and shrinks it to what a workload provably needs. Across package versions it shows what software newly became able to do, and records it in a tamper-evident log.
+Point XRAY at a command and it shows you the code behind it: which language it is written in, which source files it was built from, every function with its file and line, the function's source, and which function calls which. That works for compiled programs (C, C++, Rust, Go) using the debug information and build data the binary and your distribution already publish, and for scripts (shell, Python, Perl, Ruby, JavaScript, TypeScript, Lua) read directly.
+
+```sh
+xray rg --code                        # ripgrep: 52 source files, 21 crates, the Rust standard library
+xray rg --code core/main.rs           # the functions in one file, then the file
+xray rg --code rg::main               # one function's source
+xray rg --callgraph rg::search        # what it calls and what calls it, each with file:line
+xray gh --code main.main              # Go, source from the module proxy at the exact version
+xray xdg-mime --callgraph             # shell: functions, the commands each one runs
+```
+
+Then XRAY answers what the code can do, with proof: which commands a script runs and on which line, which libraries a binary loads and why the loader picks them, what a real run read, wrote and connected to. It writes that down as a reviewable capability contract, checks the program against it, enforces it with Landlock (no root), and shrinks it to what a workload provably needs. Across package versions it shows what software newly became able to do.
 
 ```sh
 xray inspect xdg-open                 # everything it reaches, with the proof for every link
@@ -13,7 +24,7 @@ xray drift old.pkg.tar.zst new.pkg.tar.zst
 xray taint ./install.sh               # untrusted input reaching code, across shell and Python
 ```
 
-XRAY never claims a program is safe: every report lists its blind spots. It also keeps its older views — source lookup, call graphs, an HTML graph viewer — described below.
+XRAY never claims a program is safe: every report lists its blind spots, and every link says how it was found — observed in a run, declared by metadata, inferred from code, or guessed.
 
 ![xray catching an xz-style library backdoor: drift, the capability log, a contract break, a traced breach, and enforcement stopping the payload](docs/xz-demo.gif)
 
@@ -54,7 +65,7 @@ xray reach liblzma
 xray contract generate jq -o jq.contract
 ```
 
-Running `xray` by itself reads XRAY's own CLI source and suggests follow-up commands. Running `xray <command>` gives that command's overview and suggests code, calls, chains, dependency, cycle, path, and JSON queries. For compiled commands, `xray <command> --code` gives a code map: every function with its readable name, source file and line, grouped into the program's own files, its dependencies (Rust crates) and the standard library. `--code <file>` lists the functions a file defines and shows the file; `--code <function>` shows that function's source. This works for C, C++ and Rust (any language with DWARF line information), from the binary's own debug information or the debug file a debuginfod server has for its build ID; Rust dependency source comes from the crate's crates.io archive and Rust standard library source from the matching `rust-src`. Go programs need no debug file: every Go binary carries the runtime's function table (`.gopclntab`) and its build information, so names, files and lines come from the binary itself, dependency and main-module source from the Go module proxy at the exact versions, and standard library source from the Go repository at the exact release. Programs with names but no line information get their functions grouped by namespace.
+Running `xray` by itself reads XRAY's own CLI source and suggests follow-up commands. Running `xray <command>` gives that command's overview and suggests code, calls, chains, dependency, cycle, path, and JSON queries. For compiled commands, `xray <command> --code` gives a code map: every function with its readable name, source file and line, grouped into the program's own files, its dependencies (Rust crates) and the standard library. `--code <file>` lists the functions a file defines and shows the file; `--code <function>` shows that function's source. This works for C, C++ and Rust (any language with DWARF line information), from the binary's own debug information or the debug file a debuginfod server has for its build ID; Rust dependency source comes from the crate's crates.io archive and Rust standard library source from the matching `rust-src`. On Debian, where the debuginfod server has no source, it comes from sources.debian.org at the package's exact version, Debian's patches included. Go programs need no debug file: every Go binary carries the runtime's function table (`.gopclntab`) and its build information, so names, files and lines come from the binary itself, dependency and main-module source from the Go module proxy at the exact versions, and standard library source from the Go repository at the exact release. Programs with names but no line information get their functions grouped by namespace.
 
 ```
 xray rg --code                         # 52 program files, 21 crates, the Rust standard library
@@ -253,7 +264,7 @@ Contracts, capability profiles, drift and compare reports, and capability log he
 | Lua, TypeScript, C | Symbols and imports/includes | Neovim with the relevant Tree-sitter parsers installed |
 | ELF | Linked libraries, dynamic symbols, imports, exports, retained function symbols, and command graph | `readelf`; `objdump` for disassembly; `rizin` for annotated function disassembly; configured debuginfod can supply DWARF names and source for stripped binaries |
 
-Package ownership lookup supports RPM and pacman. Named ELF source lookup checks configured local trees, then `libdebuginfod` when `DEBUGINFOD_URLS` is configured, then RPM/DNF source packages. The debuginfod client uses the system cache and limits an individual lookup to 20 seconds and 128 MiB by default; elfutils, a client library, and server-side source data are required. If none provide source, `--code` falls back to labeled machine-code disassembly. Optional system tools include `file`, `strace`, `objdump`, `rizin`, `rpm`, `dnf`, and elfutils.
+Package ownership lookup supports RPM, pacman and dpkg (Debian, Ubuntu; merged-/usr paths are matched both ways). Named ELF source lookup checks configured local trees, then `libdebuginfod` when `DEBUGINFOD_URLS` is configured, then RPM/DNF source packages. The debuginfod client uses the system cache and limits an individual lookup to 20 seconds and 128 MiB by default; elfutils, a client library, and server-side source data are required. If none provide source, `--code` falls back to labeled machine-code disassembly. Optional system tools include `file`, `strace`, `objdump`, `rizin`, `rpm`, `dnf`, and elfutils.
 
 For packages whose source XRAY cannot retrieve automatically, set `XRAY_SOURCE_PATH` to one or more existing source-tree directories (separated with `:` on Linux). `xray <command> --code <function>` and `--source` search those trees first; `--code` and `--inspect` can list files and functions matched to the binary's available symbols. XRAY reads these directories without executing their build scripts. On systems with configured debuginfod servers, XRAY can also use ELF build IDs and DWARF line tables to fetch the exact source file for a named function, without running package scripts.
 
@@ -320,6 +331,7 @@ xray/
 ├── contractverbs.py
 ├── coupling.py
 ├── crossbuild.py
+├── debsource.py
 ├── debuginfod.py
 ├── dependencies.py
 ├── disasm.py
