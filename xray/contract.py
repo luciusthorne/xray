@@ -34,8 +34,9 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-CONTRACT_VERSION = 1
-SECTIONS = ("exec", "load", "read", "write", "net")
+CONTRACT_VERSION = 1   # written when a contract needs nothing newer
+SUPPORTED_VERSIONS = (1, 2)  # 2 adds the [syscalls] section
+SECTIONS = ("exec", "load", "read", "write", "net", "syscalls")  # [syscalls] is optional (deny NAME)
 HEADER_KEYS = ("program", "sha256", "package", "generated", "workload")
 
 # What every contract allows without listing it: the loader cache, locale
@@ -98,6 +99,11 @@ class Contract:
             raise ContractError(f"unknown section [{section}]")
         if section == "net":
             _check_net(value)
+        elif section == "syscalls":
+            from .seccomp import KNOWN
+
+            if value not in KNOWN:
+                raise ContractError(f"unknown system call in [syscalls]: {value}")
         else:
             _check_path(value)
         _check_attrs(section, attrs)
@@ -147,7 +153,8 @@ class Contract:
 
     # -- text ------------------------------------------------------------------
     def render(self):
-        lines = ["# XRAY capability contract (docs/contract-spec.md)", f"xray-contract {CONTRACT_VERSION}"]
+        version = 2 if self.sections["syscalls"] else CONTRACT_VERSION
+        lines = ["# XRAY capability contract (docs/contract-spec.md)", f"xray-contract {version}"]
         for key in HEADER_KEYS:
             value = getattr(self, key)
             if value:
@@ -155,9 +162,13 @@ class Contract:
         for note in self.notes:
             lines.append(f"# {note}")
         for name in SECTIONS:
+            entries = self.sections[name]
+            if name == "syscalls":
+                if not entries:
+                    continue
+                entries = [Entry(f"deny {entry.value}", entry.comment) for entry in entries]
             lines.append("")
             lines.append(f"[{name}]")
-            entries = self.sections[name]
             if name == "net" and not entries:
                 entries = [Entry("none")]
             width = min(60, max((len(entry.text()) for entry in entries), default=0))
@@ -234,14 +245,17 @@ def parse_contract(text):
             continue
         try:
             if contract is None:
-                if line != f"xray-contract {CONTRACT_VERSION}":
-                    raise ContractError(f"expected 'xray-contract {CONTRACT_VERSION}' first, got: {line}")
+                word, _, number = line.partition(" ")
+                if word != "xray-contract" or not number.isdigit() or int(number) not in SUPPORTED_VERSIONS:
+                    raise ContractError(f"expected 'xray-contract 1' or 'xray-contract 2' first, got: {line}")
+                version = int(number)
                 contract = Contract(program="")
                 continue
             if line.startswith("[") and line.endswith("]"):
                 section = line[1:-1]
-                if section not in SECTIONS:
-                    raise ContractError(f"unknown section [{section}]")
+                if section not in SECTIONS or (section == "syscalls" and version < 2):
+                    raise ContractError(f"unknown section [{section}]" + (
+                        " (needs 'xray-contract 2')" if section == "syscalls" else ""))
                 continue
             if section is None:
                 key, _, value = line.partition(" ")
@@ -250,6 +264,14 @@ def parse_contract(text):
                 setattr(contract, key, value.strip())
                 continue
             if section == "net" and line == "none":
+                continue
+            if section == "syscalls":
+                verb, _, name = line.partition(" ")
+                from .seccomp import KNOWN
+
+                if verb != "deny" or name.strip() not in KNOWN:
+                    raise ContractError(f"bad [syscalls] entry: {line} (deny NAME, NAME one of the known calls)")
+                contract.add(section, name.strip(), comment)
                 continue
             if section == "net":
                 contract.add(section, line, comment)

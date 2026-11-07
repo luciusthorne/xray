@@ -760,10 +760,10 @@ def build_evidence_graph(path, max_depth=4, max_files=300, packages=True, store=
             owners = {file: owners[file] for file in files if file in owners}
         for file, (manager, owner) in owners.items():
             package = graph.add_node(f"package:{owner.split()[0]}", "package", owner, manager=manager)
-            query = "pacman -Qo" if manager == "pacman" else "rpm -qf"
+            query = {"pacman": "pacman -Qo", "rpm": "rpm -qf", "dpkg": "dpkg-query -S"}.get(manager, manager)
             graph.add_link(file, package.id, "owned_by", Evidence("declared", manager, f"{query}: {owner}"))
-        if not owners and shutil.which("pacman") is None and shutil.which("rpm") is None:
-            graph.blind(root, "no rpm or pacman database: package ownership not known")
+        if not owners and not any(shutil.which(tool) for tool in ("pacman", "rpm", "dpkg-query")):
+            graph.blind(root, "no rpm, pacman or dpkg database: package ownership not known")
 
     return graph
 
