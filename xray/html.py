@@ -80,6 +80,7 @@ _TEMPLATE = r"""<!doctype html>
     <label><input type="checkbox" data-kind="lua" checked> lua</label>
     <label><input type="checkbox" data-kind="typescript" checked> typescript</label>
     <label><input type="checkbox" data-kind="c" checked> c</label>
+    <label><input type="checkbox" data-kind="lisp" checked> lisp</label>
     <label><input type="checkbox" data-kind="elf" checked> elf</label>
     <label><input type="checkbox" data-kind="library" checked> library</label>
     <label><input type="checkbox" data-kind="function" checked> function</label>
@@ -103,7 +104,7 @@ _TEMPLATE = r"""<!doctype html>
   var COLORS = { python: "#4b8bbe", shell: "#6cc070", perl: "#e6a23c",
                  ruby: "#d94f5c", javascript: "#e5c07b", elf: "#e07a5f", library: "#a78bfa",
                  module: "#b48ead",
-                 lua: "#8b7ec8", typescript: "#3178c6", c: "#599eff",
+                 lua: "#8b7ec8", typescript: "#3178c6", c: "#599eff", lisp: "#c678dd",
                  interface: "#56b6c2", type: "#98c379",
                  function: "#f4b942", import: "#7ad1c2",
                  unknown: "#8a94a8" };
@@ -852,6 +853,7 @@ _SERVE_JS = r'''
   function langOfFile(name) {
     var ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
     if (["c", "h", "cc", "cpp", "cxx", "hpp", "hh", "rs", "go", "zig"].indexOf(ext) >= 0) return "c";
+    if (["el", "gz", "scm", "lisp", "lsp", "clj", "cljs", "cljc", "rkt", "fnl"].indexOf(ext) >= 0) return "";  // Lisp: plain text
     if (ext === "py") return "python";
     if (ext === "pl" || ext === "pm") return "perl";
     if (ext === "sh" || ext === "bash") return "sh";

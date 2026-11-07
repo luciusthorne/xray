@@ -2,11 +2,17 @@ name: tests
 
 on:
   push:
+    branches: [main]   # pull requests run below; this avoids running every PR push twice
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  # a new push to a pull request cancels its previous run; main always finishes
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
@@ -30,7 +36,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+        # pull requests: oldest and newest supported Python; main: every version
+        python-version: ${{ fromJSON(github.event_name == 'pull_request' && '["3.10", "3.15"]' || '["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]') }}
     steps:
       - uses: actions/checkout@v7
 

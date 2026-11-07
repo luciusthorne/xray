@@ -19,14 +19,14 @@ from .model import (
 from .provenance import package_of
 
 EXPANDABLE = (
-    "python", "shell", "elf", "perl", "ruby", "javascript", "lua", "typescript", "c"
+    "python", "shell", "elf", "perl", "ruby", "javascript", "lua", "typescript", "c", "lisp"
 )
 
 
 def _symbols(path, kind):
     from .analyzers import plugin_kinds
 
-    if kind not in ("python", "shell", "ruby", "javascript", "lua", "typescript", "c") and kind not in plugin_kinds():
+    if kind not in ("python", "shell", "ruby", "javascript", "lua", "typescript", "c", "lisp") and kind not in plugin_kinds():
         return []
 
     analyzer = registry.analyzer_for(path)

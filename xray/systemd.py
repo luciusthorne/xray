@@ -53,6 +53,10 @@ def directives(contract, home="%h", hide_home=False):
 
     out = [("NoNewPrivileges", "yes"), ("RestrictSUIDSGID", "yes"), ("LockPersonality", "yes"),
            ("ProtectSystem", "strict")]
+    denied = list(contract.values("syscalls"))
+    if denied:
+        out.append(("SystemCallFilter", "~" + " ".join(denied)))
+        out.append(("SystemCallErrorNumber", "EPERM"))
     executable = sorted({resolve(value) for section in ("exec", "load") for value in contract.values(section)})
     out.append(("NoExecPaths", "/"))
     out.append(("ExecPaths", " ".join(_quote(path) for path in executable)))

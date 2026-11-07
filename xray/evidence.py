@@ -55,8 +55,8 @@ LINK_KINDS = (
     "opened",        # observed in a traced run
 )
 
-FOLLOWED_KINDS = ("shell", "elf", "python", "perl", "ruby", "javascript", "typescript", "lua", "c")
-_READER_KINDS = ("ruby", "javascript", "typescript", "lua", "c")
+FOLLOWED_KINDS = ("shell", "elf", "python", "perl", "ruby", "javascript", "typescript", "lua", "c", "lisp")
+_READER_KINDS = ("ruby", "javascript", "typescript", "lua", "c", "lisp")
 
 
 def _plugin_kinds():
@@ -75,6 +75,12 @@ _EXEC_PATTERNS = {
     ),
 }
 _EXEC_PATTERNS["typescript"] = _EXEC_PATTERNS["javascript"]
+# Emacs Lisp, Guile and Common Lisp ways to start a program with a literal name.
+_EXEC_PATTERNS["lisp"] = re.compile(
+    r"""\((?:call-process|process-file|shell-command|shell-command-to-string|async-shell-command|"""
+    r"""system\*?|uiop:run-program|sb-ext:run-program|run-program)\s+(?:'\(\s*)?(?P<q>")(?P<cmd>[A-Za-z0-9_./+-]+)"""
+    r"""|:command\s+(?:\(list\s+|'\()(?P<q2>")(?P<cmd2>[A-Za-z0-9_./+-]+)"""
+)
 _EXEC_PATTERNS["lua"] = re.compile(
     r"""\b(?:os\.execute|io\.popen)\s*\(?\s*(?P<q>['"])(?P<cmd>[A-Za-z0-9_./+-]+)"""
 )
@@ -678,8 +684,13 @@ class _Builder:
         from .errors import AnalysisError, FileError
 
         try:
-            text = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
-        except OSError:
+            if kind == "lisp":
+                from .lisp import read_text
+
+                text = read_text(path).splitlines()
+            else:
+                text = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
+        except (OSError, EOFError):
             return
         analyzer = analyzer_for(path)
         link_kind = "includes" if kind == "c" else "imports"
@@ -715,10 +726,10 @@ class _Builder:
             return
         seen = set()
         for number, line in enumerate(text, 1):
-            if line.lstrip().startswith(("#", "//", "--")):
+            if line.lstrip().startswith(("#", "//", "--", ";")):
                 continue
             for match in pattern.finditer(line):
-                name = match.group("cmd")
+                name = match.groupdict().get("cmd") or match.groupdict().get("cmd2")
                 if name in seen:
                     continue
                 seen.add(name)
@@ -766,10 +777,10 @@ def build_evidence_graph(path, max_depth=4, max_files=300, packages=True, store=
             owners = {file: owners[file] for file in files if file in owners}
         for file, (manager, owner) in owners.items():
             package = graph.add_node(f"package:{owner.split()[0]}", "package", owner, manager=manager)
-            query = "pacman -Qo" if manager == "pacman" else "rpm -qf"
+            query = {"pacman": "pacman -Qo", "rpm": "rpm -qf", "dpkg": "dpkg-query -S"}.get(manager, manager)
             graph.add_link(file, package.id, "owned_by", Evidence("declared", manager, f"{query}: {owner}"))
-        if not owners and shutil.which("pacman") is None and shutil.which("rpm") is None:
-            graph.blind(root, "no rpm or pacman database: package ownership not known")
+        if not owners and not any(shutil.which(tool) for tool in ("pacman", "rpm", "dpkg-query")):
+            graph.blind(root, "no rpm, pacman or dpkg database: package ownership not known")
 
     return graph
 

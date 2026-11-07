@@ -115,6 +115,19 @@ def report_lines(path, markdown=False):
                     "Pacman-owned source is not fetched automatically; --code falls "
                     "back to objdump disassembly when source/debug data is unavailable"
                 )
+        elif manager == "dpkg":
+            from xray.debuginfod import configured as debuginfod_configured
+
+            if debuginfod_configured():
+                guidance = (
+                    "Debian package; --code reads names, files and source from "
+                    "the configured debuginfod server"
+                )
+            else:
+                guidance = (
+                    "Debian package; for source set DEBUGINFOD_URLS=https://debuginfod.debian.net "
+                    "(Ubuntu: https://debuginfod.ubuntu.com) and --code reads it from there"
+                )
         elif package:
             guidance = (
                 "RPM source package not cached; named --code tries debuginfod, "
@@ -135,7 +148,7 @@ def report_lines(path, markdown=False):
                     "disassembly when source/debug data is unavailable"
                 )
         lines.append(f"{bullet}{_code_span(guidance) if markdown else guidance}")
-    elif kind in {"shell", "perl", "ruby", "javascript", "lua", "typescript", "c", "python", "script"} \
+    elif kind in {"shell", "perl", "ruby", "javascript", "lua", "typescript", "c", "python", "lisp", "script"} \
             or kind in __import__("xray.analyzers", fromlist=["plugin_kinds"]).plugin_kinds():
         lines.append(
             f"{bullet}Script text: {_code_span(str(path))}; display it with "

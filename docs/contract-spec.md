@@ -1,4 +1,4 @@
-# XRAY capability contract, version 1
+# XRAY capability contract, versions 1 and 2
 
 A capability contract says what one program may do: which programs it may
 execute, which files it may load, read and write, and which network access it
@@ -103,6 +103,23 @@ no capability pass. Unknown attributes are errors.
 - `connect tcp PORT`, `connect udp PORT`, `bind tcp PORT`, `bind udp PORT`,
   with `*` for any port.
 
+### `[syscalls]` entries (version 2)
+
+Optional. Each line is `deny NAME`: a system call the program must not make.
+NAME is one of the calls XRAY knows to be dangerous and rarely needed:
+debugging other processes (`ptrace`, `process_vm_readv`, `process_vm_writev`,
+`pidfd_getfd`), kernel modules and kexec, mounts and namespaces (`mount`,
+`umount2`, `pivot_root`, `chroot`, `setns`, `unshare` and the new mount API),
+system state (`reboot`, `swapon`, `swapoff`, clock setting, `acct`,
+`quotactl`), `bpf`, `perf_event_open`, `userfaultfd`, kernel keyrings, raw I/O
+ports and file handles. Any other name is an error.
+
+`xray contract generate` denies each of those calls unless the program or a
+library under `[exec]` or `[load]` imports the C function that makes it, or a
+traced run made it. A file that calls `syscall()` directly could reach any
+call; the contract notes it, and `contract check --trace` reports a traced run
+that makes a denied call as a breach.
+
 ### Comments as evidence
 
 Generated contracts put the evidence for each entry in its comment, starting
@@ -140,6 +157,14 @@ Known differences between the contract and its enforcement:
   allows UDP.
 - Connecting to a unix socket file is not limited by Landlock on every kernel.
 
+`[syscalls]` denials are enforced with a seccomp filter installed after
+Landlock, just before the program starts: a denied call fails with `EPERM`,
+and so does every call made through another architecture's numbering (32-bit
+`int 0x80`, x32), so a denied call cannot be reached under another number. The
+filter is built for x86-64; elsewhere XRAY refuses to run a contract that has
+denials rather than run it without them. `xray contract systemd` writes them
+as `SystemCallFilter=~…` with `SystemCallErrorNumber=EPERM`.
+
 `xray contract check --trace` checks an observed run at the exact granularity
 of the contract.
 
@@ -156,3 +181,7 @@ dynamic loader must map for the remaining programs are kept without trying.
 A reader must reject a contract whose first line is not a version it
 supports. Version 1 readers reject unknown sections and header keys. New
 sections or keys mean a new version.
+
+Version 2 adds the `[syscalls]` section and nothing else. XRAY writes
+`xray-contract 2` only for a contract that has `[syscalls]` entries, so every
+other contract stays readable by version 1 readers.
