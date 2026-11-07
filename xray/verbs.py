@@ -180,7 +180,7 @@ def inspect_lines(graph, show_all=False, limit=25):
     for link in shown:
         label = _short(graph, link.target)
         then = ""
-        if link.kind in ("runs", "needs"):
+        if link.kind in ("runs", "needs", "dlopens"):
             onward = [step for step in graph.outgoing(link.target) if step.kind == "resolves_to"]
             if onward:
                 then = f" -> {onward[0].target}  [{onward[0].basis}]"

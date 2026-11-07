@@ -69,7 +69,7 @@ Running `xray` by itself reads XRAY's own CLI source and suggests follow-up comm
 | Basis | Meaning |
 | --- | --- |
 | observed | seen in a real run (`--trace`) |
-| declared | stated by metadata the system acts on (shebang, ELF `DT_NEEDED`, package database) |
+| declared | stated by metadata the system acts on (shebang, ELF `DT_NEEDED`, ELF dlopen metadata notes, package database) |
 | inferred | read from code, then resolved the way this machine would resolve it |
 | guessed | a resolution XRAY can't stand behind: a PATH lookup in a script that changes PATH, or a command run through a variable the script only sets to fixed values |
 
