@@ -55,8 +55,8 @@ LINK_KINDS = (
     "opened",        # observed in a traced run
 )
 
-FOLLOWED_KINDS = ("shell", "elf", "python", "perl", "ruby", "javascript", "typescript", "lua", "c")
-_READER_KINDS = ("ruby", "javascript", "typescript", "lua", "c")
+FOLLOWED_KINDS = ("shell", "elf", "python", "perl", "ruby", "javascript", "typescript", "lua", "c", "lisp")
+_READER_KINDS = ("ruby", "javascript", "typescript", "lua", "c", "lisp")
 
 # Literal command starts in languages read with patterns rather than a parser.
 _EXEC_PATTERNS = {
@@ -69,6 +69,12 @@ _EXEC_PATTERNS = {
     ),
 }
 _EXEC_PATTERNS["typescript"] = _EXEC_PATTERNS["javascript"]
+# Emacs Lisp, Guile and Common Lisp ways to start a program with a literal name.
+_EXEC_PATTERNS["lisp"] = re.compile(
+    r"""\((?:call-process|process-file|shell-command|shell-command-to-string|async-shell-command|"""
+    r"""system\*?|uiop:run-program|sb-ext:run-program|run-program)\s+(?:'\(\s*)?(?P<q>")(?P<cmd>[A-Za-z0-9_./+-]+)"""
+    r"""|:command\s+(?:\(list\s+|'\()(?P<q2>")(?P<cmd2>[A-Za-z0-9_./+-]+)"""
+)
 _EXEC_PATTERNS["lua"] = re.compile(
     r"""\b(?:os\.execute|io\.popen)\s*\(?\s*(?P<q>['"])(?P<cmd>[A-Za-z0-9_./+-]+)"""
 )
@@ -672,8 +678,13 @@ class _Builder:
         from .errors import AnalysisError, FileError
 
         try:
-            text = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
-        except OSError:
+            if kind == "lisp":
+                from .lisp import read_text
+
+                text = read_text(path).splitlines()
+            else:
+                text = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
+        except (OSError, EOFError):
             return
         analyzer = analyzer_for(path)
         link_kind = "includes" if kind == "c" else "imports"
@@ -709,10 +720,10 @@ class _Builder:
             return
         seen = set()
         for number, line in enumerate(text, 1):
-            if line.lstrip().startswith(("#", "//", "--")):
+            if line.lstrip().startswith(("#", "//", "--", ";")):
                 continue
             for match in pattern.finditer(line):
-                name = match.group("cmd")
+                name = match.groupdict().get("cmd") or match.groupdict().get("cmd2")
                 if name in seen:
                     continue
                 seen.add(name)

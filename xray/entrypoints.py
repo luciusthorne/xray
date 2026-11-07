@@ -57,7 +57,7 @@ def command_kind(path):
     """Classify source from its contents and established source suffixes.
 
     Returns "elf", "python", "shell", "perl", "ruby", "javascript", "lua",
-    "typescript", "c", "script" (a shebang
+    "typescript", "c", "lisp" (Emacs Lisp, Scheme, Common Lisp, Clojure), "script" (a shebang
     for some other interpreter) or "unknown".
     """
 
@@ -66,6 +66,12 @@ def command_kind(path):
 
     if start is None:
         return "unknown"
+
+    from .lisp import INTERPRETERS as _LISP_INTERPRETERS
+    from .lisp import is_lisp_name
+
+    if is_lisp_name(path) and not start.startswith(b"\x7fELF"):
+        return "lisp"
 
     if path.suffix in (".pm", ".pl") and not start.startswith((b"#!", b"\x7fELF")):
         return "perl"
@@ -112,6 +118,9 @@ def command_kind(path):
 
         if name.startswith(("lua", "luajit")):
             return "lua"
+
+        if name in _LISP_INTERPRETERS:
+            return "lisp"
 
         return "script"
 

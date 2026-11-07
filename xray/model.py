@@ -31,6 +31,7 @@ LANGUAGE_NAMES = {
     "lua": "Lua",
     "typescript": "TypeScript",
     "c": "C",
+    "lisp": "Lisp",
     "elf": "ELF",
     "library": "Library",
     "script": "Script",

@@ -13,8 +13,8 @@ from xray.minidebug import debuginfod_function_table, read_function_table
 from xray.rizinview import function_lines
 from xray.sourcelookup import file_lines, source_files, source_lines
 
-SERVED = ("elf", "shell", "perl", "ruby", "javascript", "lua", "typescript", "c", "python")
-TEXT = ("shell", "perl", "ruby", "javascript", "lua", "typescript", "c", "python")
+SERVED = ("elf", "shell", "perl", "ruby", "javascript", "lua", "typescript", "c", "python", "lisp")
+TEXT = ("shell", "perl", "ruby", "javascript", "lua", "typescript", "c", "python", "lisp")
 
 
 def _local_host(value):

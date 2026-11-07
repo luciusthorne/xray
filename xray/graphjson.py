@@ -19,12 +19,12 @@ from .model import (
 from .provenance import package_of
 
 EXPANDABLE = (
-    "python", "shell", "elf", "perl", "ruby", "javascript", "lua", "typescript", "c"
+    "python", "shell", "elf", "perl", "ruby", "javascript", "lua", "typescript", "c", "lisp"
 )
 
 
 def _symbols(path, kind):
-    if kind not in ("python", "shell", "ruby", "javascript", "lua", "typescript", "c"):
+    if kind not in ("python", "shell", "ruby", "javascript", "lua", "typescript", "c", "lisp"):
         return []
 
     analyzer = registry.analyzer_for(path)

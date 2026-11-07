@@ -107,7 +107,7 @@ def overview_lines(path):
 
         return lines
 
-    if kind in {"perl", "ruby", "javascript", "lua", "typescript", "c"}:
+    if kind in {"perl", "ruby", "javascript", "lua", "typescript", "c", "lisp"}:
         lines = calls_lines(path)
         chain = chain_lines(path, max_depth=2, max_files=15)
 
