@@ -122,12 +122,18 @@ def command_kind(path):
         if name in _LISP_INTERPRETERS:
             return "lisp"
 
-        return "script"
+        return _plugin_kind(path) or "script"
 
     if path.suffix == ".py":
         return "python"
 
-    return "unknown"
+    return _plugin_kind(path) or "unknown"
+
+
+def _plugin_kind(path):
+    from .analyzers import plugin_kind_for
+
+    return plugin_kind_for(path)
 
 
 def python_imports(path):

@@ -13,8 +13,8 @@ from xray.minidebug import debuginfod_function_table, read_function_table
 from xray.rizinview import function_lines
 from xray.sourcelookup import file_lines, source_files, source_lines
 
-SERVED = ("elf", "shell", "perl", "ruby", "javascript", "lua", "typescript", "c", "python", "lisp")
-TEXT = ("shell", "perl", "ruby", "javascript", "lua", "typescript", "c", "python", "lisp")
+SERVED_BUILTIN = ("elf", "shell", "perl", "ruby", "javascript", "lua", "typescript", "c", "python", "lisp")
+TEXT_BUILTIN = ("shell", "perl", "ruby", "javascript", "lua", "typescript", "c", "python", "lisp")
 
 
 def _local_host(value):
@@ -34,6 +34,19 @@ def _local_host(value):
             return True
 
     return False
+
+
+class _Kinds(tuple):
+    """Built-in kinds plus the kinds plugins add (looked up when tested)."""
+
+    def __contains__(self, kind):
+        from xray.analyzers import plugin_kinds
+
+        return tuple.__contains__(self, kind) or kind in plugin_kinds()
+
+
+SERVED = _Kinds(SERVED_BUILTIN)
+TEXT = _Kinds(TEXT_BUILTIN)
 
 
 def _unavailable(lines):

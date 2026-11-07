@@ -148,7 +148,8 @@ def report_lines(path, markdown=False):
                     "disassembly when source/debug data is unavailable"
                 )
         lines.append(f"{bullet}{_code_span(guidance) if markdown else guidance}")
-    elif kind in {"shell", "perl", "ruby", "javascript", "lua", "typescript", "c", "python", "lisp", "script"}:
+    elif kind in {"shell", "perl", "ruby", "javascript", "lua", "typescript", "c", "python", "lisp", "script"} \
+            or kind in __import__("xray.analyzers", fromlist=["plugin_kinds"]).plugin_kinds():
         lines.append(
             f"{bullet}Script text: {_code_span(str(path))}; display it with "
             f"{_code_span(code_command)}"

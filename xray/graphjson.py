@@ -24,7 +24,9 @@ EXPANDABLE = (
 
 
 def _symbols(path, kind):
-    if kind not in ("python", "shell", "ruby", "javascript", "lua", "typescript", "c", "lisp"):
+    from .analyzers import plugin_kinds
+
+    if kind not in ("python", "shell", "ruby", "javascript", "lua", "typescript", "c", "lisp") and kind not in plugin_kinds():
         return []
 
     analyzer = registry.analyzer_for(path)
@@ -125,7 +127,7 @@ def graph_data(
     while queue:
         node, kind, depth = queue.popleft()
 
-        if kind not in EXPANDABLE:
+        if kind not in EXPANDABLE and kind not in __import__("xray.analyzers", fromlist=["x"]).plugin_kinds():
             continue
 
         children = _children(node, kind)

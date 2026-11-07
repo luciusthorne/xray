@@ -19,6 +19,7 @@ from .analysis_views import (
     unused_symbols_lines,
 )
 from .analyze import analyze_python
+from .analyzers import plugin_kinds
 from .classify import detect_shebang
 from .discover import resolve_target
 from .entrypoints import command_kind
@@ -1072,7 +1073,7 @@ def query_callgraph(context):
         print_view(f"Call graph of {context.path.name}" + (f": {args[0]}" if args else ""),
                    lisp_callgraph_lines(graph, context.path.name, args[0] if args else None))
         return
-    if command_kind(context.path) in ("perl", "ruby", "javascript", "typescript", "lua"):
+    if command_kind(context.path) in ("perl", "ruby", "javascript", "typescript", "lua", *plugin_kinds()):
         from xray.scriptgraph import callgraph_lines as script_callgraph_lines
         from xray.scriptgraph import symbol_graph
 
@@ -1186,7 +1187,7 @@ def query_serve(context):
     from xray.serve import serve
 
     if command_kind(context.path) not in (
-        "elf", "shell", "perl", "ruby", "javascript", "lua", "typescript", "c", "python", "lisp"
+        "elf", "shell", "perl", "ruby", "javascript", "lua", "typescript", "c", "python", "lisp", *plugin_kinds()
     ):
         raise TargetError("--serve reads ELF, shell, Perl, Ruby, JavaScript, Lua, TypeScript, C, Python and Lisp commands")
 
@@ -1380,7 +1381,7 @@ def run():
             and _kind(path) not in ("shell", "elf", "perl")
         )
         and (
-            _kind(path) in ("shell", "elf", "perl", "ruby", "javascript", "lua", "typescript", "c", "lisp")
+            _kind(path) in ("shell", "elf", "perl", "ruby", "javascript", "lua", "typescript", "c", "lisp", *plugin_kinds())
             or (_kind(path) == "python" and path.suffix != ".py")
         )
     )
@@ -1406,7 +1407,7 @@ def run():
 
     if query in PYTHON_ONLY_QUERIES and analysis is None and not (
         query == "--callgraph"
-        and command_kind(Path(path)) in ("elf", "shell", "perl", "ruby", "javascript", "typescript", "lua", "lisp")
+        and command_kind(Path(path)) in ("elf", "shell", "perl", "ruby", "javascript", "typescript", "lua", "lisp", *plugin_kinds())
     ):
         raise TargetError(f"Not a Python file: {path}")
 

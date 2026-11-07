@@ -77,6 +77,89 @@ class Registry:
 registry = Registry()
 
 
+PLUGIN_GROUP = "xray.analyzers"
+SCRIPT_KINDS = frozenset({"ruby", "javascript", "lua", "typescript", "c", "lisp"})  # analyzer-backed kinds
+_plugins = {"done": False, "loaded": [], "failed": [], "analyzers": []}
+
+
+def load_plugins():
+    """Register analyzers other packages offer under the `xray.analyzers` entry point group.
+
+    An entry point may name an Analyzer instance, an Analyzer subclass, or a
+    callable returning one. It needs a `name` and `kinds`; a `claims(path)`
+    method lets it take files XRAY does not otherwise recognise. A plugin that
+    fails to load is recorded and skipped; it never stops XRAY.
+    """
+
+    if _plugins["done"]:
+        return
+    _plugins["done"] = True
+    from importlib.metadata import entry_points
+
+    try:
+        points = list(entry_points(group=PLUGIN_GROUP))
+    except Exception as error:  # noqa: BLE001 - a broken environment must not stop XRAY
+        _plugins["failed"].append(("(entry points)", f"{type(error).__name__}: {error}"))
+        return
+    for point in points:
+        try:
+            target = point.load()
+            analyzer = target() if isinstance(target, type) or (callable(target) and not isinstance(target, Analyzer)) else target
+            if not getattr(analyzer, "name", "") or not getattr(analyzer, "kinds", ()):
+                raise ValueError("an analyzer needs a name and kinds")
+            if analyzer.name in registry.names():
+                raise ValueError(f"the name {analyzer.name!r} is already taken")
+            builtin_kinds = {"elf", "python", "shell", "perl", "script", "unknown"} | SCRIPT_KINDS
+            clash = [kind for kind in analyzer.kinds if kind in builtin_kinds]
+            if clash:
+                raise ValueError(f"kinds {clash} belong to built-in analyzers")
+            registry.register(analyzer)
+            _plugins["analyzers"].append(analyzer)
+            dist = getattr(getattr(point, "dist", None), "name", None)
+            _plugins["loaded"].append((point.name, analyzer.name, tuple(analyzer.kinds), dist))
+        except Exception as error:  # noqa: BLE001 - plugins are other people's code
+            _plugins["failed"].append((point.name, f"{type(error).__name__}: {error}"))
+
+
+def plugin_report():
+    """(loaded, failed) for `xray plugins`."""
+
+    load_builtin_analyzers()
+    return list(_plugins["loaded"]), list(_plugins["failed"])
+
+
+def plugin_kinds():
+    load_builtin_analyzers()
+    return {kind for analyzer in _plugins["analyzers"] for kind in analyzer.kinds}
+
+
+def script_kinds():
+    """Kinds read through an analyzer's symbols and edges: built-in ones and plugins'."""
+
+    return SCRIPT_KINDS | plugin_kinds()
+
+
+def plugin_kind_for(path):
+    """The kind a plugin claims for path, or None."""
+
+    load_builtin_analyzers()
+    for analyzer in _plugins["analyzers"]:
+        claims = getattr(analyzer, "claims", None)
+        try:
+            if claims is not None and claims(Path(path)):
+                return analyzer.kinds[0]
+        except Exception:  # noqa: BLE001, S112 - a plugin's claims() failing means "not mine"
+            continue
+    return None
+
+
+def language_name(kind):
+    for analyzer in _plugins["analyzers"]:
+        if kind in analyzer.kinds:
+            return getattr(analyzer, "language", None) or kind.title()
+    return LANGUAGE_NAMES.get(kind, kind.title())
+
+
 def load_builtin_analyzers():
     """Import built-in analyzers so registry consumers see the full set."""
     from . import (
@@ -87,6 +170,8 @@ def load_builtin_analyzers():
         ruby_analyzer,  # noqa: F401
         treesitter_analyzers,  # noqa: F401
     )
+
+    load_plugins()
 
 
 def analyzer_for(path):

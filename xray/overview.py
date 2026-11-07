@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from .analyze import analyze_python
+from .analyzers import plugin_kinds
 from .calls import calls_lines
 from .chain import chain_lines
 from .elfscan import ElfScan, scan_elf
@@ -107,7 +108,7 @@ def overview_lines(path):
 
         return lines
 
-    if kind in {"perl", "ruby", "javascript", "lua", "typescript", "c", "lisp"}:
+    if kind in {"perl", "ruby", "javascript", "lua", "typescript", "c", "lisp"} or kind in plugin_kinds():
         lines = calls_lines(path)
         chain = chain_lines(path, max_depth=2, max_files=15)
 
