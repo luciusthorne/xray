@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from xray.entrypoints import command_kind
-from xray.minidebug import read_function_table
+from xray.minidebug import debuginfod_function_table, read_function_table
 
 _SITE = re.compile(r"^\s*([0-9a-fA-F]+):\s")
 _CALL = re.compile(r"\bcall\s+(?:([0-9a-fA-F]+)\s+<([^>]*)>|(\*.*?))\s*$")
@@ -32,7 +32,7 @@ def assembly_lines(path, name=None, max_lines=400, timeout=30):
         symbol = next(
             (
                 entry
-                for entry in read_function_table(path)
+                for entry in read_function_table(path) or debuginfod_function_table(path)
                 if _matches_symbol(entry[2], name)
             ),
             None,
@@ -229,7 +229,7 @@ def disasm_lines(path, timeout=30, max_callers=40, max_callees=10):
     except OSError as error:
         return [f"Unable to run objdump: {error}"]
 
-    parsed = parse_calls(result.stdout, read_function_table(path))
+    parsed = parse_calls(result.stdout, read_function_table(path) or debuginfod_function_table(path))
 
     if not (
         parsed.calls
@@ -306,4 +306,4 @@ def disasm_result(path, timeout=30):
     except (OSError, subprocess.SubprocessError):
         return None
 
-    return parse_calls(result.stdout, read_function_table(path))
+    return parse_calls(result.stdout, read_function_table(path) or debuginfod_function_table(path))

@@ -17,9 +17,9 @@ def function_names(path, kind):
     """Names --code accepts for this file (outer definitions first)."""
 
     if kind == "elf":
-        from xray.minidebug import read_function_table
+        from xray.minidebug import debuginfod_function_table, read_function_table
 
-        return list(dict.fromkeys(entry[2] for entry in read_function_table(path)))
+        return list(dict.fromkeys(entry[2] for entry in read_function_table(path) or debuginfod_function_table(path)))
 
     if kind == "python":
         import ast

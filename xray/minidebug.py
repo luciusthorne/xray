@@ -154,3 +154,21 @@ def read_function_table(path, timeout=10):
     if result.returncode != 0:
         return ()
     return parse_function_table(result.stdout)
+
+
+def debuginfod_function_table(path):
+    """Function table of a stripped ELF from its debuginfod debug file, or ().
+
+    For interactive code views only (--code, --source, --disasm, --serve,
+    --browse) as a fallback after read_function_table: it may contact the
+    configured debuginfod servers. Scans and reports stay offline.
+    """
+
+    if command_kind(Path(path)) != "elf":
+        return ()
+    try:
+        from xray.debuginfod import function_table
+
+        return function_table(Path(path))
+    except (ImportError, OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+        return ()
