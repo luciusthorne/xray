@@ -148,3 +148,132 @@ def callgraph_lines(graph, name, focus=None, per_function=20):
         lines.append("(they may still run through a variable, eval, trap or another script)")
     lines.append(f"One function, both directions: xray {name} --callgraph FUNCTION")
     return lines
+
+
+# -- other script languages: calls found by name ------------------------------
+
+_COMMENTS = {
+    "perl": ("#", None),
+    "ruby": ("#", ("=begin", "=end")),
+    "javascript": ("//", ("/*", "*/")),
+    "typescript": ("//", ("/*", "*/")),
+    "lua": ("--", ("--[[", "]]")),
+}
+
+
+def _blank_comments_and_strings(lines, kind):
+    """Lines of the same length with comments and string contents replaced by spaces,
+    so a function name inside a string or comment is not read as a call."""
+
+    line_comment, block = _COMMENTS.get(kind, ("#", None))
+    quotes = "\"'`" if kind in ("javascript", "typescript") else "\"'"
+    out, in_block = [], False
+    for text in lines:
+        chars, i, n = list(text), 0, len(text)
+        if in_block:
+            end = text.find(block[1])
+            if end < 0:
+                out.append(" " * n)
+                continue
+            for j in range(end + len(block[1])):
+                chars[j] = " "
+            i, in_block = end + len(block[1]), False
+        quote = None
+        while i < n:
+            if quote:
+                if text[i] == "\\":
+                    chars[i] = " "
+                    if i + 1 < n:
+                        chars[i + 1] = " "
+                    i += 2
+                    continue
+                if text[i] == quote:
+                    quote = None
+                else:
+                    chars[i] = " "
+                i += 1
+                continue
+            if block and text.startswith(block[0], i):
+                end = text.find(block[1], i + len(block[0]))
+                stop = n if end < 0 else end + len(block[1])
+                for j in range(i, stop):
+                    chars[j] = " "
+                in_block = end < 0
+                i = stop
+                continue
+            if text.startswith(line_comment, i) and not (kind == "perl" and i and text[i - 1] == "$"):
+                for j in range(i, n):
+                    chars[j] = " "
+                break
+            if text[i] in quotes and not (kind == "perl" and text[i] == "'" and i and text[i - 1].isalnum()):
+                quote = text[i]
+            i += 1
+        out.append("".join(chars))
+    return out
+
+
+def symbol_graph(path, kind):
+    """ScriptGraph for a Perl, Ruby, JavaScript, TypeScript or Lua file, from its
+    function definitions and calls to them found by name (`name(`, `obj.name(`,
+    Perl `&name`), with comments and strings blanked. None without functions."""
+
+    import re
+
+    from xray import command_analyzers, python_analyzer  # noqa: F401  (register analyzers)
+    from xray.analyzers import analyzer_for
+    from xray.codeview import _brace_end
+
+    path = Path(path)
+    analyzer = analyzer_for(path)
+    if analyzer is None:
+        return None
+    try:
+        symbols = [s for s in analyzer.symbols(path) if s.kind in ("function", "method")]
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except (OSError, ValueError, RuntimeError):
+        return None
+    if not symbols:
+        return None
+    spans = {}
+    for symbol in symbols:
+        text = lines[symbol.line - 1].strip() if 0 < symbol.line <= len(lines) else ""
+        if kind == "perl" and text.endswith(";") and "{" not in text:
+            continue  # a forward declaration (sub name ($$);), not the definition
+        end = symbol.metadata.get("end_line") if symbol.metadata else None
+        if not end and kind in ("perl", "javascript", "typescript"):
+            end = _brace_end(lines, symbol.line)
+        span = (symbol.line, max(end or symbol.line, symbol.line))
+        if symbol.name not in spans or span[1] - span[0] > spans[symbol.name][1] - spans[symbol.name][0]:
+            spans[symbol.name] = span
+    if not spans:
+        return None
+    clean = _blank_comments_and_strings(lines, kind)
+    names = sorted(spans, key=len, reverse=True)
+    pattern = re.compile(r"(?<![\w$])&?(" + "|".join(re.escape(name) for name in names) + r")\s*\(")
+    alternatives = "|".join(re.escape(name) for name in names)
+    perl_bare = re.compile(r"(?<![\w$])&(" + alternatives + r")\b") if kind == "perl" else None
+    # Perl and Ruby call functions without parentheses too (parse_arguments;  helper arg).
+    # Not after a sigil, ->, ::, . or a symbol colon; not a hash key (name => / {name}).
+    bare = re.compile(r"(?<![\w$@%&>:.{])(" + alternatives + r")\b(?!\s*=>)(?!\s*\})(?!\s*:[^:])") \
+        if kind in ("perl", "ruby") else None
+
+    def owner(line):
+        inside = [(end - start, name) for name, (start, end) in spans.items() if start <= line <= end]
+        return min(inside)[1] if inside else TOP
+
+    calls = defaultdict(lambda: defaultdict(list))
+    for number, text in enumerate(clean, 1):
+        found = {m.group(1) for m in pattern.finditer(text)}
+        if perl_bare:
+            found |= {m.group(1) for m in perl_bare.finditer(text)}
+        if bare:
+            found |= {m.group(1) for m in bare.finditer(text)}
+        for callee in found:
+            if spans[callee][0] == number or re.search(
+                rf"\b(?:sub|def|function|fn)\s+(?:[\w.:]+[.:])?{re.escape(callee)}\b", text
+            ):
+                continue  # a definition or declaration, not a call
+            calls[owner(number)][callee].append(number)
+    graph = ScriptGraph(path, spans)
+    graph.calls = {k: {n: sorted(set(v)) for n, v in d.items()} for k, d in calls.items()}
+    return graph

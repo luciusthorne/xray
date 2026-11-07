@@ -1061,8 +1061,20 @@ def query_callgraph(context):
         print_view(f"Call graph of {context.path.name}" + (f": {args[0]}" if args else ""),
                    shell_callgraph_lines(graph, context.path.name, args[0] if args else None))
         return
+    if command_kind(context.path) in ("perl", "ruby", "javascript", "typescript", "lua"):
+        from xray.scriptgraph import callgraph_lines as script_callgraph_lines
+        from xray.scriptgraph import symbol_graph
+
+        args = sys.argv[3:]
+        graph = symbol_graph(context.path, command_kind(context.path))
+        if graph is None:
+            raise TargetError(f"No functions found in {context.path}")
+        print_view(f"Call graph of {context.path.name}" + (f": {args[0]}" if args else "")
+                   + " (calls found by name)",
+                   script_callgraph_lines(graph, context.path.name, args[0] if args else None))
+        return
     if sys.argv[3:]:
-        raise CLIError("--callgraph FUNCTION is for compiled programs and shell scripts; for Python use: xray <file> --callgraph")
+        raise CLIError("--callgraph FUNCTION is for compiled programs and scripts; for Python use: xray <file> --callgraph")
     print_view(
         f"Call graph of {context.source_node}",
         callgraph_lines(context.path),
@@ -1382,7 +1394,8 @@ def run():
         source_node = str(Path(path).resolve())
 
     if query in PYTHON_ONLY_QUERIES and analysis is None and not (
-        query == "--callgraph" and command_kind(Path(path)) in ("elf", "shell")
+        query == "--callgraph"
+        and command_kind(Path(path)) in ("elf", "shell", "perl", "ruby", "javascript", "typescript", "lua")
     ):
         raise TargetError(f"Not a Python file: {path}")
 

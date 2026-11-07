@@ -65,6 +65,7 @@ xray rg --callgraph rg::search         # what it calls and what calls it, with f
 xray gh --code main.main               # Go, source from the module proxy
 xray fzf --callgraph main.main         # Go call graph
 xray xdg-mime --callgraph defapp_generic   # shell: functions it calls, commands it runs, who calls it
+xray aclocal --callgraph               # Perl, Ruby, JavaScript, TypeScript, Lua: calls found by name
 ```
 
 ## Evidence graph: `inspect`, `why`, `scan` and `reach`
