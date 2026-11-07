@@ -122,5 +122,6 @@ def test_enforcement_denies_a_call_the_program_never_imports(tmp_path):
 
     contract, _graph = generate(str(probe), packages=False)  # static: no run, so nothing shows ptrace is used
     assert "ptrace" in contract.values("syscalls")
+    contract.add("net", "any")  # this test is about system calls; no network namespace (bwrap) needed
     result = run_enforced(contract, [], capture=True, extra_read=["/"])
     assert "ptrace=-1 errno=1 pid_ok=1" in result.stdout.decode()  # EPERM, and ordinary calls still work
