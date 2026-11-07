@@ -1,4 +1,9 @@
-"""Cross-distribution study: do Arch and Debian builds of the same release differ in what they can do?
+"""Cross-distribution study: do Arch's and another distribution's builds of the same release differ?
+
+--against debian (default) uses snapshot.debian.org; --against fedora uses
+Fedora's Koji build system (kojipkgs.fedoraproject.org), the newest fcNN
+build of the same upstream version.
+
 
 For each package in an Arch capability log (tools/arch_capability_log.py),
 the Debian source package is found through Repology, Debian's build of the
@@ -90,11 +95,77 @@ def debian_binaries(source, version):
     return out
 
 
+KOJI = "https://kojipkgs.fedoraproject.org/packages"
+FEDORA_SKIP = ("-debuginfo", "-debugsource", "-devel", "-doc", "-docs", "-static", "-tests", "-langpack")
+
+
+def fedora_sources(name):
+    data = json.loads(get(f"https://repology.org/api/v1/project/{urllib.parse.quote(name)}"))
+    time.sleep(1.1)
+    sources = []
+    for row in data:
+        if row["repo"].startswith("fedora") and row.get("srcname") and row["srcname"] not in sources:
+            sources.append(row["srcname"])
+    return sources
+
+
+def fedora_build(source, wanted):
+    """(release, [(file name, url, size)]) for the newest fcNN build of source at upstream version wanted."""
+
+    try:
+        listing = get(f"{KOJI}/{urllib.parse.quote(source)}/{urllib.parse.quote(wanted)}/").decode("utf-8", "replace")
+    except OSError:
+        return None, []
+    releases = re.findall(r'href="([^"/]*\.fc(\d+))/"', listing)
+    if not releases:
+        return None, []
+    release = max(releases, key=lambda item: (int(item[1]), caplog.vercmp(item[0], "0")))[0]
+    files = []
+    for arch in ("x86_64", "noarch"):
+        try:
+            page = get(f"{KOJI}/{source}/{wanted}/{release}/{arch}/").decode("utf-8", "replace")
+        except OSError:
+            continue
+        for name, size in re.findall(r'href="([^"]+\.rpm)".*?(\d+[KMG]?)\s*$', page, re.MULTILINE):
+            base = name.rsplit("-", 2)[0]
+            if base.endswith(FEDORA_SKIP) or "-debuginfo" in name:
+                continue
+            files.append((name, f"{KOJI}/{source}/{wanted}/{release}/{arch}/{name}", size))
+    return release, files
+
+
+def compare_fedora(name, entry, row):
+    for source in fedora_sources(name):
+        release, files = fedora_build(source, row["upstream"])
+        if release:
+            row["fedora_source"], row["fedora_release"] = source, release
+            break
+    else:
+        row["status"] = "no Fedora build of this upstream version"
+        return
+    fedora = {}
+    with tempfile.TemporaryDirectory(prefix="xray-study-") as folder:
+        for filename, url, _size in files:
+            path = Path(folder) / filename
+            path.write_bytes(get(url))
+            if path.stat().st_size > MAX_BYTES:
+                path.unlink()
+                continue
+            with opened(path) as (_, _, contents, _meta):
+                for relative, profile in profiles(contents).items():
+                    fedora[f"{filename}:{relative}"] = profile
+            path.unlink()
+            time.sleep(0.3)
+    report = compare_builds(entry["files"], fedora)
+    row.update(status="compared", fedora_rpms=[item[0] for item in files], **report)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--log", default=str(caplog.default_log_path().with_name("arch-capability-log.jsonl")))
     parser.add_argument("--out", default="crossdistro.jsonl")
     parser.add_argument("--limit", type=int, default=200)
+    parser.add_argument("--against", choices=("debian", "fedora"), default="debian")
     options = parser.parse_args()
 
     entries = caplog.read_log(options.log)
@@ -116,6 +187,8 @@ def main():
             try:
                 if not any(profile.get("kind") == "elf" for profile in entry["files"].values()):
                     row["status"] = "no ELF files"
+                elif options.against == "fedora":
+                    compare_fedora(name, entry, row)
                 else:
                     for source in debian_sources(name):
                         version = debian_version(source, row["upstream"])
