@@ -174,6 +174,10 @@ xray hook install     # prints the commands that install the hook (needs root)
 
 pacman runs the hook after downloading and before installing. For every package being upgraded it compares the new archive in the cache with the installed version and re-checks the capability pins of the contracts in `/etc/xray/contracts`. In `mode = report` (the default, in `/etc/xray/hook.conf`) it lists the gains; in `mode = block` it stops the upgrade on a strong gain or a broken contract, except for packages on the `allow` line. Because pacman runs hooks as root, `xray hook install` points the hook at a root-owned copy of XRAY, never a user-writable one.
 
+### Plugins
+
+Other packages can teach XRAY a new language: an analyzer offered under the `xray.analyzers` entry point group gets `--report`, `--code`, `--callgraph`, `inspect`/`why`/`reach` and `--serve` for its files, the same as XRAY's own script languages. `xray plugins` lists what loaded and why anything failed; a broken plugin is skipped, never fatal. See docs/plugins.md.
+
 ### In VS Code
 
 `editors/vscode` is a small extension (plain JavaScript, no build step) that runs the `xray` command: `xray taint` findings on save as diagnostics in shell and Python files, the evidence graph of the current file in a panel, and contract checks. `npx @vscode/vsce package` in that folder builds the `.vsix`.

@@ -12,6 +12,12 @@ from xray.shellscan import function_lines as shell_function_lines
 from xray.sourcelookup import files_lines, source_lines
 
 
+def _plugin_kinds():
+    from xray.analyzers import plugin_kinds
+
+    return plugin_kinds()
+
+
 def _numbered(lines, start=1, limit=400):
     shown = [f"{n:5d}  {line}" for n, line in enumerate(lines[:limit], start)]
 
@@ -159,7 +165,7 @@ def code_lines(path, name=None, asm=False, say=lambda text: None):
     elif kind == "perl":
         line = dict(scan_perl(path).subs).get(name)
         end = _brace_end(text, line)
-    elif kind in {"ruby", "javascript", "lua", "typescript", "c"}:
+    elif kind in {"ruby", "javascript", "lua", "typescript", "c"} or kind in _plugin_kinds():
         analyzer = registry.analyzer_for(path)
         symbol = next(
             (symbol for symbol in analyzer.symbols(path) if symbol.name == name),

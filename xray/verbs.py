@@ -16,7 +16,7 @@ from .evidence import (
     weakest,
 )
 
-VERBS = ("inspect", "why", "scan", "reach", "contract", "drift", "whatif", "log", "taint", "compare", "feed", "hook", "explain", "attest", "policy", "query", "build")
+VERBS = ("inspect", "why", "scan", "reach", "contract", "drift", "whatif", "log", "taint", "compare", "feed", "hook", "explain", "attest", "policy", "query", "build", "plugins")
 
 
 def _parser(verb):
@@ -46,8 +46,33 @@ def _parser(verb):
     return parser
 
 
+def run_plugins(argv):
+    """xray plugins: the analyzers other packages added, and any that failed to load."""
+
+    from .analyzers import PLUGIN_GROUP, plugin_report
+
+    if argv:
+        raise CLIError("Usage: xray plugins")
+    loaded, failed = plugin_report()
+    if not loaded and not failed:
+        print(f"No plugins installed. Packages add analyzers through the '{PLUGIN_GROUP}' entry point group;")
+        print("see docs/plugins.md.")
+        return 0
+    if loaded:
+        print("Loaded")
+        for point, name, kinds, dist in loaded:
+            print(f"  {name:<20} kinds: {', '.join(kinds):<20} from {dist or point}")
+    if failed:
+        print("Failed (skipped)")
+        for point, error in failed:
+            print(f"  {point:<20} {error}")
+    return 1 if failed else 0
+
+
 def run_verb(argv):
     verb, rest = argv[0], argv[1:]
+    if verb == "plugins":
+        return run_plugins(rest)
     if verb == "taint":
         return run_taint(rest)
     if verb in ("drift", "whatif", "log", "compare", "feed", "hook", "explain", "attest", "policy", "query", "build"):

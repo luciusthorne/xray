@@ -113,12 +113,18 @@ def command_kind(path):
         if name.startswith(("lua", "luajit")):
             return "lua"
 
-        return "script"
+        return _plugin_kind(path) or "script"
 
     if path.suffix == ".py":
         return "python"
 
-    return "unknown"
+    return _plugin_kind(path) or "unknown"
+
+
+def _plugin_kind(path):
+    from .analyzers import plugin_kind_for
+
+    return plugin_kind_for(path)
 
 
 def python_imports(path):

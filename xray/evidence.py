@@ -58,6 +58,12 @@ LINK_KINDS = (
 FOLLOWED_KINDS = ("shell", "elf", "python", "perl", "ruby", "javascript", "typescript", "lua", "c")
 _READER_KINDS = ("ruby", "javascript", "typescript", "lua", "c")
 
+
+def _plugin_kinds():
+    from .analyzers import plugin_kinds
+
+    return plugin_kinds()
+
 # Literal command starts in languages read with patterns rather than a parser.
 _EXEC_PATTERNS = {
     "ruby": re.compile(
@@ -392,7 +398,7 @@ class _Builder:
             path, depth = self.queue.popleft()
             kind = self.graph.nodes[path].kind
             if depth >= self.max_depth:
-                if kind in FOLLOWED_KINDS or kind == "library":
+                if kind in FOLLOWED_KINDS or kind == "library" or kind in _plugin_kinds():
                     self.graph.nodes[path].attrs["not_expanded"] = "depth limit"
                 continue
             self.expand(path, kind, depth + 1)
@@ -466,7 +472,7 @@ class _Builder:
             self.python(path, depth)
         elif kind == "perl":
             self.perl(path, depth)
-        elif kind in _READER_KINDS:
+        elif kind in _READER_KINDS or kind in _plugin_kinds():
             self.reader(path, kind, depth)
         elif kind not in ("unknown",):
             self.graph.blind(path, f"{kind} files are not followed yet")

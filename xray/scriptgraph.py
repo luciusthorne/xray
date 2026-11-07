@@ -161,11 +161,23 @@ _COMMENTS = {
 }
 
 
+def _plugin_comments(kind):
+    """(line comment, (block open, block close) or None) a plugin analyzer declares as `comments`."""
+
+    from xray.analyzers import load_builtin_analyzers, registry
+
+    load_builtin_analyzers()
+    for analyzer in registry._analyzers:
+        if kind in getattr(analyzer, "kinds", ()) and getattr(analyzer, "comments", None):
+            return analyzer.comments
+    return None
+
+
 def _blank_comments_and_strings(lines, kind):
     """Lines of the same length with comments and string contents replaced by spaces,
     so a function name inside a string or comment is not read as a call."""
 
-    line_comment, block = _COMMENTS.get(kind, ("#", None))
+    line_comment, block = _COMMENTS.get(kind) or _plugin_comments(kind) or ("#", None)
     quotes = "\"'`" if kind in ("javascript", "typescript") else "\"'"
     out, in_block = [], False
     for text in lines:
