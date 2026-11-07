@@ -315,7 +315,9 @@ def _namespace_lines(cmap, name, limit):
     sample = [f for key in own for f in groups[key]][:limit]
     if sample:
         lines += ["", "Some of the program's functions:"] + [f"  {f.name}" for f in sample]
-    lines += ["", f"Machine code of one: xray {name} --disasm-function NAME (needs rizin)  ·  calls: xray {name} --disasm"]
+    lines += ["", (f"Source of one: xray {name} --code NAME  (searched by name in the upstream source its package "
+                  "was built from; a guess, labelled)"),
+              f"Machine code of one: xray {name} --disasm-function NAME (needs rizin)  ·  calls: xray {name} --disasm"]
     return lines
 
 
