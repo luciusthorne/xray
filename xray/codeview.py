@@ -248,7 +248,13 @@ def _code_map_view(path, name, say):
         view = codemap.file_view(cmap, name, label)
         if view is not None:
             return view
-    return codemap.function_view(cmap, name, label)
+    view = codemap.function_view(cmap, name, label)
+    if view is None and cmap.go is not None:
+        # Machine code of a whole Go binary helps no one; the function was probably inlined.
+        return [(f"No function named {name!r} in {label}'s function table: the compiler may have inlined it, "
+                "or the name differs."),
+                f"See the map: xray {label} --code   ·   a file's functions: xray {label} --code FILE.go"]
+    return view
 
 
 def _source_unavailable(lines):
