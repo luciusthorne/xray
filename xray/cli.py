@@ -98,7 +98,7 @@ def print_help():
     print("  --relationships        Show calls and other symbol relationships")
     print("  --unused               Show imports that appear unused")
     print("  --complexity           Show function complexity and nesting")
-    print("  --callgraph [function] Which function calls which (Python, and C/C++/Rust binaries with names)")
+    print("  --callgraph [function] Which function calls which (Python, shell, C/C++/Rust/Go binaries)")
     print("  --unused-symbols       Show definitions that appear unused (whole folder)")
     print("  --coupling             Show fan-in and fan-out of modules")
     print("  --call-coupling        Show calls in and out of each module")
@@ -1050,8 +1050,19 @@ def query_callgraph(context):
             raise TargetError(f"No function names in {context.path} (stripped, and no debuginfod debug file)")
         print_view(f"Call graph of {context.path.name}" + (f": {focus}" if focus else ""), lines)
         return
+    if command_kind(context.path) == "shell":
+        from xray.scriptgraph import callgraph_lines as shell_callgraph_lines
+        from xray.scriptgraph import shell_graph
+
+        args = sys.argv[3:]
+        graph = shell_graph(context.path)
+        if graph is None:
+            raise TargetError(f"Could not parse {context.path} as a shell script")
+        print_view(f"Call graph of {context.path.name}" + (f": {args[0]}" if args else ""),
+                   shell_callgraph_lines(graph, context.path.name, args[0] if args else None))
+        return
     if sys.argv[3:]:
-        raise CLIError("--callgraph FUNCTION is for compiled programs; for Python use: xray <file> --callgraph")
+        raise CLIError("--callgraph FUNCTION is for compiled programs and shell scripts; for Python use: xray <file> --callgraph")
     print_view(
         f"Call graph of {context.source_node}",
         callgraph_lines(context.path),
@@ -1371,7 +1382,7 @@ def run():
         source_node = str(Path(path).resolve())
 
     if query in PYTHON_ONLY_QUERIES and analysis is None and not (
-        query == "--callgraph" and command_kind(Path(path)) == "elf"
+        query == "--callgraph" and command_kind(Path(path)) in ("elf", "shell")
     ):
         raise TargetError(f"Not a Python file: {path}")
 
