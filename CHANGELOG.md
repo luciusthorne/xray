@@ -1,6 +1,34 @@
 # Changelog
 
-## Unreleased
+## 1.1.0
+
+Reading the code of Linux commands, in every language on a typical system:
+
+- **Code map for compiled programs** (`--code`): every function with its readable name, source file and line, grouped into the program's own files, its dependencies and the standard library. `--code FILE` lists a file's functions and shows it; `--code FUNCTION` shows that function's source. C, C++ and Rust through the binary's DWARF or the debuginfod debug file for its build ID (one batched `addr2line`, `c++filt` for C++ and both Rust manglings); Rust dependencies from crates.io, the Rust standard library from the matching `rust-src`.
+- **Go programs** read from the runtime's function table (`.gopclntab`) and build information, even stripped: names, files, lines and call graph; source from the Go module proxy and the Go repository at the exact versions; builds without `-trimpath` are normalised.
+- **Programs without debug information** (Hyprland and other C++ programs): `--code NAME` finds the function in the upstream archive their Arch package was built from (named in `.SRCINFO`, checksum verified), labelled a by-name guess. Names-only programs get a namespace overview.
+- **Debian and Ubuntu**: package ownership through dpkg (merged-`/usr` paths matched both ways) for `inspect`, `why`, `reach`, `scan`, `--report` and SBOM package URLs; source from sources.debian.org at the package's exact version, Debian's patches included.
+- **Call graphs** (`--callgraph [FUNCTION]`): compiled programs (C, C++, Rust, Go) with files and lines, generic copies merged; shell scripts (functions, the commands each runs, who calls what); Perl, Ruby, JavaScript, TypeScript and Lua (calls found by name, comments and strings ignored).
+- **Lisp** (Emacs Lisp, Scheme/Guile, Common Lisp, Clojure) with an exact S-expression reader: definitions, `--code`, exact call graphs, imports resolved through Emacs' and Guile's load paths, program starts.
+- **Emacs package** (`editors/emacs/xray.el`): code map, function code, call graph, inspect, why, reach and serve in clickable `*xray*` buffers; `xray taint` findings through Flymake.
+- **Plugins**: other packages add languages through the `xray.analyzers` entry point group; `xray plugins` lists what loaded and why anything failed. See docs/plugins.md.
+- The graph page (`--serve`, `--html`), `--report` and `--browse` use the code map: readable function names with file and line, Show source for every language, source file lists. The page's layout cools to a stop, fits below the controls and has a Fit button.
+- ELF dlopen metadata notes (`.note.dlopen`, used by systemd) become declared `dlopens` links: on an Arch desktop, programs reaching liblzma go from 411 to 909, most through `libsystemd.so.0`.
+- C source and function names for stripped binaries through debuginfod; definitions found when braces appear in strings or comments.
+
+Contracts and trust:
+
+- **`[syscalls]`** (contract version 2): dangerous system calls the program shows no sign of needing (ptrace, kernel modules, mounts and namespaces, bpf, keyrings, ...) are denied; `contract enforce` blocks them with a seccomp filter (EPERM), `contract systemd` writes `SystemCallFilter=`, `check --trace` reports a run that makes one. Contracts without it stay version 1.
+- **`xray contract kubernetes`**: a Pod and NetworkPolicy from a contract (no privilege escalation, read-only root, capabilities dropped, `[write]` as volumes, `[net]` as the only traffic, `[syscalls]` as a seccomp profile); validates with kubeconform.
+- Cross-distribution study against Fedora (docs/crossdistro-study.md): the loader-hook rule stays at zero false positives across Arch/Debian and Arch/Fedora.
+
+Project:
+
+- Open source on GitHub; README leads with code reading; PyPI metadata; SECURITY.md and CONTRIBUTING.md; XRAY is stated to be Linux-only.
+- Releases are built and published by `.github/workflows/release.yml` (PyPI trusted publishing, no token).
+- CI runs once per pull request change (PRs test Python 3.10 and 3.15, `main` tests 3.10–3.15) and cancels superseded runs.
+
+Earlier in this release:
 
 - Add a VS Code extension (`editors/vscode`): taint diagnostics on save, the evidence graph in a panel, contract checks.
 - Add `xray build --commands … / --contract …`: a minimal root filesystem (directory or tar) with only the files the evidence or contract names, the symlinks they are reached through, and `--check` runs inside it with bubblewrap.
