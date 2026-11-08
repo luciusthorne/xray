@@ -96,7 +96,10 @@ xray fzf --callgraph main.main         # Go call graph
 xray xdg-mime --callgraph defapp_generic   # shell: functions it calls, commands it runs, who calls it
 xray aclocal --callgraph               # Perl, Ruby, JavaScript, TypeScript, Lua: calls found by name
 xray subr-x.el.gz --callgraph string-limit   # Lisp (Emacs Lisp, Scheme, Common Lisp, Clojure): exact calls from S-expressions
+xray xournalpp --callgraph StrokeHandler::onButtonPressEvent   # C++: virtual calls too, both directions
 ```
+
+C++ virtual calls (`shape->area()`) go through a vtable, so the binary does not say which method runs. On x86-64, `--callgraph` reads every vtable in the program (from its symbol table or debug file, slot contents from the data and its relocations, including packed RELR relocations), finds which slot each indirect call uses (`call *0x10(%rax)`, a tail `jmp`, or a slot loaded into a register first, as GCC's speculative devirtualisation does), and reads the method name written on the call's source line. A method is listed (`⇢` calls, `⇠` called by) when a vtable holds a method of that name in that slot: an inference, labelled as one. `delete` through a base pointer is counted as a virtual destructor call; calls whose class lives in a shared library (libstdc++'s locale facets) and plain function pointers (`std::function`, C ops tables) are counted as not resolved. On xournalpp, 609 of 933 vtable calls resolve, 267 are virtual destructors and 57 stay unresolved.
 
 ## Evidence graph: `inspect`, `why`, `scan` and `reach`
 
@@ -353,6 +356,7 @@ xray/
 ├── cli.py
 ├── codemap.py
 ├── codeview.py
+├── cppvirtual.py
 ├── command_analyzers.py
 ├── commandproject.py
 ├── complexity.py

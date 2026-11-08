@@ -10,6 +10,19 @@ from xray.minidebug import debuginfod_function_table, read_function_table
 
 _SITE = re.compile(r"^\s*([0-9a-fA-F]+):\s")
 _CALL = re.compile(r"\bcall\s+(?:([0-9a-fA-F]+)\s+<([^>]*)>|(\*.*?))\s*$")
+# call *0x18(%rax): through a slot of a table an object points to (a C++ vtable, slot 3)
+_SLOT = re.compile(r"^\*(-?0x[0-9a-fA-F]+)?\(%(r[a-z0-9]+)\)$")
+_NOT_OBJECTS = {"rsp", "rbp", "rip"}
+_TAIL_SLOT = re.compile(r"\bjmp\s+(\*\S+)\s*$")   # an optimised virtual call at the end of a function
+# Optimised code may load the slot first and call through a register:
+#   mov (%rdi),%rax ; mov 0x10(%rax),%rax ; ... ; call *%rax   (or jmp *%rax)
+_LOAD = re.compile(r"^\s*[0-9a-fA-F]+:\s+mov\s+(-?0x[0-9a-fA-F]+)?\(%(r\w+)\),%(r\w+)\s*$")
+_WRITES = re.compile(r"^\s*[0-9a-fA-F]+:\s+(\w+)\s.*,%(\w+)\s*$")
+_READ_ONLY = ("cmp", "test", "bt", "ucomis", "comis", "ptest")   # compare, do not write the last operand
+_THROUGH_REGISTER = re.compile(r"\b(?:call|jmp)\s+\*%(r\w+)\s*$")
+_CALLEE_SAVED = {"rbx", "rbp", "rsp", "r12", "r13", "r14", "r15"}
+_WIDE = {"eax": "rax", "ebx": "rbx", "ecx": "rcx", "edx": "rdx", "esi": "rsi", "edi": "rdi",
+         "ax": "rax", "al": "rax", "cx": "rcx", "cl": "rcx", "dx": "rdx", "dl": "rdx"}
 _ASM_LABEL = re.compile(r"^\s*[0-9a-fA-F]+\s+<(.+)>:$")
 _ASM_SECTION = re.compile(r"^Disassembly of section .+:")
 
@@ -112,6 +125,7 @@ class DisasmResult:
     offset: int = 0
     unresolved: int = 0
     unattributed: int = 0
+    slot_calls: tuple = ()   # (caller, call site address, slot) for indirect calls through a table slot
 
 
 class _Spans:
@@ -151,20 +165,85 @@ def parse_calls(text, table=()):
 
     spans = _Spans(table)
     calls = {}
+    slot_calls = []
     indirect = offset = unresolved = unattributed = 0
 
+    def slot_call(caller, site, operand):
+        slot = _SLOT.match(operand)
+        if caller is not None and slot and slot.group(2) not in _NOT_OBJECTS:
+            offset_bytes = int(slot.group(1) or "0x0", 16)
+            if offset_bytes >= 0 and offset_bytes % 8 == 0:
+                slot_calls.append((caller[1], int(site.group(1), 16), offset_bytes // 8))
+
+    vtable_in = set()   # registers holding an object's vtable pointer: mov (%rdi),%rax
+    slot_in = {}        # registers holding a slot loaded from one: register -> slot
+
+    def track(line):
+        """Follow vtable and slot loads through registers, within one function."""
+
+        if _ASM_LABEL.match(line):
+            vtable_in.clear()
+            slot_in.clear()
+            return None
+        through = _THROUGH_REGISTER.search(line)
+        if through:
+            return slot_in.get(through.group(1))
+        load = _LOAD.match(line)
+        if load:
+            displacement, base, target = load.groups()
+            if displacement is None and base not in _NOT_OBJECTS:
+                slot_in.pop(target, None)
+                vtable_in.add(target)
+            elif base in vtable_in and displacement and not displacement.startswith("-"):
+                offset_bytes = int(displacement, 16)
+                vtable_in.discard(target)
+                if offset_bytes % 8 == 0:
+                    slot_in[target] = offset_bytes // 8
+                else:
+                    slot_in.pop(target, None)
+            else:
+                vtable_in.discard(target)
+                slot_in.pop(target, None)
+            return None
+        written = _WRITES.match(line)
+        if written and not written.group(1).startswith(_READ_ONLY):
+            register = _WIDE.get(written.group(2), written.group(2)).removesuffix("d")
+            vtable_in.discard(register)
+            slot_in.pop(register, None)
+        return None
+
     for line in text.splitlines():
+        through_slot = track(line)
         match = _CALL.search(line)
 
-        if not match:
-            continue
+        if through_slot is not None:
+            site = _SITE.match(line)
+            caller = spans.find(int(site.group(1), 16)) if site else None
+            if caller is not None:
+                slot_calls.append((caller[1], int(site.group(1), 16), through_slot))
+        if match:
+            # a call ends what registers hold, except the ones the called function must keep
+            for register in list(vtable_in):
+                if register not in _CALLEE_SAVED:
+                    vtable_in.discard(register)
+            for register in list(slot_in):
+                if register not in _CALLEE_SAVED:
+                    slot_in.pop(register)
 
-        if match.group(3) is not None:
-            indirect += 1
+        if not match:
+            tail = _TAIL_SLOT.search(line)
+            if tail:
+                site = _SITE.match(line)
+                slot_call(spans.find(int(site.group(1), 16)) if site else None, site, tail.group(1))
             continue
 
         site = _SITE.match(line)
         caller = spans.find(int(site.group(1), 16)) if site else None
+
+        if match.group(3) is not None:
+            indirect += 1
+            slot_call(caller, site, match.group(3))
+            continue
 
         if caller is None:
             unattributed += 1
@@ -192,6 +271,7 @@ def parse_calls(text, table=()):
         offset,
         unresolved,
         unattributed,
+        tuple(slot_calls),
     )
 
 

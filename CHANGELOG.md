@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **C++ virtual calls in `--callgraph`** (x86-64): vtables read from the binary, the slot each indirect call uses (direct, tail jump, or loaded into a register first) and the method name on the call's source line give the methods a call can reach (`⇢`) and who reaches a method (`⇠`), labelled inferred. Virtual destructor calls (`delete`) and unresolved calls are counted. xournalpp: 609 of 933 vtable calls resolved.
+
 ## 1.1.0
 
 Reading the code of Linux commands, in every language on a typical system:
