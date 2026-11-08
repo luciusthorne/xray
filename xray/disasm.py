@@ -1,6 +1,7 @@
 import bisect
 import os
 import re
+import struct
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -11,6 +12,8 @@ from xray.minidebug import debuginfod_function_table, read_function_table
 _SITE = re.compile(r"^\s*([0-9a-fA-F]+):\s")
 _CALL = re.compile(r"\bcall\s+(?:([0-9a-fA-F]+)\s+<([^>]*)>|(\*.*?))\s*$")
 # call *0x18(%rax): through a slot of a table an object points to (a C++ vtable, slot 3)
+# call *0x2c3f1b(%rip)  # 350f68 <gtk_window_close>: a library function through its GOT slot (-fno-plt)
+_GOT_CALL = re.compile(r"^\*-?0x[0-9a-fA-F]+\(%rip\)\s+#\s*([0-9a-fA-F]+)\s+<([^>+]+)>$")
 _SLOT = re.compile(r"^\*(-?0x[0-9a-fA-F]+)?\(%(r[a-z0-9]+)\)$")
 _NOT_OBJECTS = {"rsp", "rbp", "rip"}
 _TAIL_SLOT = re.compile(r"\bjmp\s+(\*\S+)\s*$")   # an optimised virtual call at the end of a function
@@ -154,13 +157,43 @@ class _Spans:
         return (start, name) if address < end else None
 
 
-def parse_calls(text, table=()):
+def got_ranges(path):
+    """[(start, end)] of the .got and .got.plt sections of an ELF64 little-endian file, or []."""
+
+    try:
+        with open(path, "rb") as handle:
+            header = handle.read(64)
+            if header[:4] != b"\x7fELF" or header[4] != 2 or header[5] != 1:
+                return []
+            shoff, = struct.unpack_from("<Q", header, 40)
+            shentsize, shnum, shstrndx = struct.unpack_from("<HHH", header, 58)
+            handle.seek(shoff)
+            table = handle.read(shentsize * shnum)
+            if shstrndx >= shnum or len(table) < shentsize * shnum:
+                return []
+            headers = [struct.unpack_from("<IIQQQQ", table, index * shentsize) for index in range(shnum)]
+            handle.seek(headers[shstrndx][4])
+            names = handle.read(headers[shstrndx][5])
+    except (OSError, struct.error):
+        return []
+    ranges = []
+    for name, _kind, _flags, address, _offset, size in headers:
+        label = names[name:names.find(b"\0", name)]
+        if label in (b".got", b".got.plt") and address:
+            ranges.append((address, address + size))
+    return ranges
+
+
+def parse_calls(text, table=(), got=()):
     """Return a DisasmResult from objdump -d output and a function table.
 
     table holds (address, size, name) of known functions. Call sites
     and call targets are matched against it by address, because the
     names objdump prints for stripped code (name+0x...) are only the
     nearest exported symbol. Without a table nothing can be attributed.
+    got holds the address ranges of the GOT: a call through a GOT slot
+    (code built with -fno-plt) is a call to the library function the
+    slot is named after, the same as a call through the PLT.
     """
 
     spans = _Spans(table)
@@ -241,6 +274,12 @@ def parse_calls(text, table=()):
         caller = spans.find(int(site.group(1), 16)) if site else None
 
         if match.group(3) is not None:
+            library = _GOT_CALL.match(match.group(3))
+            if library and caller is not None and any(
+                start <= int(library.group(1), 16) < end for start, end in got
+            ):
+                calls.setdefault(caller[1], set()).add(library.group(2).split("@", 1)[0] + "@plt")
+                continue
             indirect += 1
             slot_call(caller, site, match.group(3))
             continue
@@ -309,7 +348,9 @@ def disasm_lines(path, timeout=30, max_callers=40, max_callees=10):
     except OSError as error:
         return [f"Unable to run objdump: {error}"]
 
-    parsed = parse_calls(result.stdout, read_function_table(path) or debuginfod_function_table(path))
+    parsed = parse_calls(
+        result.stdout, read_function_table(path) or debuginfod_function_table(path), got_ranges(path)
+    )
 
     if not (
         parsed.calls
@@ -388,4 +429,4 @@ def disasm_result(path, timeout=30, table=None):
 
     if table is None:
         table = read_function_table(path) or debuginfod_function_table(path)
-    return parse_calls(result.stdout, table)
+    return parse_calls(result.stdout, table, got_ranges(path))

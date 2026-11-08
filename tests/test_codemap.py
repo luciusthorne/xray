@@ -31,6 +31,11 @@ from xray.codemap import _base, body_end, crate_source, origin, rust_std_source
      "xoj::util::destroy_cb"),
     ("main::{lambda(int)#1}::operator()(int) const", "main::{lambda#1}"),
     ("rg::main::{{closure}}", "rg::main::{{closure}}"),
+    ("operator delete(void*, unsigned long)", "operator delete"),
+    (("std::filesystem::__cxx11::path::_List::_Impl_deleter::operator()(std::filesystem::__cxx11::path::_List::_Impl*) "
+     "const"), "std::filesystem::__cxx11::path::_List::_Impl_deleter::operator()"),
+    ("bool Foo<int>::operator==(Foo<int> const&) const", "Foo::operator=="),
+    ("Foo::operator bool() const", "Foo::operator bool"),
 ])
 def test_base_names(name, base):
     assert _base(name) == base

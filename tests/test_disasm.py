@@ -1,7 +1,10 @@
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 import xray.disasm as disasm_module
 from xray.disasm import assembly_lines, disasm_lines, parse_calls
@@ -102,8 +105,8 @@ def elf(tmp_path):
 def test_lines_show_callers_and_totals(tmp_path, monkeypatch):
     text = (
         " 1004:\tcall   a10 <getenv@plt>\n"
-        " 1104:\tcall   1000 <helper>\n"
-        " 1108:\tcall   *%rdx\n"
+    " 1104:\tcall   1000 <helper>\n"
+    " 1108:\tcall   *%rdx\n"
     )
     table = ((0x1000, 16, "helper"), (0x1100, 16, "main"))
     monkeypatch.setattr(disasm_module.subprocess, "run", fake_run(text))
@@ -162,3 +165,32 @@ def test_help_mentions_disasm(tmp_path):
     )
 
     assert "--disasm" in result.stdout
+
+
+GOT_CALLS = (
+    " 1100:\tcall   *0x2c3f1b(%rip)        # 5000 <gtk_window_close>",
+    " 1104:\tcall   *0x2c3f0d(%rip)        # 5008 <_ZSt20__throw_length_errorPKc@GLIBCXX_3.4>",
+    " 1108:\tcall   *0x10(%rip)        # 7000 <hook>",   # a function pointer variable, not the GOT
+)
+
+
+def test_calls_through_the_got_are_library_calls():
+    result = parse_calls("\n".join(GOT_CALLS), TABLE, got=[(0x5000, 0x5100)])
+
+    caller = next(iter(result.calls))
+    assert set(result.calls[caller]) == {"gtk_window_close@plt", "_ZSt20__throw_length_errorPKc@plt"}
+    assert result.indirect == 1
+
+
+@pytest.mark.skipif(not all(shutil.which(t) for t in ("cc", "objdump")), reason="needs cc and objdump")
+def test_no_plt_binaries_name_their_library_calls(tmp_path):
+    from xray.disasm import disasm_result, got_ranges
+
+    source = tmp_path / "hello.c"
+    source.write_text('#include <stdio.h>\nint main(int argc, char **argv) { puts(argv[0]); return argc; }\n')
+    binary = tmp_path / "hello"
+    subprocess.run(["cc", "-O1", "-fno-plt", "-o", str(binary), str(source)], check=True)
+
+    assert got_ranges(binary)
+    result = disasm_result(binary)
+    assert "puts@plt" in result.calls.get("main", ())

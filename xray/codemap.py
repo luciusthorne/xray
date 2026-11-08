@@ -438,7 +438,7 @@ def _base(name):
 
     if "{lambda(" in name or "{unnamed type(" in name:
         return _cpp_closure_base(name)
-    name = name.split("(", 1)[0].strip()
+    name = name.replace("operator()", "operator\0").split("(", 1)[0].strip()
     if name.startswith("<"):
         depth = 0
         for index, char in enumerate(name):
@@ -453,9 +453,12 @@ def _base(name):
     while "::::" in base:
         base = base.replace("::::", "::")
     base = base.strip(":").strip()
-    if " " in base and not base.startswith(("virtual thunk", "non-virtual thunk", "covariant return")):
+    operator = re.search(r"(\S*operator)\b(.*)$", base)
+    if operator and not base.startswith(("virtual thunk", "non-virtual thunk", "covariant return")):
+        base = operator.group(1) + operator.group(2)   # "operator delete", "Foo::operator bool"
+    elif " " in base and not base.startswith(("virtual thunk", "non-virtual thunk", "covariant return")):
         base = base.rsplit(" ", 1)[-1]  # C++ template functions carry their return type: "void ns::f"
-    return base
+    return base.replace("operator\0", "operator()")
 
 
 def find_functions(cmap, wanted):
@@ -991,7 +994,9 @@ def elf_callgraph(path, focus=None):
     cmap = code_map(path)
     if cmap is None:
         return None
-    table = [(f.address, f.size, f.symbol) for f in cmap.functions] if cmap.go is not None else None
+    # the map's own function table: the binary may keep a few exported symbols and
+    # nothing else, while the map has every function from its debug file
+    table = [(f.address, f.size, f.symbol) for f in cmap.functions]
     found = disasm_result(path, timeout=120, table=table)
     if found is None:
         return ["objdump could not read this binary"]
