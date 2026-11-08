@@ -1,0 +1,36 @@
+name: Bug report
+description: XRAY gave a wrong result, crashed, or missed something
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: xray --version
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Distribution and version
+      placeholder: Arch Linux, Fedora 45, Debian 13, ...
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: The command you ran
+      render: sh
+    validations:
+      required: true
+  - type: textarea
+    id: got
+    attributes:
+      label: What you got
+      description: Paste the output (or the part that is wrong).
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and how you know
+      description: For a wrong or missing link, how did you find the right answer (source, strace, ldd, ...)?

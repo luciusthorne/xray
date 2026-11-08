@@ -3,4 +3,5 @@ include CHANGELOG.md
 recursive-include tests *.py
 recursive-include test_programs *.py
 include LICENSE
+include NOTICE
 recursive-include editors *.el *.js *.json *.md

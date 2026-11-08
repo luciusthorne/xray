@@ -449,4 +449,4 @@ The full suite uses pytest and includes upstream regression tests plus audit reg
 
 ## License
 
-Apache-2.0. See `LICENSE`.
+Copyright 2026 Luciusthorne. Licensed under Apache-2.0; see `LICENSE` and `NOTICE`.

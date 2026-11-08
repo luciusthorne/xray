@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Tour GIFs in the README (install, options, reading a command's code), recorded from real runs by `demo/tour/record.sh`.
+- `NOTICE` file with the copyright line; issue forms and a pull request template.
+
 ## 1.1.0
 
 Reading the code of Linux commands, in every language on a typical system:
