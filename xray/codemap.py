@@ -360,12 +360,84 @@ def _strip_generics(text):
     return "".join(out)
 
 
+_LAMBDA = re.compile(r"\{(lambda|unnamed type)\(")
+_CLOSURE_CALL = ("::operator()", "::_FUN")   # a lambda's body, and the plain function a lambda converts to
+
+
+def _top_level_arguments(text):
+    """'void (int), F::{lambda()#1}' -> ['void (int)', 'F::{lambda()#1}']: split at commas outside brackets."""
+
+    parts, depth, start = [], 0, 0
+    for index, char in enumerate(text):
+        depth += char in "<({"
+        depth -= char in ">)}"
+        if char == "," and depth == 0:
+            parts.append(text[start:index].strip())
+            start = index + 1
+    parts.append(text[start:].strip())
+    return parts
+
+
+def _cpp_closure_base(name):
+    """Readable name for C++ lambdas and the std::function code that calls them.
+
+    F(int)::{lambda(_GtkButton*, void*)#2}::_FUN(_GtkButton*, void*) -> F::{lambda#2}
+    G()::{lambda()#1}::operator()() const::{lambda()#1}::operator()() const -> G::{lambda#1}::{lambda#1}
+    std::_Function_handler<void (int), F(int)::{lambda(int)#1}>::_M_invoke(...) -> F::{lambda#1} (std::function)
+    """
+
+    name = re.sub(r"\s*\[clone [^\]]*\]", "", name).strip()
+    handler = re.match(r"std::_Function_handler<(.*)>::_M_invoke\(", name)
+    if handler:
+        functor = _top_level_arguments(handler.group(1))[-1]
+        return _cpp_closure_base(functor) + " (std::function)"
+    out, index = [], 0
+    while index < len(name):   # {lambda(ARGS)#N} -> {lambda#N}
+        match = _LAMBDA.match(name, index)
+        if match:
+            depth, end = 0, match.end() - 1
+            for end in range(match.end() - 1, len(name)):
+                depth += name[end] == "("
+                depth -= name[end] == ")"
+                if depth == 0:
+                    break
+            out.append("{" + match.group(1))
+            index = end + 1
+            continue
+        out.append(name[index])
+        index += 1
+    name = "".join(out).replace("operator()", "operator\0")
+    plain, depth = [], 0
+    for char in _strip_generics(name):   # drop every parameter list
+        if char == "(":
+            depth += 1
+        elif char == ")" and depth:
+            depth -= 1
+        elif not depth:
+            plain.append(char)
+    name = re.sub(r"\s+const\b", "", "".join(plain)).replace("operator\0", "operator()").strip()
+    if " " in name.split("::", 1)[0]:
+        name = name.split(" ", 1)[1]   # a return type: "void xoj::util::destroy_cb"
+    for suffix in _CLOSURE_CALL:   # a lambda inside a lambda: F::{lambda#1}::operator()::{lambda#1}
+        name = name.replace("}" + suffix + "::{", "}::{")
+    changed = True
+    while changed:
+        changed = False
+        for suffix in _CLOSURE_CALL:
+            if name.endswith(suffix) and name[: -len(suffix)].endswith("}"):
+                name, changed = name[: -len(suffix)], True
+    return name.strip(":").strip()
+
+
 def _base(name):
     """Name as a reader would search for it, without generic arguments.
 
     a::b<T>::c::<U> -> a::b::c;  <a::B<T> as c::Trait>::m -> a::B::m;  <a::B<T>>::m -> a::B::m
+    C++ lambdas keep their place: F(int)::{lambda(int)#2}::operator()(int) const -> F::{lambda#2}
     """
 
+    if "{lambda(" in name or "{unnamed type(" in name:
+        return _cpp_closure_base(name)
     name = name.split("(", 1)[0].strip()
     if name.startswith("<"):
         depth = 0

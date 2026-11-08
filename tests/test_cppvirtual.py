@@ -177,3 +177,37 @@ def test_c_function_pointers_are_not_called_virtual(tmp_path):
     text = "\n".join(codemap.elf_callgraph(binary, "run"))
     assert found.slot_calls   # it looks like a slot call ...
     assert "⇢" not in text and "Virtual calls" not in text   # ... but there are no vtables
+
+
+LAMBDAS = r"""#include <cstdio>
+#include <functional>
+
+__attribute__((noinline)) int apply(const std::function<int(int)> &f, int x) { return f(x); }
+
+int main(int argc, char **) {
+    int base = argc;
+    auto add = [base](int x) { return x + base; };
+    auto twice = [](int x) { return 2 * x; };
+    std::printf("%d %d\n", apply(add, 1), apply(twice, 2));
+    return 0;
+}
+"""
+
+
+@pytest.mark.skipif(not all(shutil.which(t) for t in ("c++", "addr2line", "c++filt", "readelf", "objdump")),
+                    reason="needs a C++ compiler and binutils")
+def test_lambdas_are_named_after_where_they_are_written(tmp_path):
+    source = tmp_path / "lambdas.cpp"
+    source.write_text(LAMBDAS)
+    binary = tmp_path / "lambdas"
+    subprocess.run(["c++", "-g", "-O0", "-o", str(binary), str(source)], check=True)
+    codemap._CACHE.clear()
+    cmap = codemap.code_map(binary, online=False)
+
+    bases = {codemap._base(f.name) for f in cmap.functions}
+    assert {"main::{lambda#1}", "main::{lambda#2}"} <= bases
+    assert "main::{lambda#1} (std::function)" in bases
+    main = codemap.find_functions(cmap, "main")
+    assert [f.line for f in main] == [6]   # the lambdas are not copies of main
+    view = codemap.function_view(cmap, "main::{lambda#2}", "lambdas")
+    assert "2 * x" in "\n".join(view)
