@@ -14,6 +14,10 @@ _CALL = re.compile(r"\bcall\s+(?:([0-9a-fA-F]+)\s+<([^>]*)>|(\*.*?))\s*$")
 # call *0x18(%rax): through a slot of a table an object points to (a C++ vtable, slot 3)
 # call *0x2c3f1b(%rip)  # 350f68 <gtk_window_close>: a library function through its GOT slot (-fno-plt)
 _GOT_CALL = re.compile(r"^\*-?0x[0-9a-fA-F]+\(%rip\)\s+#\s*([0-9a-fA-F]+)\s+<([^>+]+)>$")
+# lea 0x28ad5(%rip),%rax  # 1b2c30 <f>  /  mov 0x609e18(%rip),%rax  # 793f48 <signal@Qt_6>: a function's address
+_REFERENCE = re.compile(r"\b(?:lea|mov)\s+-?0x[0-9a-fA-F]+\(%rip\),%\w+\s+#\s*([0-9a-fA-F]+)\s+<([^>]+)>$")
+_CONNECT = "11connectImpl"   # QObject::connectImpl, which every new-style Qt connect() calls
+_CONNECT_WINDOW = 60         # instructions before a connect call that set up its arguments
 _SLOT = re.compile(r"^\*(-?0x[0-9a-fA-F]+)?\(%(r[a-z0-9]+)\)$")
 _NOT_OBJECTS = {"rsp", "rbp", "rip"}
 _TAIL_SLOT = re.compile(r"\bjmp\s+(\*\S+)\s*$")   # an optimised virtual call at the end of a function
@@ -129,6 +133,7 @@ class DisasmResult:
     unresolved: int = 0
     unattributed: int = 0
     slot_calls: tuple = ()   # (caller, call site address, slot) for indirect calls through a table slot
+    connects: tuple = ()     # (caller, call site address, function references) for Qt connect calls
 
 
 class _Spans:
@@ -208,6 +213,8 @@ def parse_calls(text, table=(), got=()):
             if offset_bytes >= 0 and offset_bytes % 8 == 0:
                 slot_calls.append((caller[1], int(site.group(1), 16), offset_bytes // 8))
 
+    connects = []
+    references = []     # (instruction number, local function symbol or "name@import") in this function
     vtable_in = set()   # registers holding an object's vtable pointer: mov (%rdi),%rax
     slot_in = {}        # registers holding a slot loaded from one: register -> slot
 
@@ -245,9 +252,28 @@ def parse_calls(text, table=(), got=()):
             slot_in.pop(register, None)
         return None
 
-    for line in text.splitlines():
+    def connect_call(number, caller, site, label):
+        if caller is None or _CONNECT not in label:
+            return False
+        found = tuple(dict.fromkeys(ref for at, ref in references if at >= number - _CONNECT_WINDOW))
+        connects.append((caller[1], int(site.group(1), 16), found))
+        references.clear()
+        return True
+
+    for number, line in enumerate(text.splitlines()):
         through_slot = track(line)
         match = _CALL.search(line)
+        if _ASM_LABEL.match(line):
+            references.clear()
+        reference = None if match else _REFERENCE.search(line)
+        if reference:
+            address = int(reference.group(1), 16)
+            if any(start <= address < end for start, end in got):
+                references.append((number, reference.group(2).split("@", 1)[0] + "@import"))
+            else:
+                target = spans.find(address)
+                if target is not None and target[0] == address:
+                    references.append((number, target[1]))
 
         if through_slot is not None:
             site = _SITE.match(line)
@@ -279,6 +305,7 @@ def parse_calls(text, table=(), got=()):
                 start <= int(library.group(1), 16) < end for start, end in got
             ):
                 calls.setdefault(caller[1], set()).add(library.group(2).split("@", 1)[0] + "@plt")
+                connect_call(number, caller, site, library.group(2))
                 continue
             indirect += 1
             slot_call(caller, site, match.group(3))
@@ -292,6 +319,7 @@ def parse_calls(text, table=(), got=()):
 
         if label.endswith("@plt") and "+" not in label:
             calls.setdefault(caller[1], set()).add(label)
+            connect_call(number, caller, site, label)
             continue
 
         target_address = int(match.group(1), 16)
@@ -311,6 +339,7 @@ def parse_calls(text, table=(), got=()):
         unresolved,
         unattributed,
         tuple(slot_calls),
+        tuple(connects),
     )
 
 

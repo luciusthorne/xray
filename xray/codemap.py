@@ -391,6 +391,10 @@ def _cpp_closure_base(name):
     if handler:
         functor = _top_level_arguments(handler.group(1))[-1]
         return _cpp_closure_base(functor) + " (std::function)"
+    wrapper = re.match(r"QtPrivate::Q(?:Callable|FunctorSlot)Object<(.*)>::impl\(", name)
+    if wrapper:
+        functor = _top_level_arguments(wrapper.group(1))[0]
+        return _cpp_closure_base(functor) + " (Qt slot)"
     out, index = [], 0
     while index < len(name):   # {lambda(ARGS)#N} -> {lambda#N}
         match = _LAMBDA.match(name, index)
@@ -851,7 +855,7 @@ def _is_cold(function):
     return bool(re.search(r"\.cold\b", function.name + " " + function.symbol))
 
 
-def callgraph_lines(cmap, calls, name, focus=None, indirect=0, limit=60, per_function=12, virtual=None):
+def callgraph_lines(cmap, calls, name, focus=None, indirect=0, limit=60, per_function=12, virtual=None, qt=None):
     """Which function calls which, with files and lines.
 
     calls maps a caller's symbol to the symbols (or name@plt imports) it calls
@@ -860,6 +864,8 @@ def callgraph_lines(cmap, calls, name, focus=None, indirect=0, limit=60, per_fun
     call site and shown with dashed arrows; other indirect calls (function
     pointers, trait objects) cannot be followed and are counted instead.
     Generic copies of one function are merged under its readable name.
+    qt (a qtsignals.QtConnections) adds the slots a signal is connected to
+    and the signals a slot is connected to, with where each connect() is.
     """
 
     by_symbol = {function.symbol: function for function in cmap.functions}
@@ -871,6 +877,24 @@ def callgraph_lines(cmap, calls, name, focus=None, indirect=0, limit=60, per_fun
                 plain = symbol[: -len(suffix)]
                 return "import", _base(_demangle([plain])[0]) or plain, "shared library"
         return _entry(by_symbol.get(symbol), prefix, cmap)
+
+    def connection_rows(pairs, arrow):
+        merged = {}
+        for other, connection in pairs:
+            group, short, place = entry(other)
+            if short == "?":
+                short = _base(other)
+            at = by_symbol.get(connection.caller)
+            function = _base(connection.function) if connection.function else (_base(at.name) if at else "?")
+            where = _short(connection.file, prefix) + f":{connection.line}" if connection.file else ""
+            note = "" if connection.certain else "  (maybe: several functions are set up for this connect)"
+            merged.setdefault((group, short), (place, function + (f", {where}" if where else "") + note))
+        ordered = sorted(merged.items(), key=lambda item: (_GROUP_ORDER.get(item[0][0], 9), item[0][1]))
+        out = [f"    {arrow} {short}" + (f"  ({place})" if place else "") + f"  connected in {by}"
+               for (group, short), (place, by) in ordered[:per_function]]
+        if len(ordered) > per_function:
+            out.append(f"    ... and {len(ordered) - per_function} more")
+        return out, len(ordered)
 
     legend = ("⇢ ⇠ virtual calls, inferred: a vtable in this program holds a method of the name "
               "written at the call, in the slot the call uses")
@@ -920,7 +944,7 @@ def callgraph_lines(cmap, calls, name, focus=None, indirect=0, limit=60, per_fun
         groups = defaultdict(list)
         for function in found:
             groups[(_base(function.name), function.file, function.line)].append(function)
-        lines, seen_sites, any_virtual = [], [], False
+        lines, seen_sites, any_virtual, any_qt = [], [], False, False
         for (short, file, line), copies in list(groups.items())[:5]:
             out = set().union(*(calls.get(f.symbol, ()) for f in copies))
             into = set().union(*(callers_of.get(f.symbol, set()) for f in copies))
@@ -940,10 +964,22 @@ def callgraph_lines(cmap, calls, name, focus=None, indirect=0, limit=60, per_fun
             lines += (out_rows + v_out_rows) or ["    nothing directly"]
             lines.append(f"  called by ({in_count}" + (f", + {v_in_count} virtual" if v_in_count else "") + "):")
             lines += (in_rows + v_in_rows) or ["    nothing directly (an entry point, or reached through a pointer)"]
+            if qt is not None:
+                to_slots, from_signals = qt.of(f.symbol for f in copies)
+                if to_slots:
+                    q_rows, q_count = connection_rows(to_slots, "⇝")
+                    lines += [f"  connected to (Qt, {q_count}):"] + q_rows
+                if from_signals:
+                    q_rows, q_count = connection_rows(from_signals, "⇜")
+                    lines += [f"  connected from signals (Qt, {q_count}):"] + q_rows
+                any_qt = any_qt or bool(to_slots or from_signals)
         if len(groups) > 5:
             lines.append(f"... and {len(groups) - 5} more functions match {focus!r}")
         lines.append("")
         lines += ([legend] if any_virtual else []) + virtual_note(seen_sites)
+        if any_qt:
+            lines.append("⇝ ⇜ Qt signal-slot connections, inferred from the connect() calls that make them "
+                         "(connections made at run time by name are not seen)")
         lines += [f"Indirect calls in the program: {indirect:,} (function pointers, vtables, trait objects)",
                   f"Read one: xray {name} --code NAME"]
         return lines[1:]
@@ -1007,4 +1043,9 @@ def elf_callgraph(path, focus=None):
         virtual = VirtualCalls(cmap, found.slot_calls, _locate, fetch_source, _demangle)
         if not virtual.vtables.classes:
             virtual = None   # no C++ vtables: slot-like calls are function pointers (a C ops table)
-    return callgraph_lines(cmap, found.calls, Path(path).name, focus, found.indirect, virtual=virtual)
+    qt = None
+    if found.connects and focus is not None:
+        from xray.qtsignals import QtConnections, connect_lines
+
+        qt = QtConnections(cmap, found.connects, _base, _demangle, connect_lines)
+    return callgraph_lines(cmap, found.calls, Path(path).name, focus, found.indirect, virtual=virtual, qt=qt)
