@@ -1,6 +1,6 @@
 pkgbase = xray-trust
 	pkgdesc = Read the code of any Linux command: its files, functions, call graph and what it can do, with evidence
-	pkgver = 1.1.0
+	pkgver = 1.2.0
 	pkgrel = 1
 	url = https://github.com/luciusthorne/xray
 	arch = any
@@ -22,9 +22,7 @@ pkgbase = xray-trust
 	optdepends = ruby: Ruby analysis
 	optdepends = git: --changes
 	conflicts = xray
-	source = https://github.com/luciusthorne/xray/releases/download/v1.1.0/xray_trust-1.1.0.tar.gz
-	source = xray-1.1.0.el::https://raw.githubusercontent.com/luciusthorne/xray/v1.1.0/editors/emacs/xray.el
-	sha256sums = 333d604bfd460180d9d68b058d6edbdc51654c08d6d253d97cce4e3bd0c5642a
-	sha256sums = f57fac15ff3d4b0db94a33a64f2a3a9ae28ccd8b7f0ecf4f6767a4d54aa97f7b
+	source = https://github.com/luciusthorne/xray/releases/download/v1.2.0/xray_trust-1.2.0.tar.gz
+	sha256sums = dce90b7fddfea795842f5fedbe5350950e832c6244e334697b40de5644e72310
 
 pkgname = xray-trust
