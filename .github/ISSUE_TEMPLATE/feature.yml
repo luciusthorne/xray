@@ -1,0 +1,15 @@
+name: Feature or language request
+description: A language, format, distribution or option XRAY should handle
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What should XRAY do?
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: A real program or file to try it on
+      description: Name a command or package (and distribution) this would help with.
