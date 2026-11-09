@@ -28,6 +28,14 @@ XRAY never claims a program is safe: every report lists its blind spots, and eve
 
 ![xray catching an xz-style library backdoor: drift, the capability log, a contract break, a traced breach, and enforcement stopping the payload](https://raw.githubusercontent.com/luciusthorne/xray/main/docs/xz-demo.gif)
 
+### In action
+
+| Install | Options | Reading a command's code |
+|---|---|---|
+| ![Installing xray with pipx from a fresh clone](https://raw.githubusercontent.com/luciusthorne/xray/main/docs/tour-install.gif) | ![xray --package, inspect, why and --chain on jq, curl and xdg-open](https://raw.githubusercontent.com/luciusthorne/xray/main/docs/tour-options.gif) | ![Reading code: ls main() in C, ripgrep in Rust, gh in Go, xdg-mime in shell](https://raw.githubusercontent.com/luciusthorne/xray/main/docs/tour-code.gif) |
+
+The tours are recorded from real runs with `demo/tour/record.sh`.
+
 ## Install
 
 Requires Python 3.10 or newer. The Python package has no third-party runtime dependencies. The package is named `xray-trust`; the command it installs is `xray`.
@@ -448,4 +456,4 @@ The full suite uses pytest and includes upstream regression tests plus audit reg
 
 ## License
 
-Apache-2.0. See `LICENSE`.
+Copyright 2026 Luciusthorne. Licensed under Apache-2.0; see `LICENSE` and `NOTICE`.

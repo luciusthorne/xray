@@ -8,7 +8,7 @@ description = "Read the code of any Linux command: its files, functions, call gr
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "NOTICE"]
 dynamic = ["version"]
 authors = [{ name = "Luciusthorne" }]
 keywords = [
