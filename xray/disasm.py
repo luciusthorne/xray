@@ -1,6 +1,7 @@
 import bisect
 import os
 import re
+import struct
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -10,6 +11,25 @@ from xray.minidebug import debuginfod_function_table, read_function_table
 
 _SITE = re.compile(r"^\s*([0-9a-fA-F]+):\s")
 _CALL = re.compile(r"\bcall\s+(?:([0-9a-fA-F]+)\s+<([^>]*)>|(\*.*?))\s*$")
+# call *0x18(%rax): through a slot of a table an object points to (a C++ vtable, slot 3)
+# call *0x2c3f1b(%rip)  # 350f68 <gtk_window_close>: a library function through its GOT slot (-fno-plt)
+_GOT_CALL = re.compile(r"^\*-?0x[0-9a-fA-F]+\(%rip\)\s+#\s*([0-9a-fA-F]+)\s+<([^>+]+)>$")
+# lea 0x28ad5(%rip),%rax  # 1b2c30 <f>  /  mov 0x609e18(%rip),%rax  # 793f48 <signal@Qt_6>: a function's address
+_REFERENCE = re.compile(r"\b(?:lea|mov)\s+-?0x[0-9a-fA-F]+\(%rip\),%\w+\s+#\s*([0-9a-fA-F]+)\s+<([^>]+)>$")
+_CONNECT = "11connectImpl"   # QObject::connectImpl, which every new-style Qt connect() calls
+_CONNECT_WINDOW = 60         # instructions before a connect call that set up its arguments
+_SLOT = re.compile(r"^\*(-?0x[0-9a-fA-F]+)?\(%(r[a-z0-9]+)\)$")
+_NOT_OBJECTS = {"rsp", "rbp", "rip"}
+_TAIL_SLOT = re.compile(r"\bjmp\s+(\*\S+)\s*$")   # an optimised virtual call at the end of a function
+# Optimised code may load the slot first and call through a register:
+#   mov (%rdi),%rax ; mov 0x10(%rax),%rax ; ... ; call *%rax   (or jmp *%rax)
+_LOAD = re.compile(r"^\s*[0-9a-fA-F]+:\s+mov\s+(-?0x[0-9a-fA-F]+)?\(%(r\w+)\),%(r\w+)\s*$")
+_WRITES = re.compile(r"^\s*[0-9a-fA-F]+:\s+(\w+)\s.*,%(\w+)\s*$")
+_READ_ONLY = ("cmp", "test", "bt", "ucomis", "comis", "ptest")   # compare, do not write the last operand
+_THROUGH_REGISTER = re.compile(r"\b(?:call|jmp)\s+\*%(r\w+)\s*$")
+_CALLEE_SAVED = {"rbx", "rbp", "rsp", "r12", "r13", "r14", "r15"}
+_WIDE = {"eax": "rax", "ebx": "rbx", "ecx": "rcx", "edx": "rdx", "esi": "rsi", "edi": "rdi",
+         "ax": "rax", "al": "rax", "cx": "rcx", "cl": "rcx", "dx": "rdx", "dl": "rdx"}
 _ASM_LABEL = re.compile(r"^\s*[0-9a-fA-F]+\s+<(.+)>:$")
 _ASM_SECTION = re.compile(r"^Disassembly of section .+:")
 
@@ -112,6 +132,8 @@ class DisasmResult:
     offset: int = 0
     unresolved: int = 0
     unattributed: int = 0
+    slot_calls: tuple = ()   # (caller, call site address, slot) for indirect calls through a table slot
+    connects: tuple = ()     # (caller, call site address, function references) for Qt connect calls
 
 
 class _Spans:
@@ -140,31 +162,154 @@ class _Spans:
         return (start, name) if address < end else None
 
 
-def parse_calls(text, table=()):
+def got_ranges(path):
+    """[(start, end)] of the .got and .got.plt sections of an ELF64 little-endian file, or []."""
+
+    try:
+        with open(path, "rb") as handle:
+            header = handle.read(64)
+            if header[:4] != b"\x7fELF" or header[4] != 2 or header[5] != 1:
+                return []
+            shoff, = struct.unpack_from("<Q", header, 40)
+            shentsize, shnum, shstrndx = struct.unpack_from("<HHH", header, 58)
+            handle.seek(shoff)
+            table = handle.read(shentsize * shnum)
+            if shstrndx >= shnum or len(table) < shentsize * shnum:
+                return []
+            headers = [struct.unpack_from("<IIQQQQ", table, index * shentsize) for index in range(shnum)]
+            handle.seek(headers[shstrndx][4])
+            names = handle.read(headers[shstrndx][5])
+    except (OSError, struct.error):
+        return []
+    ranges = []
+    for name, _kind, _flags, address, _offset, size in headers:
+        label = names[name:names.find(b"\0", name)]
+        if label in (b".got", b".got.plt") and address:
+            ranges.append((address, address + size))
+    return ranges
+
+
+def parse_calls(text, table=(), got=()):
     """Return a DisasmResult from objdump -d output and a function table.
 
     table holds (address, size, name) of known functions. Call sites
     and call targets are matched against it by address, because the
     names objdump prints for stripped code (name+0x...) are only the
     nearest exported symbol. Without a table nothing can be attributed.
+    got holds the address ranges of the GOT: a call through a GOT slot
+    (code built with -fno-plt) is a call to the library function the
+    slot is named after, the same as a call through the PLT.
     """
 
     spans = _Spans(table)
     calls = {}
+    slot_calls = []
     indirect = offset = unresolved = unattributed = 0
 
-    for line in text.splitlines():
+    def slot_call(caller, site, operand):
+        slot = _SLOT.match(operand)
+        if caller is not None and slot and slot.group(2) not in _NOT_OBJECTS:
+            offset_bytes = int(slot.group(1) or "0x0", 16)
+            if offset_bytes >= 0 and offset_bytes % 8 == 0:
+                slot_calls.append((caller[1], int(site.group(1), 16), offset_bytes // 8))
+
+    connects = []
+    references = []     # (instruction number, local function symbol or "name@import") in this function
+    vtable_in = set()   # registers holding an object's vtable pointer: mov (%rdi),%rax
+    slot_in = {}        # registers holding a slot loaded from one: register -> slot
+
+    def track(line):
+        """Follow vtable and slot loads through registers, within one function."""
+
+        if _ASM_LABEL.match(line):
+            vtable_in.clear()
+            slot_in.clear()
+            return None
+        through = _THROUGH_REGISTER.search(line)
+        if through:
+            return slot_in.get(through.group(1))
+        load = _LOAD.match(line)
+        if load:
+            displacement, base, target = load.groups()
+            if displacement is None and base not in _NOT_OBJECTS:
+                slot_in.pop(target, None)
+                vtable_in.add(target)
+            elif base in vtable_in and displacement and not displacement.startswith("-"):
+                offset_bytes = int(displacement, 16)
+                vtable_in.discard(target)
+                if offset_bytes % 8 == 0:
+                    slot_in[target] = offset_bytes // 8
+                else:
+                    slot_in.pop(target, None)
+            else:
+                vtable_in.discard(target)
+                slot_in.pop(target, None)
+            return None
+        written = _WRITES.match(line)
+        if written and not written.group(1).startswith(_READ_ONLY):
+            register = _WIDE.get(written.group(2), written.group(2)).removesuffix("d")
+            vtable_in.discard(register)
+            slot_in.pop(register, None)
+        return None
+
+    def connect_call(number, caller, site, label):
+        if caller is None or _CONNECT not in label:
+            return False
+        found = tuple(dict.fromkeys(ref for at, ref in references if at >= number - _CONNECT_WINDOW))
+        connects.append((caller[1], int(site.group(1), 16), found))
+        references.clear()
+        return True
+
+    for number, line in enumerate(text.splitlines()):
+        through_slot = track(line)
         match = _CALL.search(line)
+        if _ASM_LABEL.match(line):
+            references.clear()
+        reference = None if match else _REFERENCE.search(line)
+        if reference:
+            address = int(reference.group(1), 16)
+            if any(start <= address < end for start, end in got):
+                references.append((number, reference.group(2).split("@", 1)[0] + "@import"))
+            else:
+                target = spans.find(address)
+                if target is not None and target[0] == address:
+                    references.append((number, target[1]))
+
+        if through_slot is not None:
+            site = _SITE.match(line)
+            caller = spans.find(int(site.group(1), 16)) if site else None
+            if caller is not None:
+                slot_calls.append((caller[1], int(site.group(1), 16), through_slot))
+        if match:
+            # a call ends what registers hold, except the ones the called function must keep
+            for register in list(vtable_in):
+                if register not in _CALLEE_SAVED:
+                    vtable_in.discard(register)
+            for register in list(slot_in):
+                if register not in _CALLEE_SAVED:
+                    slot_in.pop(register)
 
         if not match:
-            continue
-
-        if match.group(3) is not None:
-            indirect += 1
+            tail = _TAIL_SLOT.search(line)
+            if tail:
+                site = _SITE.match(line)
+                slot_call(spans.find(int(site.group(1), 16)) if site else None, site, tail.group(1))
             continue
 
         site = _SITE.match(line)
         caller = spans.find(int(site.group(1), 16)) if site else None
+
+        if match.group(3) is not None:
+            library = _GOT_CALL.match(match.group(3))
+            if library and caller is not None and any(
+                start <= int(library.group(1), 16) < end for start, end in got
+            ):
+                calls.setdefault(caller[1], set()).add(library.group(2).split("@", 1)[0] + "@plt")
+                connect_call(number, caller, site, library.group(2))
+                continue
+            indirect += 1
+            slot_call(caller, site, match.group(3))
+            continue
 
         if caller is None:
             unattributed += 1
@@ -174,6 +319,7 @@ def parse_calls(text, table=()):
 
         if label.endswith("@plt") and "+" not in label:
             calls.setdefault(caller[1], set()).add(label)
+            connect_call(number, caller, site, label)
             continue
 
         target_address = int(match.group(1), 16)
@@ -192,6 +338,8 @@ def parse_calls(text, table=()):
         offset,
         unresolved,
         unattributed,
+        tuple(slot_calls),
+        tuple(connects),
     )
 
 
@@ -229,7 +377,9 @@ def disasm_lines(path, timeout=30, max_callers=40, max_callees=10):
     except OSError as error:
         return [f"Unable to run objdump: {error}"]
 
-    parsed = parse_calls(result.stdout, read_function_table(path) or debuginfod_function_table(path))
+    parsed = parse_calls(
+        result.stdout, read_function_table(path) or debuginfod_function_table(path), got_ranges(path)
+    )
 
     if not (
         parsed.calls
@@ -308,4 +458,4 @@ def disasm_result(path, timeout=30, table=None):
 
     if table is None:
         table = read_function_table(path) or debuginfod_function_table(path)
-    return parse_calls(result.stdout, table)
+    return parse_calls(result.stdout, table, got_ranges(path))

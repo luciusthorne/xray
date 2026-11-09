@@ -18,6 +18,24 @@ from xray.codemap import _base, body_end, crate_source, origin, rust_std_source
     ("<alloc::vec::Vec<T> as core::ops::drop::Drop>::drop", "alloc::vec::Vec::drop"),
     ("Runner::_runner(void*) [clone .lto_priv.0]", "Runner::_runner"),
     ("main", "main"),
+    # C++ lambdas keep their place instead of folding into the function around them
+    (("DeviceTestingArea::DeviceTestingArea(GladeSearchpath*, _GtkBox*, Settings*)::{lambda(_GtkButton*, void*)#2}"
+     "::_FUN(_GtkButton*, void*)"), "DeviceTestingArea::DeviceTestingArea::{lambda#2}"),
+    (("CustomExportJob::showDialogAndRun()::{lambda()#1}::operator()() const::{lambda()#1}::operator()() const "
+     "[clone .cold]"), "CustomExportJob::showDialogAndRun::{lambda#1}::{lambda#1}"),
+    (("std::_Function_handler<void (std::filesystem::__cxx11::path, bool), Control::missingPdfDialogResponseHandler("
+     "std::filesystem::__cxx11::path, int)::{lambda(std::filesystem::__cxx11::path, bool)#1}>::_M_invoke("
+     "std::_Any_data const&, std::filesystem::__cxx11::path&&, bool&&)"),
+     "Control::missingPdfDialogResponseHandler::{lambda#1} (std::function)"),
+    ("void xoj::util::destroy_cb<Palette::parseErrorDialog(std::exception const&) const::{lambda()#1}, 1>(void*)",
+     "xoj::util::destroy_cb"),
+    ("main::{lambda(int)#1}::operator()(int) const", "main::{lambda#1}"),
+    ("rg::main::{{closure}}", "rg::main::{{closure}}"),
+    ("operator delete(void*, unsigned long)", "operator delete"),
+    (("std::filesystem::__cxx11::path::_List::_Impl_deleter::operator()(std::filesystem::__cxx11::path::_List::_Impl*) "
+     "const"), "std::filesystem::__cxx11::path::_List::_Impl_deleter::operator()"),
+    ("bool Foo<int>::operator==(Foo<int> const&) const", "Foo::operator=="),
+    ("Foo::operator bool() const", "Foo::operator bool"),
 ])
 def test_base_names(name, base):
     assert _base(name) == base

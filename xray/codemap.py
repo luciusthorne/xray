@@ -360,13 +360,89 @@ def _strip_generics(text):
     return "".join(out)
 
 
+_LAMBDA = re.compile(r"\{(lambda|unnamed type)\(")
+_CLOSURE_CALL = ("::operator()", "::_FUN")   # a lambda's body, and the plain function a lambda converts to
+
+
+def _top_level_arguments(text):
+    """'void (int), F::{lambda()#1}' -> ['void (int)', 'F::{lambda()#1}']: split at commas outside brackets."""
+
+    parts, depth, start = [], 0, 0
+    for index, char in enumerate(text):
+        depth += char in "<({"
+        depth -= char in ">)}"
+        if char == "," and depth == 0:
+            parts.append(text[start:index].strip())
+            start = index + 1
+    parts.append(text[start:].strip())
+    return parts
+
+
+def _cpp_closure_base(name):
+    """Readable name for C++ lambdas and the std::function code that calls them.
+
+    F(int)::{lambda(_GtkButton*, void*)#2}::_FUN(_GtkButton*, void*) -> F::{lambda#2}
+    G()::{lambda()#1}::operator()() const::{lambda()#1}::operator()() const -> G::{lambda#1}::{lambda#1}
+    std::_Function_handler<void (int), F(int)::{lambda(int)#1}>::_M_invoke(...) -> F::{lambda#1} (std::function)
+    """
+
+    name = re.sub(r"\s*\[clone [^\]]*\]", "", name).strip()
+    handler = re.match(r"std::_Function_handler<(.*)>::_M_invoke\(", name)
+    if handler:
+        functor = _top_level_arguments(handler.group(1))[-1]
+        return _cpp_closure_base(functor) + " (std::function)"
+    wrapper = re.match(r"QtPrivate::Q(?:Callable|FunctorSlot)Object<(.*)>::impl\(", name)
+    if wrapper:
+        functor = _top_level_arguments(wrapper.group(1))[0]
+        return _cpp_closure_base(functor) + " (Qt slot)"
+    out, index = [], 0
+    while index < len(name):   # {lambda(ARGS)#N} -> {lambda#N}
+        match = _LAMBDA.match(name, index)
+        if match:
+            depth, end = 0, match.end() - 1
+            for end in range(match.end() - 1, len(name)):
+                depth += name[end] == "("
+                depth -= name[end] == ")"
+                if depth == 0:
+                    break
+            out.append("{" + match.group(1))
+            index = end + 1
+            continue
+        out.append(name[index])
+        index += 1
+    name = "".join(out).replace("operator()", "operator\0")
+    plain, depth = [], 0
+    for char in _strip_generics(name):   # drop every parameter list
+        if char == "(":
+            depth += 1
+        elif char == ")" and depth:
+            depth -= 1
+        elif not depth:
+            plain.append(char)
+    name = re.sub(r"\s+const\b", "", "".join(plain)).replace("operator\0", "operator()").strip()
+    if " " in name.split("::", 1)[0]:
+        name = name.split(" ", 1)[1]   # a return type: "void xoj::util::destroy_cb"
+    for suffix in _CLOSURE_CALL:   # a lambda inside a lambda: F::{lambda#1}::operator()::{lambda#1}
+        name = name.replace("}" + suffix + "::{", "}::{")
+    changed = True
+    while changed:
+        changed = False
+        for suffix in _CLOSURE_CALL:
+            if name.endswith(suffix) and name[: -len(suffix)].endswith("}"):
+                name, changed = name[: -len(suffix)], True
+    return name.strip(":").strip()
+
+
 def _base(name):
     """Name as a reader would search for it, without generic arguments.
 
     a::b<T>::c::<U> -> a::b::c;  <a::B<T> as c::Trait>::m -> a::B::m;  <a::B<T>>::m -> a::B::m
+    C++ lambdas keep their place: F(int)::{lambda(int)#2}::operator()(int) const -> F::{lambda#2}
     """
 
-    name = name.split("(", 1)[0].strip()
+    if "{lambda(" in name or "{unnamed type(" in name:
+        return _cpp_closure_base(name)
+    name = name.replace("operator()", "operator\0").split("(", 1)[0].strip()
     if name.startswith("<"):
         depth = 0
         for index, char in enumerate(name):
@@ -381,9 +457,12 @@ def _base(name):
     while "::::" in base:
         base = base.replace("::::", "::")
     base = base.strip(":").strip()
-    if " " in base and not base.startswith(("virtual thunk", "non-virtual thunk", "covariant return")):
+    operator = re.search(r"(\S*operator)\b(.*)$", base)
+    if operator and not base.startswith(("virtual thunk", "non-virtual thunk", "covariant return")):
+        base = operator.group(1) + operator.group(2)   # "operator delete", "Foo::operator bool"
+    elif " " in base and not base.startswith(("virtual thunk", "non-virtual thunk", "covariant return")):
         base = base.rsplit(" ", 1)[-1]  # C++ template functions carry their return type: "void ns::f"
-    return base
+    return base.replace("operator\0", "operator()")
 
 
 def find_functions(cmap, wanted):
@@ -776,22 +855,63 @@ def _is_cold(function):
     return bool(re.search(r"\.cold\b", function.name + " " + function.symbol))
 
 
-def callgraph_lines(cmap, calls, name, focus=None, indirect=0, limit=60, per_function=12):
+def callgraph_lines(cmap, calls, name, focus=None, indirect=0, limit=60, per_function=12, virtual=None, qt=None):
     """Which function calls which, with files and lines.
 
     calls maps a caller's symbol to the symbols (or name@plt imports) it calls
-    directly, from disassembly; indirect calls (function pointers, vtables,
-    trait objects) cannot be followed and are counted instead. Generic copies
-    of one function are merged under its readable name.
+    directly, from disassembly. virtual (a cppvirtual.VirtualCalls) adds C++
+    virtual calls, inferred from the vtable slot and the method name at the
+    call site and shown with dashed arrows; other indirect calls (function
+    pointers, trait objects) cannot be followed and are counted instead.
+    Generic copies of one function are merged under its readable name.
+    qt (a qtsignals.QtConnections) adds the slots a signal is connected to
+    and the signals a slot is connected to, with where each connect() is.
     """
 
     by_symbol = {function.symbol: function for function in cmap.functions}
     prefix = _program_prefix(cmap.files, cmap)
 
     def entry(symbol):
-        if symbol.endswith("@plt"):
-            return "import", _base(_demangle([symbol[:-4]])[0]) or symbol[:-4], "shared library"
+        for suffix in ("@plt", "@import"):
+            if symbol.endswith(suffix):
+                plain = symbol[: -len(suffix)]
+                return "import", _base(_demangle([plain])[0]) or plain, "shared library"
         return _entry(by_symbol.get(symbol), prefix, cmap)
+
+    def connection_rows(pairs, arrow):
+        merged = {}
+        for other, connection in pairs:
+            group, short, place = entry(other)
+            if short == "?":
+                short = _base(other)
+            at = by_symbol.get(connection.caller)
+            function = _base(connection.function) if connection.function else (_base(at.name) if at else "?")
+            where = _short(connection.file, prefix) + f":{connection.line}" if connection.file else ""
+            note = "" if connection.certain else "  (maybe: several functions are set up for this connect)"
+            merged.setdefault((group, short), (place, function + (f", {where}" if where else "") + note))
+        ordered = sorted(merged.items(), key=lambda item: (_GROUP_ORDER.get(item[0][0], 9), item[0][1]))
+        out = [f"    {arrow} {short}" + (f"  ({place})" if place else "") + f"  connected in {by}"
+               for (group, short), (place, by) in ordered[:per_function]]
+        if len(ordered) > per_function:
+            out.append(f"    ... and {len(ordered) - per_function} more")
+        return out, len(ordered)
+
+    legend = ("⇢ ⇠ virtual calls, inferred: a vtable in this program holds a method of the name "
+              "written at the call, in the slot the call uses")
+
+    def virtual_note(sites):
+        if virtual is None or not sites:
+            return []
+        kinds = defaultdict(int)
+        for site in sites:
+            kinds[site.kind] += 1
+        parts = [f"{kinds['resolved']:,} resolved"]
+        if kinds["destructor"]:
+            parts.append(f"{kinds['destructor']:,} virtual destructor calls (delete)")
+        if kinds["unresolved"] or kinds["no source"]:
+            parts.append(f"{kinds['unresolved'] + kinds['no source']:,} not resolved "
+                         "(the class is in a shared library, or a function pointer)")
+        return [f"Virtual calls made: {'; '.join(parts)}"]
 
     def rows(symbols, arrow):
         merged = {}
@@ -824,32 +944,57 @@ def callgraph_lines(cmap, calls, name, focus=None, indirect=0, limit=60, per_fun
         groups = defaultdict(list)
         for function in found:
             groups[(_base(function.name), function.file, function.line)].append(function)
-        lines = []
+        lines, seen_sites, any_virtual, any_qt = [], [], False, False
         for (short, file, line), copies in list(groups.items())[:5]:
             out = set().union(*(calls.get(f.symbol, ()) for f in copies))
             into = set().union(*(callers_of.get(f.symbol, set()) for f in copies))
+            sites_out = virtual.from_callers(f.symbol for f in copies) if virtual else []
+            sites_in = [site for f in copies for site in virtual.into(f)] if virtual else []
+            seen_sites += sites_out
+            v_out = set().union(*(site.targets for site in sites_out)) - out if sites_out else set()
+            v_in = {site.caller for site in sites_in} - into
             where = f"  ({_short(file, prefix)}:{line})" if file else ""
             out_rows, out_count = rows(out, "→")
             in_rows, in_count = rows(into, "←")
+            v_out_rows, v_out_count = rows(v_out, "⇢")
+            v_in_rows, v_in_count = rows(v_in, "⇠")
+            any_virtual = any_virtual or bool(v_out_count or v_in_count)
             lines += ["", f"{short}{where}" + (f"  [{len(copies)} compiled copies]" if len(copies) > 1 else ""),
-                      f"  calls ({out_count}):"]
-            lines += out_rows or ["    nothing directly"]
-            lines.append(f"  called by ({in_count}):")
-            lines += in_rows or ["    nothing directly (an entry point, or reached through a pointer)"]
+                      f"  calls ({out_count}" + (f", + {v_out_count} virtual" if v_out_count else "") + "):"]
+            lines += (out_rows + v_out_rows) or ["    nothing directly"]
+            lines.append(f"  called by ({in_count}" + (f", + {v_in_count} virtual" if v_in_count else "") + "):")
+            lines += (in_rows + v_in_rows) or ["    nothing directly (an entry point, or reached through a pointer)"]
+            if qt is not None:
+                to_slots, from_signals = qt.of(f.symbol for f in copies)
+                if to_slots:
+                    q_rows, q_count = connection_rows(to_slots, "⇝")
+                    lines += [f"  connected to (Qt, {q_count}):"] + q_rows
+                if from_signals:
+                    q_rows, q_count = connection_rows(from_signals, "⇜")
+                    lines += [f"  connected from signals (Qt, {q_count}):"] + q_rows
+                any_qt = any_qt or bool(to_slots or from_signals)
         if len(groups) > 5:
             lines.append(f"... and {len(groups) - 5} more functions match {focus!r}")
-        lines += ["", f"Indirect calls not followed: {indirect:,} (function pointers, vtables, trait objects)",
+        lines.append("")
+        lines += ([legend] if any_virtual else []) + virtual_note(seen_sites)
+        if any_qt:
+            lines.append("⇝ ⇜ Qt signal-slot connections, inferred from the connect() calls that make them "
+                         "(connections made at run time by name are not seen)")
+        lines += [f"Indirect calls in the program: {indirect:,} (function pointers, vtables, trait objects)",
                   f"Read one: xray {name} --code NAME"]
         return lines[1:]
 
+    with_slots = {caller for caller, _, _ in virtual.slot_calls} if virtual else set()
     own = [f for f in cmap.functions
-           if f.symbol in calls and not _is_cold(f) and (f.file is None or _origin(cmap, f.file)[0] == "program")]
+           if (f.symbol in calls or f.symbol in with_slots) and not _is_cold(f)
+           and (f.file is None or _origin(cmap, f.file)[0] == "program")]
     own.sort(key=lambda f: (f.file or "~", f.line or 0, f.name))
     total = sum(len(callees) for callees in calls.values())
     lines = [(f"{len(calls):,} functions make {total:,} direct calls; the program's own functions "
              f"({len(own):,}) file by file. Indirect calls not followed: {indirect:,}.")]
     current, shown = object(), set()
     count = 0
+    shown_sites = []
     for function in own:
         key = (_base(function.name), function.file, function.line)
         if key in shown:
@@ -861,11 +1006,18 @@ def callgraph_lines(cmap, calls, name, focus=None, indirect=0, limit=60, per_fun
         if function.file != current:
             current = function.file
             lines += ["", _short(current, prefix) if current else "(no source location)"]
-        out_rows, _ = rows(calls[function.symbol], "→")
+        direct = set(calls.get(function.symbol, ()))
+        out_rows, _ = rows(direct, "→")
+        sites = virtual.from_callers([function.symbol]) if function.symbol in with_slots else []
+        shown_sites += sites
+        v_rows, _ = rows(set().union(*(site.targets for site in sites)) - direct, "⇢") if sites else ([], 0)
         lines.append(f"  {key[0]}  (line {function.line})" if function.line else f"  {key[0]}")
-        lines += out_rows
+        lines += out_rows + v_rows
     if len(own) > count:
         lines.append(f"\n... more functions not shown (limit {limit}); pick one with --callgraph FUNCTION")
+    note = virtual_note(shown_sites)
+    if note:
+        lines += ["", legend, note[0] + " (in the functions shown)"]
     lines += ["", f"One function, both directions: xray {name} --callgraph FUNCTION"]
     return lines
 
@@ -878,8 +1030,22 @@ def elf_callgraph(path, focus=None):
     cmap = code_map(path)
     if cmap is None:
         return None
-    table = [(f.address, f.size, f.symbol) for f in cmap.functions] if cmap.go is not None else None
+    # the map's own function table: the binary may keep a few exported symbols and
+    # nothing else, while the map has every function from its debug file
+    table = [(f.address, f.size, f.symbol) for f in cmap.functions]
     found = disasm_result(path, timeout=120, table=table)
     if found is None:
         return ["objdump could not read this binary"]
-    return callgraph_lines(cmap, found.calls, Path(path).name, focus, found.indirect)
+    virtual = None
+    if found.slot_calls and cmap.go is None:
+        from xray.cppvirtual import VirtualCalls
+
+        virtual = VirtualCalls(cmap, found.slot_calls, _locate, fetch_source, _demangle)
+        if not virtual.vtables.classes:
+            virtual = None   # no C++ vtables: slot-like calls are function pointers (a C ops table)
+    qt = None
+    if found.connects and focus is not None:
+        from xray.qtsignals import QtConnections, connect_lines
+
+        qt = QtConnections(cmap, found.connects, _base, _demangle, connect_lines)
+    return callgraph_lines(cmap, found.calls, Path(path).name, focus, found.indirect, virtual=virtual, qt=qt)

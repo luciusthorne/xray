@@ -104,7 +104,12 @@ xray fzf --callgraph main.main         # Go call graph
 xray xdg-mime --callgraph defapp_generic   # shell: functions it calls, commands it runs, who calls it
 xray aclocal --callgraph               # Perl, Ruby, JavaScript, TypeScript, Lua: calls found by name
 xray subr-x.el.gz --callgraph string-limit   # Lisp (Emacs Lisp, Scheme, Common Lisp, Clojure): exact calls from S-expressions
+xray xournalpp --callgraph StrokeHandler::onButtonPressEvent   # C++: virtual calls too, both directions
 ```
+
+C++ virtual calls (`shape->area()`) go through a vtable, so the binary does not say which method runs. On x86-64, `--callgraph` reads every vtable in the program (from its symbol table or debug file, slot contents from the data and its relocations, including packed RELR relocations), finds which slot each indirect call uses (`call *0x10(%rax)`, a tail `jmp`, or a slot loaded into a register first, as GCC's speculative devirtualisation does), and reads the method name written on the call's source line. A method is listed (`⇢` calls, `⇠` called by) when a vtable holds a method of that name in that slot: an inference, labelled as one. `delete` through a base pointer is counted as a virtual destructor call; calls whose class lives in a shared library (libstdc++'s locale facets) and plain function pointers (`std::function`, C ops tables) are counted as not resolved. On xournalpp, 609 of 933 vtable calls resolve, 267 are virtual destructors and 57 stay unresolved. Lambdas are named after where they are written (`xray xournalpp --code 'DeviceTestingArea::DeviceTestingArea::{lambda#2}'`), and the `std::function` code that calls one says which.
+
+Qt signals and slots: for a function, `--callgraph` also lists the slots a signal is connected to (`⇝`) and the signals a slot is connected to (`⇜`), each with the function and line that connects them. They are read from every new-style `connect()` (the calls to `QObject::connectImpl`): the signal and slot addresses loaded just before the call; a function moc generated (`moc_*.cpp`, `*.moc`) is a signal, a `QCallableObject<lambda>` names a lambda slot. Inferred, and marked "maybe" when several functions are set up for one connect (connections built in one list). `SIGNAL()`/`SLOT()` strings and QML connections are made at run time by name and are not seen. On libQt6Widgets, 403 connect calls: 212 resolve to exactly one signal and one slot (`xray /usr/lib/libQt6Widgets.so.6 --callgraph QAbstractItemView::doubleClicked` finds the List, Table and Tree widgets' `emitItemDoubleClicked`).
 
 ## Evidence graph: `inspect`, `why`, `scan` and `reach`
 
@@ -361,6 +366,7 @@ xray/
 ├── cli.py
 ├── codemap.py
 ├── codeview.py
+├── cppvirtual.py
 ├── command_analyzers.py
 ├── commandproject.py
 ├── complexity.py
@@ -413,6 +419,7 @@ xray/
 ├── pyexec.py
 ├── pytaint.py
 ├── python_analyzer.py
+├── qtsignals.py
 ├── query.py
 ├── references.py
 ├── relationships.py
