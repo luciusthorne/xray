@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- JavaScript: the Node parser version check waits up to 15 s instead of 5 s, so a slow cold start no longer fails analysis.
+
 ## 1.2.0
 
 Call graphs for C++ programs as they are really built:

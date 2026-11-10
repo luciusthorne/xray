@@ -165,7 +165,7 @@ def _read_snapshot(path_text, _mtime_ns, _ctime_ns, _size):
     try:
         version = subprocess.run(
             [node, "-e", _NODE_PARSER_VERSION], capture_output=True, text=True,
-            timeout=5, check=False,
+            timeout=15, check=False,
         )
     except (OSError, subprocess.SubprocessError) as error:
         raise AnalysisError(f"Unable to identify Node parser version: {error}") from error
