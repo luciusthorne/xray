@@ -65,6 +65,19 @@ makepkg -si
 
 It installs XRAY, its license, and the Emacs package (`/usr/share/emacs/site-lisp/xray/`).
 
+### Android (Termux)
+
+XRAY runs in [Termux](https://termux.dev) (install Termux from F-Droid), reading Termux's programs and Android's own the way bionic loads them:
+
+```sh
+pkg install python binutils file     # nodejs and strace for JavaScript and --trace
+pip install xray-trust
+xray bash
+xray why bash libc
+```
+
+On Android, libraries resolve the way `/system/bin/linker64` finds them (LD_LIBRARY_PATH, DT_RUNPATH, then `/system/lib64` and the runtime APEX; there is no ldconfig), package ownership comes from Termux's dpkg, and a `#!/bin/sh` or `#!/usr/bin/env` shebang resolves to `$PREFIX/bin` as termux-exec runs it (labelled inferred). GNU binutils is used under its Termux names (`gobjdump`, `greadelf`) when the plain names are LLVM's or missing. Contracts are enforced with Landlock and seccomp where the phone's kernel has them; Android's linker config, system properties and the termux-exec preload are part of the baseline there. bubblewrap is not available, so `[net] none` cannot use a private network namespace. A recipe for Termux's own repository is in [`packaging/termux`](packaging/termux).
+
 Install test dependencies and run the full suite:
 
 ```sh
@@ -365,6 +378,7 @@ xray/
 ├── analysis_views.py
 ├── analyze.py
 ├── analyzers.py
+├── android.py
 ├── archfeed.py
 ├── asar.py
 ├── attest.py

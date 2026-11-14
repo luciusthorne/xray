@@ -21,6 +21,7 @@ import subprocess
 from bisect import bisect_right
 from dataclasses import dataclass, field
 
+from .android import binutil
 from .explain import CallSite, debug_file, locate
 from .minidebug import parse_function_table
 
@@ -46,7 +47,7 @@ class Lead:
 
 def _symbols(path):
     try:
-        text = subprocess.run(["readelf", "-sW", str(path)], capture_output=True, text=True, errors="replace",
+        text = subprocess.run([binutil("readelf"), "-sW", str(path)], capture_output=True, text=True, errors="replace",
                               check=False, timeout=60, env={**os.environ, "LC_ALL": "C"}).stdout
     except (OSError, subprocess.TimeoutExpired):
         return ()
@@ -73,7 +74,7 @@ def calls_by_function(path, table):
     sizes = {address: size for address, size, _ in table}
     out = {}
     try:
-        text = subprocess.run(["objdump", "-d", "--no-show-raw-insn", "-w", str(path)], capture_output=True,
+        text = subprocess.run([binutil("objdump"), "-d", "--no-show-raw-insn", "-w", str(path)], capture_output=True,
                               text=True, errors="replace", check=False, timeout=600,
                               env={**os.environ, "LC_ALL": "C"}).stdout
     except (OSError, subprocess.TimeoutExpired):

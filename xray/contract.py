@@ -54,6 +54,27 @@ BASELINE_READ = (
     "/proc/**",
     "/sys/**",
 )
+# Android (Termux): bionic's linker reads its namespace config and the system
+# properties area; time zones and ICU data live in the runtime APEXes.
+ANDROID_BASELINE_READ = (
+    "/linkerconfig/**",
+    "/system/etc/**",
+    "/dev/__properties__/**",
+    "/property_contexts",
+    "/apex/com.android.runtime/**",
+    "/apex/com.android.i18n/**",
+    "/apex/com.android.tzdata/**",
+    "/system/usr/share/zoneinfo/**",
+)
+
+
+def _android_baseline():
+    from .android import is_android
+
+    return ANDROID_BASELINE_READ if is_android() else ()
+
+
+BASELINE_READ = BASELINE_READ + _android_baseline()
 BASELINE_DEVICES = ("/dev/null", "/dev/zero", "/dev/full", "/dev/random", "/dev/urandom", "/dev/tty", "/dev/pts/**")
 
 _NET = re.compile(r"^(none|any|unix|(connect|bind) (tcp|udp) (\*|\d{1,5}))$")

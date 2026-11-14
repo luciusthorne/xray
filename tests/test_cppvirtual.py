@@ -205,6 +205,11 @@ def test_lambdas_are_named_after_where_they_are_written(tmp_path):
     cmap = codemap.code_map(binary, online=False)
 
     bases = {codemap._base(f.name) for f in cmap.functions}
+    if "main::$_0" in bases:
+        # clang names lambdas by their unnamed type ($_N, numbered across the file), not {lambda#N}
+        assert "main::$_1" in bases
+        assert [f.line for f in codemap.find_functions(cmap, "main")] == [6]
+        return
     assert {"main::{lambda#1}", "main::{lambda#2}"} <= bases
     assert "main::{lambda#1} (std::function)" in bases
     main = codemap.find_functions(cmap, "main")

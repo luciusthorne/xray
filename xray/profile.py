@@ -21,6 +21,7 @@ import stat
 import subprocess
 from pathlib import Path
 
+from .android import binutil
 from .entrypoints import command_kind
 
 PROFILE_VERSION = 1
@@ -96,7 +97,7 @@ def sha256(path):
 def _readelf(path):
     env = dict(os.environ, LC_ALL="C")
     try:
-        done = subprocess.run(["readelf", "-d", "--dyn-syms", "-W", str(path)], capture_output=True, text=True,
+        done = subprocess.run([binutil("readelf"), "-d", "--dyn-syms", "-W", str(path)], capture_output=True, text=True,
                               errors="replace", env=env, check=False, timeout=60)
     except (OSError, subprocess.TimeoutExpired):
         return ""

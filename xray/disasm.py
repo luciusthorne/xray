@@ -9,6 +9,8 @@ from pathlib import Path
 from xray.entrypoints import command_kind
 from xray.minidebug import debuginfod_function_table, read_function_table
 
+from .android import binutil
+
 _SITE = re.compile(r"^\s*([0-9a-fA-F]+):\s")
 _CALL = re.compile(r"\bcall\s+(?:([0-9a-fA-F]+)\s+<([^>]*)>|(\*.*?))\s*$")
 # call *0x18(%rax): through a slot of a table an object points to (a C++ vtable, slot 3)
@@ -47,7 +49,7 @@ def assembly_lines(path, name=None, max_lines=400, timeout=30):
     path = Path(path)
     env = dict(os.environ)
     env["LC_ALL"] = "C"
-    command = ["objdump", "-d", "-C"]
+    command = [binutil("objdump"), "-d", "-C"]
     if name is not None:
         symbol = next(
             (
@@ -362,7 +364,7 @@ def disasm_lines(path, timeout=30, max_callers=40, max_callees=10):
 
     try:
         result = subprocess.run(
-            ["objdump", "-d", "--no-show-raw-insn", str(path)],
+            [binutil("objdump"), "-d", "--no-show-raw-insn", str(path)],
             capture_output=True,
             text=True,
             errors="replace",
@@ -445,7 +447,7 @@ def disasm_result(path, timeout=30, table=None):
 
     try:
         result = subprocess.run(
-            ["objdump", "-d", "--no-show-raw-insn", str(path)],
+            [binutil("objdump"), "-d", "--no-show-raw-insn", str(path)],
             capture_output=True,
             text=True,
             errors="replace",

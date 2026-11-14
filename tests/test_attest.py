@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 
 import pytest
@@ -67,7 +68,7 @@ def test_cli_profile_and_report(tmp_path, capsys):
     report = tmp_path / "drift.json"
     report.write_text(json.dumps({"gains": []}))
     assert run_attest(["report", str(report), "-o", str(tmp_path / "r.intoto.json"), "--key", str(key)]) == 0
-    assert run_attest(["profile", "/bin/sh", "-o", str(tmp_path / "p.intoto.json"), "--key", str(key)]) == 0
+    assert run_attest(["profile", os.path.realpath(shutil.which("sh")), "-o", str(tmp_path / "p.intoto.json"), "--key", str(key)]) == 0
     assert json.loads((tmp_path / "p.intoto.json").read_text())["predicate"]["profiles"]
     capsys.readouterr()
     assert run_attest(["verify", str(tmp_path / "r.intoto.json"), "--signers", str(tmp_path / "r.intoto.json.signers")]) == 0

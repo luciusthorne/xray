@@ -83,8 +83,25 @@ def test_shebang_is_declared(tmp_path):
     root = str(script.resolve())
 
     link = next(link for link in graph.outgoing(root) if link.kind == "interpreter")
-    assert link.basis == "declared"
+    from xray.android import is_android
+
+    assert link.basis == ("inferred" if is_android() else "declared")  # Android: termux-exec maps /bin/sh
     assert link.evidence[0].line == 1
+
+
+def test_termux_exec_maps_bin_shebangs_on_android(tmp_path, monkeypatch):
+    from xray import android
+
+    prefix = tmp_path / "usr"
+    (prefix / "bin").mkdir(parents=True)
+    shell = prefix / "bin" / "xray-test-sh"
+    shell.write_text("")
+    monkeypatch.setattr(android, "is_android", lambda: True)
+    monkeypatch.setattr(android, "prefix", lambda: str(prefix))
+
+    assert android.termux_exec_path("/bin/xray-test-sh") == shell
+    assert android.termux_exec_path("/usr/bin/xray-test-sh") == shell
+    assert android.termux_exec_path("/opt/xray-test-sh") is None
 
 
 def test_python_imports_have_lines(tmp_path):

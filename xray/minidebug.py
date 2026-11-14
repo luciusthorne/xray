@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from xray.android import binutil
 from xray.entrypoints import command_kind
 
 _FUNC = re.compile(
@@ -93,7 +94,7 @@ def _symbol_text(path, timeout):
             symbols = Path(folder) / "symbols"
             symbols.write_bytes(data)
             result = subprocess.run(
-                ["readelf", "-sW", str(symbols)],
+                [binutil("readelf"), "-sW", str(symbols)],
                 capture_output=True,
                 text=True,
                 errors="replace",
@@ -141,7 +142,7 @@ def read_function_table(path, timeout=10):
     env["LC_ALL"] = "C"
     try:
         result = subprocess.run(
-            ["readelf", "-sW", str(path)],
+            [binutil("readelf"), "-sW", str(path)],
             capture_output=True,
             text=True,
             errors="replace",

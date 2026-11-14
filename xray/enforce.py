@@ -33,6 +33,17 @@ from .contract import BASELINE_DEVICES, BASELINE_READ, expand_home
 from .errors import CLIError
 
 
+def _preloaded():
+    """On Android, the LD_PRELOAD libraries the runtime sets (Termux's termux-exec): every program loads them."""
+
+    from .android import is_android
+
+    if not is_android():
+        return []
+    return [entry for entry in os.environ.get("LD_PRELOAD", "").replace(" ", ":").split(":")
+            if entry.startswith("/") and os.path.isfile(entry)]
+
+
 def _root_of(value, home=None):
     """The file or directory a contract path entry is enforced on."""
 
@@ -81,6 +92,8 @@ def landlock_rules(contract, home=None, extra_read=(), extra_write=()):
         grant(_root_of(value), ll.READ)
     for value in BASELINE_DEVICES:
         grant(_root_of(value), ll.READ | ll.WRITE_FILE | ll.IOCTL_DEV)
+    for value in _preloaded():
+        grant(value, ll.READ_FILE)
 
     net = contract.values("net")
     connect = [int(v.split()[2]) for v in net if v.startswith("connect tcp ") and v.split()[2] != "*"]

@@ -18,6 +18,8 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 
+from .android import binutil
+
 _CALL = re.compile(r"^\s*([0-9a-f]+):\s+(call|jmp)\w*\s+.*?<([^@>+]+)(?:@[^>]*)?(?:\+0x[0-9a-f]+)?>\s*$")
 
 
@@ -33,7 +35,7 @@ class CallSite:
 
 def _objdump(path):
     try:
-        done = subprocess.run(["objdump", "-d", "--no-show-raw-insn", "-w", str(path)], capture_output=True,
+        done = subprocess.run([binutil("objdump"), "-d", "--no-show-raw-insn", "-w", str(path)], capture_output=True,
                               text=True, errors="replace", check=False, timeout=300,
                               env={**os.environ, "LC_ALL": "C"})
     except (OSError, subprocess.TimeoutExpired):
@@ -66,7 +68,7 @@ def debug_file(path):
     """The file to read line information from: the binary itself, or its debuginfod debug file."""
 
     try:
-        sections = subprocess.run(["readelf", "-S", "-W", str(path)], capture_output=True, text=True,
+        sections = subprocess.run([binutil("readelf"), "-S", "-W", str(path)], capture_output=True, text=True,
                                   errors="replace", check=False, timeout=30).stdout
     except (OSError, subprocess.TimeoutExpired):
         sections = ""
@@ -101,8 +103,8 @@ def locate(sites, debug_path):
     addresses = [hex(site.address) for site in sites]
     if tool:
         command = [tool, "-f", "-i", "-e", debug_path, *addresses]
-    elif shutil.which("addr2line"):
-        command = ["addr2line", "-f", "-i", "-C", "-e", debug_path, *addresses]
+    elif shutil.which(binutil("addr2line")):
+        command = [binutil("addr2line"), "-f", "-i", "-C", "-e", debug_path, *addresses]
     else:
         return sites
     try:
