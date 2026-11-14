@@ -1053,6 +1053,15 @@ def query_callgraph(context):
                        app_callgraph_lines(app, focus, say=lambda text: print(text, file=sys.stderr)))
             return
     if kind == "elf":
+        from xray import haskell
+
+        program = haskell.program(context.path)
+        if program is not None and (program.own or program.dependencies):
+            args = sys.argv[3:]
+            focus = args[0] if args else None
+            print_view(f"Call graph of {context.path.name}" + (f": {focus}" if focus else "") + " (Haskell)",
+                       haskell.callgraph_lines(program, focus))
+            return
         from xray.codemap import elf_callgraph
 
         args = sys.argv[3:]
