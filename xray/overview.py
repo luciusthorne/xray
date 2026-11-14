@@ -133,7 +133,12 @@ def _kind_overview(path):
         return lines
 
     if kind == "elf":
-        return _elf_overview(path)
+        from .haskell import overview_lines as haskell_lines
+        from .haskell import program
+
+        found = program(path)
+        haskell = haskell_lines(found) if found is not None and (found.own or found.dependencies) else []
+        return [*_elf_overview(path), *haskell]
 
     if kind == "python":
         if path.suffix != ".py":

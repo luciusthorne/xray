@@ -99,6 +99,13 @@ def code_lines(path, name=None, asm=False, say=lambda text: None):
             return [*launcher, *found]
 
     if kind == "elf":
+        from xray import haskell
+
+        program = haskell.program(path)
+        if program is not None and (program.own or program.dependencies):
+            return haskell.code_lines(program, name)
+
+    if kind == "elf":
         from xray.codemap import SOURCE_SUFFIXES
 
         if name is not None and name.endswith(SOURCE_SUFFIXES) and not name.endswith((".c", ".h")):

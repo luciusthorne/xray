@@ -105,10 +105,14 @@ xray xdg-mime --callgraph defapp_generic   # shell: functions it calls, commands
 xray aclocal --callgraph               # Perl, Ruby, JavaScript, TypeScript, Lua: calls found by name
 xray subr-x.el.gz --callgraph string-limit   # Lisp (Emacs Lisp, Scheme, Common Lisp, Clojure): exact calls from S-expressions
 xray xournalpp --callgraph StrokeHandler::onButtonPressEvent   # C++: virtual calls too, both directions
+xray shellcheck --code checkForInLs   # Haskell: names from the libHS symbol tables, source from Hackage
+xray shellcheck --callgraph warn       # Haskell calls across modules, by name, following imports
 xray obsidian --code                   # Electron app: launcher, archives, own code, packages, native addons
 xray obsidian --code downloadUpdate    # one function from inside app.asar (minified bundles too)
 xray chatgpt --callgraph               # the app's entry file: what calls what
 ```
+
+Haskell programs: GHC names every top-level function in the object code (`ShellCheckziAnalytics_checkForInLs_info`, Z-encoded so it decodes exactly), and distributions that link Haskell dynamically (Arch) ship each package as a `libHS<package>-<version>-…-ghc<v>.so` that keeps those names even when the program is stripped. `xray shellcheck --code` lists the program's own modules and functions (ShellCheck: 27 modules, 1,123 functions; names GHC generates, such as workers and floated bindings, are folded into the function they come from) and its 64 Hackage libraries. `--code FUNCTION` or `--code MODULE` reads the source from that package's Hackage release, at the version in the library name; `--code Main` finds the executable's own module through the package's `.cabal` file. `--callgraph FUNCTION` finds calls by name in the source, following imports across the package's modules and skipping `where`/`let` bindings. Statically linked Haskell programs keep no names and are not covered.
 
 Electron apps keep their JavaScript in `.asar` archives. XRAY finds the archive from the launcher script (`exec electron43 /usr/lib/obsidian/app.asar`), from an Electron binary (a Chromium snapshot next to it and `resources/app.asar`), or from the archive or app directory itself, and reads it from its index without unpacking: files are listed by folder and package, `.node` native addons are named (they are compiled code the JavaScript loads), and single files are copied into the cache only when you read them. Archives the app's own code names in a string (Obsidian's `app.asar` loads `obsidian.asar`) are read too, labelled as found by name. Each file is checked against the SHA-256 in the archive index. In minified bundles, `--code FUNCTION` cuts the definition out by the parser's character offsets. Member names that try to leave the archive (`..`, absolute paths) are refused.
 
@@ -306,6 +310,7 @@ Contracts, capability profiles, drift and compare reports, and capability log he
 | Shell | Commands, sourced files, functions, metrics, and command chains | Static line/token analysis; dynamic commands and `eval` may be unresolved |
 | Perl | Literal `use`/`require`, subroutines, and command chains | Perl interpreter improves module resolution |
 | JavaScript | Symbols and literal imports/`require`; Electron apps inside `.asar` archives | Node.js with bundled Acorn parser; target source is parsed, not evaluated |
+| Haskell | Modules and functions from GHC symbols in `libHS*.so`; source and calls from the Hackage release | Dynamically linked GHC programs (Arch); `nm`; network for Hackage |
 | Ruby | Symbols, methods, and literal imports | Ruby standard-library Ripper; target source is parsed, not evaluated |
 | Lua, TypeScript, C | Symbols and imports/includes | Neovim with the relevant Tree-sitter parsers installed |
 | ELF | Linked libraries, dynamic symbols, imports, exports, retained function symbols, and command graph | `readelf`; `objdump` for disassembly; `rizin` for annotated function disassembly; configured debuginfod can supply DWARF names and source for stripped binaries |
@@ -401,6 +406,7 @@ xray/
 ├── export.py
 ├── fingerprint.py
 ├── gocode.py
+├── haskell.py
 ├── git_analysis.py
 ├── graph.py
 ├── graphjson.py
