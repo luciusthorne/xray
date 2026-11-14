@@ -48,7 +48,7 @@ xray --help
 Every release is also on the [GitHub releases page](https://github.com/luciusthorne/xray/releases), for example:
 
 ```sh
-pipx install https://github.com/luciusthorne/xray/releases/download/v1.2.0/xray_trust-1.2.0-py3-none-any.whl
+pipx install https://github.com/luciusthorne/xray/releases/download/v1.3.0/xray_trust-1.3.0-py3-none-any.whl
 ```
 
 From a checkout: `python -m pip install .`
