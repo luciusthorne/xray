@@ -30,6 +30,8 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
+from xray.android import binutil
+
 _HACKAGE = "https://hackage.haskell.org/package/{package}-{version}/{package}-{version}.tar.gz"
 _MAX_TARBALL = 64 * 1024 * 1024
 _LIBRARY = re.compile(r"^libHS(?P<unit>.+?)-ghc(?P<ghc>[\d.]+)\.so$")
@@ -121,7 +123,7 @@ class Package:
 
 def _dynamic_symbols(path):
     try:
-        result = subprocess.run(["nm", "-D", "--defined-only", "--format=just-symbols", str(path)],
+        result = subprocess.run([binutil("nm"), "-D", "--defined-only", "--format=just-symbols", str(path)],
                                 capture_output=True, text=True, check=False, timeout=120)
     except (OSError, subprocess.SubprocessError):
         return []

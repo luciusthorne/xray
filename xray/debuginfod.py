@@ -14,6 +14,7 @@ import subprocess
 import threading
 from pathlib import Path
 
+from xray.android import binutil
 from xray.minidebug import parse_function_table
 
 _BUILD_ID = re.compile(r"Build ID: ([0-9a-fA-F]+)")
@@ -52,7 +53,7 @@ def _library():
 def _build_id(path):
     try:
         result = subprocess.run(
-            ["readelf", "-n", str(path)],
+            [binutil("readelf"), "-n", str(path)],
             capture_output=True,
             text=True,
             errors="replace",
@@ -118,7 +119,7 @@ def _debug_function_table(lib, client, build_id):
         return None, ()
     try:
         result = subprocess.run(
-            ["readelf", "-sW", str(debug_file)],
+            [binutil("readelf"), "-sW", str(debug_file)],
             capture_output=True,
             text=True,
             errors="replace",
@@ -243,7 +244,7 @@ def function_source(binary, name):
             return None
         address, _size, _symbol_name = matches[0]
 
-        tool = shutil.which("eu-addr2line") or shutil.which("addr2line")
+        tool = shutil.which("eu-addr2line") or shutil.which(binutil("addr2line"))
         if tool is None:
             return None
         try:

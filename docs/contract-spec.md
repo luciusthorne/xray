@@ -137,6 +137,12 @@ Every contract allows, without listing them, reading `/etc/ld.so.cache`,
 `/sys`, plus reading and writing `/dev/null`, `/dev/zero`, `/dev/full`,
 `/dev/random`, `/dev/urandom`, `/dev/tty` and `/dev/pts/*`.
 
+On Android (Termux), the baseline also allows reading what bionic's linker and
+libc read for every program: `/linkerconfig`, `/system/etc`, the system
+properties area `/dev/__properties__` and `/property_contexts`, the runtime,
+i18n and tzdata APEXes, and `/system/usr/share/zoneinfo`. Enforcement there
+also allows reading the libraries in `LD_PRELOAD` (Termux's termux-exec).
+
 ## Enforcement by XRAY
 
 `xray contract enforce` runs the program under Linux Landlock, unprivileged:

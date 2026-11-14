@@ -17,7 +17,7 @@ from pathlib import Path
 _GO_MAGIC = b"\xff Go buildinf:"
 _PYINSTALLER = b"MEI\x0c\x0b\x0a\x0b\x0e"
 _RUST_MARKERS = (b"RUST_BACKTRACE", b"library/core/src/", b"rust_begin_unwind")
-_CPP_MARKERS = (b"GLIBCXX_", b"__cxa_throw", b"libc++.so", b"libstdc++.so")
+_CPP_MARKERS = (b"GLIBCXX_", b"__cxa_throw", b"libc++.so", b"libc++_shared.so", b"libstdc++.so", b"_ZNSt3__1")
 # Runtime libraries that only one language links against.
 _RUNTIMES = (
     (b"libgfortran.so", "Fortran"),

@@ -34,6 +34,31 @@ def test_origin_is_expanded():
     assert expand_tokens("$ORIGIN/../lib:${ORIGIN}", "/a/bin") == "/a/bin/../lib:/a/bin"
 
 
+@pytest.fixture
+def glibc(monkeypatch):
+    """These tests describe glibc's ld.so; on Android (Termux) the bionic order applies instead."""
+    monkeypatch.setattr("xray.android.is_android", lambda: False)
+
+
+def test_bionic_order_is_ld_library_path_then_runpath_then_system(tmp_path, monkeypatch):
+    from xray import android
+
+    monkeypatch.setattr(android, "is_android", lambda: True)
+    system = tmp_path / "system" / "lib64"
+    monkeypatch.setattr(android, "system_library_dirs", lambda elf_class=64: (str(system),))
+    in_runpath = lib(tmp_path / "prefix")
+    in_system = lib(system)
+    lib(tmp_path / "rpath-only")
+
+    found = resolve_library("libf.so", tmp_path, rpath=(str(tmp_path / "rpath-only"),),
+                            runpath=(str(tmp_path / "prefix"),), entries={}, environ={})
+    assert (found.path, found.method) == (in_runpath.resolve(), "runpath")
+
+    found = resolve_library("libf.so", tmp_path, entries={}, environ={})
+    assert (found.path, found.method) == (in_system.resolve(), "default")
+
+
+@pytest.mark.usefixtures("glibc")
 def test_rpath_comes_before_ld_library_path(tmp_path):
     first = lib(tmp_path / "rpath")
     lib(tmp_path / "env")
@@ -66,6 +91,7 @@ def test_setuid_programs_ignore_ld_library_path(tmp_path):
     assert found.path == run.resolve()
 
 
+@pytest.mark.usefixtures("glibc")
 def test_ldconfig_entries_for_the_other_word_size_are_skipped(tmp_path):
     wide = lib(tmp_path / "lib64")
     narrow = lib(tmp_path / "lib32")
@@ -114,7 +140,8 @@ def test_compiled_binary_resolves_through_its_rpath(tmp_path):
         check=True,
     )
 
-    assert scan_elf(tmp_path / "bin/app").rpath == ("$ORIGIN/../lib", "")
+    rpath = scan_elf(tmp_path / "bin/app").rpath
+    assert rpath[-2:] == ("$ORIGIN/../lib", "")  # Termux's compiler puts its own lib directory first
 
     graph = build_evidence_graph(str(tmp_path / "bin/app"), packages=False)
     link = graph.links[("soname:libf.so", str((tmp_path / "lib/libf.so").resolve()), "resolves_to")]

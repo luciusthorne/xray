@@ -17,6 +17,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from xray.android import binutil
 from xray.entrypoints import command_kind
 from xray.minidebug import read_function_table
 
@@ -63,11 +64,11 @@ class CodeMap:
 def _demangle(symbols):
     """Readable names for symbols, in order, through binutils c++filt."""
 
-    if not symbols or shutil.which("c++filt") is None:
+    if not symbols or shutil.which(binutil("c++filt")) is None:
         return list(symbols)
     try:
         result = subprocess.run(
-            ["c++filt"], input="\n".join(symbols), capture_output=True, text=True,
+            [binutil("c++filt")], input="\n".join(symbols), capture_output=True, text=True,
             errors="replace", check=False, timeout=60,
         )
     except (OSError, subprocess.SubprocessError):
@@ -81,7 +82,7 @@ def _demangle(symbols):
 def _locate(debug_file, addresses):
     """[(file, line)] for addresses, with one addr2line run (binutils is ~80x faster than eu-addr2line here)."""
 
-    tool = shutil.which("addr2line")
+    tool = shutil.which(binutil("addr2line"))
     if tool is None or not addresses:
         return [(None, None)] * len(addresses)
     try:
@@ -125,7 +126,7 @@ def _collapse_repeat(path):
 def _has_line_info(path):
     try:
         result = subprocess.run(
-            ["readelf", "-SW", str(path)], capture_output=True, text=True, errors="replace",
+            [binutil("readelf"), "-SW", str(path)], capture_output=True, text=True, errors="replace",
             check=False, timeout=30,
         )
     except (OSError, subprocess.SubprocessError):
@@ -442,6 +443,9 @@ def _base(name):
 
     if "{lambda(" in name or "{unnamed type(" in name:
         return _cpp_closure_base(name)
+    clang = re.match(r"^(.*::\$_\d+)::operator\(\)\(", name)
+    if clang:   # clang names a lambda by its unnamed type: main::$_0::operator()(int) const -> main::$_0
+        return _base(clang.group(1) + "()")
     name = name.replace("operator()", "operator\0").split("(", 1)[0].strip()
     if name.startswith("<"):
         depth = 0

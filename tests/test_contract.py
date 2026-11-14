@@ -131,6 +131,8 @@ def script(path, body):
 
 
 def test_check_reports_a_new_command_with_its_proof_chain(tmp_path):
+    if os.path.realpath(shutil.which("ls")) == os.path.realpath(shutil.which("id")):
+        pytest.skip("ls and id are one multi-call binary here (Termux coreutils): nothing new is reached")
     tool = script(tmp_path / "tool", "ls\n")
     contract = from_graph(build_evidence_graph(str(tool), packages=False))
 
@@ -274,6 +276,8 @@ def test_net_none_runs_in_a_private_network_namespace(tmp_path):
 
 
 def test_cli_generate_then_check(tmp_path, capsys):
+    if os.path.realpath(shutil.which("ls")) == os.path.realpath(shutil.which("id")):
+        pytest.skip("ls and id are one multi-call binary here (Termux coreutils): nothing new is reached")
     tool = script(tmp_path / "tool", "ls\n")
     output = tmp_path / "tool.contract"
 

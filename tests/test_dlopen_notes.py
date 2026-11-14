@@ -78,7 +78,7 @@ def test_files_without_notes(tmp_path):
 
 PROGRAM = r'''
 #include <stdint.h>
-#define JSON "[{\"feature\":\"math\",\"description\":\"fast math\",\"priority\":\"suggested\",\"soname\":[\"libxray-not-here.so.9\",\"libm.so.6\"]}]"
+#define JSON "[{\"feature\":\"math\",\"description\":\"fast math\",\"priority\":\"suggested\",\"soname\":[\"libxray-not-here.so.9\",\"LIBM\"]}]"
 #define PAD(n) (((n) + 3) & ~3)
 struct note { uint32_t namesz, descsz, type; char name[4]; char desc[PAD(sizeof(JSON))]; };
 __attribute__((used, aligned(4), section(".note.dlopen")))
@@ -89,18 +89,21 @@ int main(void) { return 0; }
 
 @pytest.mark.skipif(not (shutil.which("cc") and shutil.which("readelf")), reason="needs cc and readelf")
 def test_compiled_program_gets_a_declared_dlopens_link(tmp_path):
-    (tmp_path / "tool.c").write_text(PROGRAM)
+    from xray.android import is_android
+
+    libm = "libm.so" if is_android() else "libm.so.6"  # bionic and glibc name libm differently
+    (tmp_path / "tool.c").write_text(PROGRAM.replace("LIBM", libm))
     tool = tmp_path / "tool"
     subprocess.run(["cc", "-o", str(tool), str(tmp_path / "tool.c")], check=True)
 
-    assert read_dlopen_notes(tool)[0].sonames == ("libxray-not-here.so.9", "libm.so.6")
+    assert read_dlopen_notes(tool)[0].sonames == ("libxray-not-here.so.9", libm)
 
     graph = build_evidence_graph(tool, max_depth=2)
     links = [link for link in graph.outgoing(str(tool.resolve())) if link.kind == "dlopens"]
     assert len(links) == 1
     link = links[0]
     assert link.basis == "declared"
-    assert link.target == "soname:libm.so.6"  # the first soname that resolves
+    assert link.target == f"soname:{libm}"  # the first soname that resolves
     assert "feature math, suggested" in link.evidence[0].detail
     resolved = [step for step in graph.outgoing(link.target) if step.kind == "resolves_to"]
     assert resolved and Path(resolved[0].target).name.startswith("libm")

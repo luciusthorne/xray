@@ -97,6 +97,26 @@ jobs:
           xray --version
           python -c "import importlib.metadata as metadata; import xray; assert metadata.version('xray-trust') == xray.__version__"
 
+  termux:
+    name: Android (Termux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run full regression suite in Termux (termux-docker, x86_64)
+        run: |
+          docker run --rm --privileged -v "$PWD:/src:ro" termux/termux-docker:x86_64 bash -c '
+            set -e
+            apt-get update -q
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -q python binutils clang nodejs-lts file strace git
+            # the Termux app preloads termux-exec (#!/bin/sh -> $PREFIX/bin/sh); the image does not
+            export LD_PRELOAD="$PREFIX/lib/libtermux-exec-ld-preload.so"
+            cp -r /src "$HOME/xray" && cd "$HOME/xray"
+            pip install -q ".[test]"
+            xray --version
+            python -m pytest -q -rs -p no:cacheprovider
+          '
+
   fedora-integration:
     name: Fedora integrations (rpm, dnf, strace, rizin, Neovim)
     runs-on: ubuntu-latest

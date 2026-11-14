@@ -24,9 +24,9 @@ __attribute__((noinline)) static int helper(int x)
     return x + 1;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
-    printf("%d\n", helper(1));
+    printf("%d\n", helper(argc));
     return 0;
 }
 '''
@@ -65,7 +65,7 @@ def test_serve_lists_files_and_shows_source_from_the_code_map(tool):
         files = json.loads(_get(server, "/api/files?cmd=" + urllib.request.quote(str(tool))))["files"]
         source_file = next(f for f in files if f.endswith("tool.c"))
         listing = _get(server, f"/api/file?path={urllib.request.quote(source_file)}&cmd={urllib.request.quote(str(tool))}")
-        assert "function(s) compiled from this file" in listing and "int main(void)" in listing
+        assert "function(s) compiled from this file" in listing and "int main(int argc, char **argv)" in listing
         body = _get(server, f"/api/source?name=helper&cmd={urllib.request.quote(str(tool))}")
         assert "    return x + 1;" in body.splitlines()  # plain lines: the page numbers them itself
     finally:

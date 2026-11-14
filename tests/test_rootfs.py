@@ -33,8 +33,8 @@ def test_symlink_chain_follows_links_in_the_path(tmp_path):
 def test_needed_files_include_libraries_loader_and_their_links():
     files, entries = rootfs.needed_files(["ls"])
 
-    assert any("ld-linux" in path for path in files)
-    assert any(path.endswith("/libc.so.6") for path in files + entries)
+    assert any("ld-linux" in path or path.endswith("/linker64") for path in files)
+    assert any(path.endswith(("/libc.so.6", "/libc.so")) for path in files + entries)
 
 
 @needs_bwrap

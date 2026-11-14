@@ -72,13 +72,17 @@ def ldconfig_cache():
     return parse_ldconfig(result.stdout)
 
 
-def find_library(name, cache=None, dirs=STANDARD_DIRS):
+def find_library(name, cache=None, dirs=None):
     """Return the resolved file of a shared library, or None.
 
     Looks in the ldconfig cache first, then in the standard
     directories. RPATH and RUNPATH entries are not considered.
     """
 
+    if dirs is None:
+        from .android import is_android, library_dirs
+
+        dirs = library_dirs() + STANDARD_DIRS if is_android() else STANDARD_DIRS
     if cache is None:
         cache = ldconfig_cache()
 
@@ -154,6 +158,10 @@ def resolve_library(
 
     environ = os.environ if environ is None else environ
     searched = []
+    from .android import is_android
+
+    if is_android():
+        return _resolve_bionic(soname, origin, rpath, runpath, elf_class, environ, secure, searched)
 
     def look(method, directories):
         for directory in directories:
@@ -189,6 +197,32 @@ def resolve_library(
     if elf_class == 64:
         defaults += ("/lib", "/usr/lib")
     found = look("default", defaults)
+    return found or Resolution(None, None, None, tuple(searched))
+
+
+def _resolve_bionic(soname, origin, rpath, runpath, elf_class, environ, secure, searched):
+    """Android's linker: LD_LIBRARY_PATH, DT_RUNPATH (DT_RPATH when there is none), system directories."""
+
+    from .android import system_library_dirs
+
+    def look(method, directories):
+        for directory in directories:
+            directory = expand_tokens(directory, origin, elf_class) if directory else "."
+            searched.append(directory)
+            candidate = Path(directory) / soname
+            if candidate.is_file():
+                return Resolution(candidate.resolve(), method, directory, tuple(searched))
+        return None
+
+    library_path = environ.get("LD_LIBRARY_PATH")
+    if library_path and not secure:
+        found = look("LD_LIBRARY_PATH", library_path.split(":"))
+        if found:
+            return found
+    found = look("runpath", runpath) if runpath else look("rpath", rpath)
+    if found:
+        return found
+    found = look("default", system_library_dirs(elf_class))
     return found or Resolution(None, None, None, tuple(searched))
 
 

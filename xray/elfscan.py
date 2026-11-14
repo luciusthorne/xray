@@ -6,6 +6,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from xray.android import binutil
 from xray.entrypoints import command_kind
 
 _NEEDED = re.compile(r"\(NEEDED\)\s+Shared library: \[(.+?)\]")
@@ -217,7 +218,7 @@ def _readelf(*args):
     env["LC_ALL"] = "C"
 
     result = subprocess.run(
-        ["readelf", *args],
+        [binutil("readelf"), *args],
         capture_output=True,
         text=True,
         errors="replace",

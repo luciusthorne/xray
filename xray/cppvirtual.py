@@ -26,6 +26,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from xray.android import binutil
+
 # Relocation types that put an address into a vtable slot.
 _RELATIVE = {62: {8}, 183: {1027}}           # x86-64 R_X86_64_RELATIVE, AArch64 R_AARCH64_RELATIVE
 _ABSOLUTE = {62: {1, 6}, 183: {257, 1025}}   # R_X86_64_64 / GLOB_DAT, R_AARCH64_ABS64 / GLOB_DAT
@@ -205,7 +207,7 @@ def vtable_symbols(path):
     env = dict(os.environ, LC_ALL="C")
     try:
         result = subprocess.run(
-            ["readelf", "-sW", str(path)], capture_output=True, text=True, errors="replace",
+            [binutil("readelf"), "-sW", str(path)], capture_output=True, text=True, errors="replace",
             env=env, timeout=60, check=False,
         )
     except (OSError, subprocess.SubprocessError):

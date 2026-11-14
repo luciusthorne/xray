@@ -13,6 +13,8 @@ import struct
 import subprocess
 from dataclasses import dataclass
 
+from xray.android import binutil
+
 _DEP = re.compile(r"^(?P<module>[^@\s]+)@(?P<version>v[^/\s]+)/(?P<inner>.+)$")
 _SEMVER = re.compile(r"^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$")
 _GO_TAG = re.compile(r"^go\d+\.\d+(?:\.\d+)?(?:(?:rc|beta)\d+)?")
@@ -33,7 +35,7 @@ def _section_headers(path):
     """{name: (address, offset, size)} from readelf -SW."""
 
     try:
-        text = subprocess.run(["readelf", "-SW", str(path)], capture_output=True, text=True,
+        text = subprocess.run([binutil("readelf"), "-SW", str(path)], capture_output=True, text=True,
                               errors="replace", check=False, timeout=30).stdout
     except (OSError, subprocess.SubprocessError):
         return {}

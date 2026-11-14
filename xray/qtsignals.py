@@ -26,6 +26,8 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 
+from xray.android import binutil
+
 _WRAPPERS = ("QtPrivate::QCallableObject<", "QtPrivate::QFunctorSlotObject<", "QtPrivate::QSlotObject<",
              "QtPrivate::QStaticSlotObject<", "QtPrivate::QPrivateSlotObject<")
 _MOC_PLUMBING = ("qt_static_metacall", "qt_metacall", "qt_metacast", "metaObject", "qt_check_for_QGADGET_macro")
@@ -81,7 +83,7 @@ def connect_lines(debug_file, addresses):
     machinery is the line someone wrote.
     """
 
-    tool = shutil.which("addr2line")
+    tool = shutil.which(binutil("addr2line"))
     if tool is None or not addresses:
         return [(None, None, None)] * len(addresses)
     try:

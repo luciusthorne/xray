@@ -28,6 +28,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .android import binutil
 from .elfscan import scan_elf
 from .entrypoints import _interpreter, _read_start, command_kind, import_file_lines
 from .libresolve import ldconfig_entries, resolve_library, search_path_risks
@@ -301,7 +302,7 @@ def _ifunc_count(path):
     import subprocess
 
     try:
-        done = subprocess.run(["readelf", "--dyn-syms", "-W", str(path)], capture_output=True, text=True,
+        done = subprocess.run([binutil("readelf"), "--dyn-syms", "-W", str(path)], capture_output=True, text=True,
                               errors="replace", check=False, env={**os.environ, "LC_ALL": "C"}, timeout=60)
     except (OSError, subprocess.TimeoutExpired):
         return 0
@@ -500,16 +501,25 @@ class _Builder:
             return
         program = tokens[0]
         name = _interpreter(line)
+        from .android import termux_exec_path
+
+        rewritten = termux_exec_path(program) if not Path(program).is_file() else None
         if Path(program).name == "env" and name:
-            if Path(program).is_file():
+            if Path(program).is_file() or rewritten:
                 # The kernel runs env itself; env then runs the named interpreter.
-                env_id = self.file_node(program, depth)
+                env_id = self.file_node(rewritten or program, depth)
                 if env_id:
-                    self.graph.add_link(path, env_id, "interpreter", Evidence("declared", "shebang", line.strip(), path, 1))
+                    detail = line.strip() + (f" (termux-exec runs {rewritten})" if rewritten else "")
+                    self.graph.add_link(path, env_id, "interpreter",
+                                        Evidence("inferred" if rewritten else "declared", "shebang", detail, path, 1))
             target = locate(name)
             evidence = Evidence(
                 "inferred", "shebang+PATH", f"{line.strip()} (env looks {name} up on PATH)", path, 1
             )
+        elif rewritten is not None:
+            target = rewritten
+            evidence = Evidence("inferred", "shebang+termux-exec",
+                                f"{line.strip()} (Android has no {program}; termux-exec runs {rewritten})", path, 1)
         else:
             target = Path(program) if Path(program).is_file() else None
             detail = line.strip()
