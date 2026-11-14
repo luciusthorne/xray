@@ -628,8 +628,71 @@ class _Builder:
             target_id = self.file_node(other.root, depth)
             if target_id:
                 self.graph.add_link(path, target_id, "imports", Evidence("inferred", "asar-name", other.how, path))
-        self.graph.blind(path, "require() links of the JavaScript inside the archive are not in the graph "
-                               f"(read the code: xray {path} --code)")
+        self.asar_requires(path, part, depth)
+
+    def asar_requires(self, path, part, depth):
+        """The require() graph of the archive's JavaScript, from its entry file."""
+
+        import shutil
+
+        from .electron import require_graph
+
+        if shutil.which("node") is None:
+            self.graph.blind(path, "require() links inside the archive need Node.js to read")
+            return
+        visited, links, unread = require_graph(part)
+        if not visited:
+            return
+
+        def member_id(name):
+            return self.graph.add_node(f"{path}!{name}", "asar-member", name, archive=str(path)).id
+
+        entry = visited[0]
+        named = str(part.package.get("main") or "").removeprefix("./")
+        if named and entry in (named, named + ".js", named.rstrip("/") + "/index.js"):
+            said = Evidence("declared", "asar-entry", f"{entry} is the entry file (package.json main)", path)
+        else:
+            said = Evidence("inferred", "asar-entry", f"{entry} taken as the entry file (package.json main "
+                            + (f"names {named}, which is not in the archive)" if named else "is not set)"), path)
+        self.graph.add_link(path, member_id(entry), "imports", said)
+        for member, spec, line, (kind, target) in links:
+            source = member_id(member)
+            said = Evidence("inferred", "javascript-require", f"require('{spec}')", f"{path}!{member}", line)
+            if kind == "member":
+                if target.endswith(".node") and Path(str(path) + ".unpacked", target).is_file():
+                    addon = self.file_node(Path(str(path) + ".unpacked") / target, depth)
+                    if addon:
+                        self.graph.add_link(source, addon, "imports", said)
+                    continue
+                self.graph.add_link(source, member_id(target), "imports", said)
+            elif kind == "builtin":
+                node = self.graph.add_node(f"module:{target}", "command", target, external=True)
+                self.graph.add_link(source, node.id, "imports", said)
+            else:
+                node = self.graph.add_node(f"module:{spec}", "command", spec, resolved=False)
+                self.graph.add_link(source, node.id, "imports", said)
+        pattern = _EXEC_PATTERNS["javascript"]
+        for member in visited:
+            if not member.endswith((".js", ".mjs", ".cjs")):
+                continue
+            try:
+                text = part.read(member).decode("utf-8", "replace")
+            except OSError:
+                continue
+            seen = set()
+            for match in pattern.finditer(text):
+                name = match.group("cmd")
+                if name in seen:
+                    continue
+                seen.add(name)
+                number = text.count("\n", 0, match.start()) + 1
+                self.runs(member_id(member), name, Evidence(
+                    "inferred", "javascript-exec", f"starts `{name}` (literal command text)", f"{path}!{member}",
+                    number), depth)
+        for member, reason in unread:
+            self.graph.blind(path, f"{member} not read: {reason}")
+        self.graph.blind(path, f"{len(visited)} JavaScript file(s) inside the archive read from the entry; "
+                               "require() with a computed name is not followed")
 
     # -- ELF -------------------------------------------------------------
     def elf(self, path, depth):
