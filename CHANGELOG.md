@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.5.0
 
-Android (Termux):
+XRAY on Android (Termux):
 
 - **XRAY runs in Termux**: libraries resolve the way bionic's linker finds them (LD_LIBRARY_PATH, DT_RUNPATH, `/system/lib64` and the runtime APEX, no ldconfig); `#!/bin/sh` and `#!/usr/bin/env` shebangs resolve to `$PREFIX/bin` as termux-exec runs them (inferred); contracts' baseline includes Android's linker config, system properties and the termux-exec preload. The full test suite passes in Termux (termux-docker x86_64).
 - **binutils under any name**: every `readelf`, `objdump`, `nm`, `addr2line` and `c++filt` call uses the plain name when installed, else GNU's `g`-prefixed copy (Termux's `binutils`), and GNU `objdump` over LLVM's.
