@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.4.0
+
+Electron apps' JavaScript in the evidence graph:
 
 - **require() graph inside Electron archives**: from the entry file, literal `require()`/`import` resolved like Node (relative, `node_modules`, `package.json` main) into `asar-member` nodes; Node built-ins (`child_process`, `net`, ...) as external modules; required unpacked addons linked to their files; literal `spawn('cmd')` as commands run. `xray why obsidian child_process` names the file.
 
