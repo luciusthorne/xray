@@ -109,6 +109,8 @@ jobs:
             set -e
             apt-get update -q
             DEBIAN_FRONTEND=noninteractive apt-get install -y -q python binutils clang nodejs-lts file strace git
+            # the Termux app preloads termux-exec (#!/bin/sh -> $PREFIX/bin/sh); the image does not
+            export LD_PRELOAD="$PREFIX/lib/libtermux-exec-ld-preload.so"
             cp -r /src "$HOME/xray" && cd "$HOME/xray"
             pip install -q ".[test]"
             xray --version
