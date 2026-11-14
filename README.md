@@ -105,7 +105,12 @@ xray xdg-mime --callgraph defapp_generic   # shell: functions it calls, commands
 xray aclocal --callgraph               # Perl, Ruby, JavaScript, TypeScript, Lua: calls found by name
 xray subr-x.el.gz --callgraph string-limit   # Lisp (Emacs Lisp, Scheme, Common Lisp, Clojure): exact calls from S-expressions
 xray xournalpp --callgraph StrokeHandler::onButtonPressEvent   # C++: virtual calls too, both directions
+xray obsidian --code                   # Electron app: launcher, archives, own code, packages, native addons
+xray obsidian --code downloadUpdate    # one function from inside app.asar (minified bundles too)
+xray chatgpt --callgraph               # the app's entry file: what calls what
 ```
+
+Electron apps keep their JavaScript in `.asar` archives. XRAY finds the archive from the launcher script (`exec electron43 /usr/lib/obsidian/app.asar`), from an Electron binary (a Chromium snapshot next to it and `resources/app.asar`), or from the archive or app directory itself, and reads it from its index without unpacking: files are listed by folder and package, `.node` native addons are named (they are compiled code the JavaScript loads), and single files are copied into the cache only when you read them. Archives the app's own code names in a string (Obsidian's `app.asar` loads `obsidian.asar`) are read too, labelled as found by name. Each file is checked against the SHA-256 in the archive index. In minified bundles, `--code FUNCTION` cuts the definition out by the parser's character offsets. Member names that try to leave the archive (`..`, absolute paths) are refused.
 
 C++ virtual calls (`shape->area()`) go through a vtable, so the binary does not say which method runs. On x86-64, `--callgraph` reads every vtable in the program (from its symbol table or debug file, slot contents from the data and its relocations, including packed RELR relocations), finds which slot each indirect call uses (`call *0x10(%rax)`, a tail `jmp`, or a slot loaded into a register first, as GCC's speculative devirtualisation does), and reads the method name written on the call's source line. A method is listed (`⇢` calls, `⇠` called by) when a vtable holds a method of that name in that slot: an inference, labelled as one. `delete` through a base pointer is counted as a virtual destructor call; calls whose class lives in a shared library (libstdc++'s locale facets) and plain function pointers (`std::function`, C ops tables) are counted as not resolved. On xournalpp, 609 of 933 vtable calls resolve, 267 are virtual destructors and 57 stay unresolved. Lambdas are named after where they are written (`xray xournalpp --code 'DeviceTestingArea::DeviceTestingArea::{lambda#2}'`), and the `std::function` code that calls one says which.
 
@@ -300,7 +305,7 @@ Contracts, capability profiles, drift and compare reports, and capability log he
 | Python | AST symbols, imports, references, relationships, call graph, complexity, unused checks, module coupling, and named source spans | Python 3.10+; static analysis only |
 | Shell | Commands, sourced files, functions, metrics, and command chains | Static line/token analysis; dynamic commands and `eval` may be unresolved |
 | Perl | Literal `use`/`require`, subroutines, and command chains | Perl interpreter improves module resolution |
-| JavaScript | Symbols and literal imports/`require` | Node.js with bundled Acorn parser; target source is parsed, not evaluated |
+| JavaScript | Symbols and literal imports/`require`; Electron apps inside `.asar` archives | Node.js with bundled Acorn parser; target source is parsed, not evaluated |
 | Ruby | Symbols, methods, and literal imports | Ruby standard-library Ripper; target source is parsed, not evaluated |
 | Lua, TypeScript, C | Symbols and imports/includes | Neovim with the relevant Tree-sitter parsers installed |
 | ELF | Linked libraries, dynamic symbols, imports, exports, retained function symbols, and command graph | `readelf`; `objdump` for disassembly; `rizin` for annotated function disassembly; configured debuginfod can supply DWARF names and source for stripped binaries |
@@ -356,6 +361,7 @@ xray/
 ├── analyze.py
 ├── analyzers.py
 ├── archfeed.py
+├── asar.py
 ├── attest.py
 ├── browse.py
 ├── callgraph.py
@@ -382,6 +388,7 @@ xray/
 ├── discover.py
 ├── drift.py
 ├── driftverbs.py
+├── electron.py
 ├── elfscan.py
 ├── elftaint.py
 ├── enforce.py

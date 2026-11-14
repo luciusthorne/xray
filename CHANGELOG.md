@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Electron apps**: `xray obsidian --code` follows the launcher into the app's `.asar` archive (or `resources/app.asar` next to an Electron binary) and lists its own code, packages and native addons without unpacking; `--code FILE`, `--code FUNCTION` (minified bundles cut by character offsets) and `--callgraph [FUNCTION]` read the JavaScript inside. Archives the app names in its code are followed; files are checked against the archive's SHA-256 index; unsafe member names are refused.
 - JavaScript: the Node parser version check waits up to 15 s instead of 5 s, so a slow cold start no longer fails analysis.
 
 ## 1.2.0

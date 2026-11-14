@@ -56,19 +56,19 @@ function walk(node, parent = null) {
   switch (node.type) {
     case 'FunctionDeclaration':
       if (node.id) {
-        symbols.push({name: node.id.name, kind: 'function', line: node.loc.start.line, end: node.loc.end.line, parent});
+        symbols.push({name: node.id.name, kind: 'function', line: node.loc.start.line, end: node.loc.end.line, start: node.start, stop: node.end, parent});
         childParent = qualify(parent, node.id.name);
       }
       break;
     case 'ClassDeclaration':
       if (node.id) {
-        symbols.push({name: node.id.name, kind: 'class', line: node.loc.start.line, end: node.loc.end.line, parent});
+        symbols.push({name: node.id.name, kind: 'class', line: node.loc.start.line, end: node.loc.end.line, start: node.start, stop: node.end, parent});
         childParent = qualify(parent, node.id.name);
       }
       break;
     case 'MethodDefinition':
       if (node.key && (node.key.type === 'Identifier' || node.key.type === 'PrivateIdentifier')) {
-        symbols.push({name: node.key.name, kind: 'method', line: node.loc.start.line, end: node.loc.end.line, parent});
+        symbols.push({name: node.key.name, kind: 'method', line: node.loc.start.line, end: node.loc.end.line, start: node.start, stop: node.end, parent});
         childParent = qualify(parent, node.key.name);
       }
       break;
@@ -76,7 +76,7 @@ function walk(node, parent = null) {
       if (node.id.type === 'Identifier' && node.init &&
           ['FunctionExpression', 'ArrowFunctionExpression', 'ClassExpression'].includes(node.init.type)) {
         const kind = node.init.type === 'ClassExpression' ? 'class' : 'function';
-        symbols.push({name: node.id.name, kind, line: node.loc.start.line, end: node.loc.end.line, parent});
+        symbols.push({name: node.id.name, kind, line: node.loc.start.line, end: node.loc.end.line, start: node.start, stop: node.end, parent});
         childParent = qualify(parent, node.id.name);
       }
       break;
@@ -202,7 +202,7 @@ def _read_snapshot(path_text, _mtime_ns, _ctime_ns, _size):
         return data
 
     return get_or_compute(
-        "javascript", version.stdout.strip() + ":acorn-scan-v2",
+        "javascript", version.stdout.strip() + ":acorn-scan-v3",
         source.encode("utf-8"), compute,
     )
 
@@ -240,7 +240,10 @@ def _resolve(path, imports):
 def _end_metadata(item):
     """Symbol metadata holding the definition's last line, when the parser gave one."""
     end = item.get("end")
-    return {"end_line": end} if isinstance(end, int) else {}
+    metadata = {"end_line": end} if isinstance(end, int) else {}
+    if isinstance(item.get("start"), int) and isinstance(item.get("stop"), int):
+        metadata["offsets"] = (item["start"], item["stop"])  # UTF-16 code units, from the parser
+    return metadata
 
 
 class JavaScriptAnalyzer(Analyzer):

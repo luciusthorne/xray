@@ -26,6 +26,23 @@ def _numbered(lines, start=1, limit=400):
     return shown
 
 
+def _electron_app(path, kind):
+    """The Electron app a launcher script, Electron binary, .asar or app directory holds."""
+
+    if kind not in ("shell", "elf", "unknown") and not path.is_dir():
+        return None
+    from xray.electron import find_app
+
+    return find_app(path)
+
+
+def _launcher_lines(path, limit=40):
+    text = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    out = [f"Launcher script {path} ({len(text)} lines):"]
+    out += _numbered(text, limit=limit)
+    return [*out, f"(the script alone: xray {path} --code {path.name})", ""]
+
+
 def _python_definition(lines, name):
     """Return the source span for a named Python function or class."""
 
@@ -69,6 +86,17 @@ def code_lines(path, name=None, asm=False, say=lambda text: None):
 
     path = Path(path)
     kind = command_kind(path)
+
+    app = _electron_app(path, kind)
+    if app is not None:
+        from xray import electron
+
+        launcher = _launcher_lines(path) if kind == "shell" and name is None else []
+        if kind == "shell" and name == path.name:
+            return _numbered(path.read_text(encoding="utf-8", errors="replace").splitlines())
+        found = electron.code_lines(app, name, say)
+        if not (kind == "elf" and name is not None and found and found[0].startswith(electron.NOT_FOUND)):
+            return [*launcher, *found]
 
     if kind == "elf":
         from xray.codemap import SOURCE_SUFFIXES
