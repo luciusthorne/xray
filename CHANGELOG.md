@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Electron apps in the evidence graph**: launcher → app archive → unpacked native addons (followed as ELF) and named archives, as `imports` links with their evidence; `why`, `reach` and contracts' `[load]` now include them. Packed addons are reported as blind spots. Stored facts version 7 (the scan cache is rebuilt).
 - **Haskell programs**: `xray shellcheck --code` lists the program's modules and functions from the GHC symbols its `libHS*.so` libraries keep (Z-decoded; generated workers and floated bindings folded), and its Hackage libraries. `--code FUNCTION`, `--code MODULE` and `--code Main` read the source from the exact Hackage release; `--callgraph FUNCTION` gives calls by name across the package's modules, following imports.
 - **Electron apps**: `xray obsidian --code` follows the launcher into the app's `.asar` archive (or `resources/app.asar` next to an Electron binary) and lists its own code, packages and native addons without unpacking; `--code FILE`, `--code FUNCTION` (minified bundles cut by character offsets) and `--callgraph [FUNCTION]` read the JavaScript inside. Archives the app names in its code are followed; files are checked against the archive's SHA-256 index; unsafe member names are refused.
 - JavaScript: the Node parser version check waits up to 15 s instead of 5 s, so a slow cold start no longer fails analysis.

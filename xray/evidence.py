@@ -55,7 +55,7 @@ LINK_KINDS = (
     "opened",        # observed in a traced run
 )
 
-FOLLOWED_KINDS = ("shell", "elf", "python", "perl", "ruby", "javascript", "typescript", "lua", "c", "lisp")
+FOLLOWED_KINDS = ("shell", "elf", "python", "perl", "ruby", "javascript", "typescript", "lua", "c", "lisp", "asar")
 _READER_KINDS = ("ruby", "javascript", "typescript", "lua", "c", "lisp")
 
 
@@ -345,6 +345,11 @@ def _file_kind(path):
     kind = command_kind(path)
     if kind in ("elf", "unknown") and ".so" in Path(path).name:
         return "library"
+    if kind == "unknown":
+        from .asar import is_asar
+
+        if is_asar(path):
+            return "asar"
     return kind
 
 
@@ -472,8 +477,13 @@ class _Builder:
             self.shebang(path, line, depth)
         if kind == "shell":
             self.shell(path, depth)
+            self.electron(path, depth)
         elif kind in ("elf", "library"):
             self.elf(path, depth)
+            if kind == "elf":
+                self.electron(path, depth)
+        elif kind == "asar":
+            self.asar(path, depth)
         elif kind == "python":
             self.python(path, depth)
         elif kind == "perl":
@@ -569,6 +579,57 @@ class _Builder:
                 "resolves_to",
                 Evidence(basis, "PATH", f"`{name}` is {target} on this machine's PATH"),
             )
+
+    # -- Electron apps ---------------------------------------------------
+    def electron(self, path, depth):
+        """A launcher script or Electron binary -> the app archive (or entry file) it runs."""
+
+        from .electron import find_app
+
+        app = find_app(path)
+        if app is None:
+            return
+        part = app.main
+        if part.archive:
+            target = part.root
+        else:
+            entry = part.entry()
+            if entry is None:
+                return
+            target = part.root / entry
+        basis = "declared" if " passes " in app.how else "inferred"  # a literal path, or an Electron layout
+        target_id = self.file_node(target, depth)
+        if target_id:
+            self.graph.add_link(path, target_id, "imports", Evidence(basis, "electron-app", app.how, path))
+
+    def asar(self, path, depth):
+        """An Electron archive -> its unpacked native addons and the archives its code names."""
+
+        from .electron import find_app
+
+        app = find_app(path)
+        if app is None:
+            self.graph.blind(path, "the asar index could not be read")
+            return
+        part = app.main
+        for name, _, unpacked in part.files:
+            if not name.endswith(".node"):
+                continue
+            if not unpacked:
+                self.graph.blind(path, f"native addon {name} is packed inside the archive and not read")
+                continue
+            addon = Path(str(path) + ".unpacked") / name
+            if addon.is_file():
+                target_id = self.file_node(addon, depth)
+                if target_id:
+                    self.graph.add_link(path, target_id, "imports", Evidence(
+                        "declared", "asar-index", f"native addon {name}, unpacked next to the archive", path))
+        for other in app.parts[1:]:
+            target_id = self.file_node(other.root, depth)
+            if target_id:
+                self.graph.add_link(path, target_id, "imports", Evidence("inferred", "asar-name", other.how, path))
+        self.graph.blind(path, "require() links of the JavaScript inside the archive are not in the graph "
+                               f"(read the code: xray {path} --code)")
 
     # -- ELF -------------------------------------------------------------
     def elf(self, path, depth):
