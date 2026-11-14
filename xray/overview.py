@@ -79,6 +79,21 @@ def _elf_overview(path):
 
 
 def overview_lines(path):
+    """What a command is made of (see _kind_overview), plus the Electron app it runs, if any."""
+
+    lines = _kind_overview(path)
+    path = Path(path)
+    if command_kind(path) in ("shell", "elf", "unknown") or path.is_dir():
+        from .electron import find_app
+        from .electron import overview_lines as app_lines
+
+        app = find_app(path)
+        if app is not None:
+            lines = [*lines, *app_lines(app)]
+    return lines
+
+
+def _kind_overview(path):
     """Return lines that describe what a command is made of.
 
     Python source files show statically detected structure; shell scripts

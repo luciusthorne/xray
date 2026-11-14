@@ -1040,7 +1040,19 @@ PYTHON_ONLY_QUERIES = {
 
 
 def query_callgraph(context):
-    if command_kind(context.path) == "elf":
+    kind = command_kind(context.path)
+    if kind in ("shell", "elf", "unknown") or context.path.is_dir():
+        from xray.electron import callgraph_lines as app_callgraph_lines
+        from xray.electron import find_app
+
+        app = find_app(context.path)
+        if app is not None:
+            args = sys.argv[3:]
+            focus = args[0] if args else None
+            print_view(f"Call graph of the Electron app {app.name}" + (f": {focus}" if focus else ""),
+                       app_callgraph_lines(app, focus, say=lambda text: print(text, file=sys.stderr)))
+            return
+    if kind == "elf":
         from xray.codemap import elf_callgraph
 
         args = sys.argv[3:]
