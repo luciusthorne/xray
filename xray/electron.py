@@ -472,3 +472,130 @@ def callgraph_lines(app, focus=None, say=lambda text: None):
     target = app.launcher or app.main.root
     out.append(f"One function, both directions, in any file: xray {target} --callgraph FUNCTION")
     return out or [f"No entry file found in {app.name}"]
+
+
+# -- require() graph inside an archive ------------------------------------------
+
+NODE_BUILTINS = frozenset(["assert", "async_hooks", "buffer", "child_process", "cluster", "console", "constants", "crypto", "dgram", "diagnostics_channel", "dns", "domain", "events", "fs", "http", "http2", "https", "inspector", "module", "net", "os", "path", "perf_hooks", "process", "punycode", "querystring", "readline", "repl", "stream", "string_decoder", "sys", "timers", "tls", "trace_events", "tty", "url", "util", "v8", "vm", "wasi", "worker_threads", "zlib", "electron", "original-fs"])
+_EXTENSIONS = ("", ".js", ".json", ".node", ".mjs", ".cjs")
+
+
+def _normal(name):
+    parts = []
+    for piece in name.split("/"):
+        if piece in ("", "."):
+            continue
+        if piece == "..":
+            if not parts:
+                return None
+            parts.pop()
+        else:
+            parts.append(piece)
+    return "/".join(parts)
+
+
+def _as_file_or_directory(names, part, base):
+    for extension in _EXTENSIONS:
+        if base + extension in names:
+            return base + extension
+    manifest = f"{base}/package.json"
+    if manifest in names:
+        try:
+            main = str(json.loads(part.read(manifest, 1 << 20)).get("main") or "")
+        except (OSError, ValueError, asar.AsarError):
+            main = ""
+        if main:
+            target = _normal(f"{base}/{main}")
+            if target is not None:
+                for extension in _EXTENSIONS:
+                    if target + extension in names:
+                        return target + extension
+                for index in ("/index.js", "/index.json", "/index.node"):
+                    if target + index in names:
+                        return target + index
+    for index in ("/index.js", "/index.json", "/index.node"):
+        if base + index in names:
+            return base + index
+    return None
+
+
+def resolve_require(part, names, member, spec):
+    """("member", name) | ("builtin", module) | ("unresolved", spec) for require(spec) in member."""
+
+    bare = spec.removeprefix("node:")
+    if spec.startswith("node:") or bare.split("/")[0] in NODE_BUILTINS:
+        return "builtin", bare.split("/")[0] if bare.split("/")[0] in NODE_BUILTINS else bare
+    folder = "/".join(member.split("/")[:-1])
+    if spec.startswith(("./", "../")) or spec in (".", ".."):
+        base = _normal(f"{folder}/{spec}" if folder else spec)
+        found = _as_file_or_directory(names, part, base) if base is not None else None
+        return ("member", found) if found else ("unresolved", spec)
+    if spec.startswith("/"):
+        return "unresolved", spec
+    pieces = folder.split("/") if folder else []
+    for depth in range(len(pieces), -1, -1):
+        if depth and pieces[depth - 1] == "node_modules":
+            continue
+        prefix = "/".join(pieces[:depth])
+        base = _normal(f"{prefix}/node_modules/{spec}" if prefix else f"node_modules/{spec}")
+        found = _as_file_or_directory(names, part, base) if base is not None else None
+        if found:
+            return "member", found
+    return "unresolved", spec
+
+
+def _member_imports(part, member):
+    """Literal require()/import specifiers of one JavaScript member, from the Node parser."""
+
+    from .javascript_analyzer import _read
+
+    _, data = _read(part.real(member))
+    return [item["name"] for item in data.get("imports", [])]
+
+
+def _line_of(text, needle):
+    at = text.find(needle)
+    return text.count("\n", 0, at) + 1 if at >= 0 else None
+
+
+def require_graph(part, limit=300, budget=64 << 20):
+    """Walk require() from the entry file of an archive.
+
+    Returns (visited, links, unread): visited members in order; links
+    [(member, spec, line, (kind, target))]; unread [(member, reason)].
+    """
+
+    from .errors import XRAYError
+
+    names = {name for name, _, _ in part.files}
+    sizes = {name: size for name, size, _ in part.files}
+    entry = part.entry()
+    if entry is None:
+        return [], [], []
+    queue, seen, links, unread = [entry], {entry}, [], []
+    visited = []
+    while queue and len(visited) < limit:
+        member = queue.pop(0)
+        visited.append(member)
+        if not member.endswith(_JS):
+            continue
+        if sizes.get(member, 0) > budget:
+            unread.append((member, "larger than the reading budget"))
+            continue
+        budget -= sizes.get(member, 0)
+        try:
+            text = part.read(member).decode("utf-8", "replace")
+            specs = _member_imports(part, member)
+        except (OSError, ValueError, RuntimeError, XRAYError, asar.AsarError) as error:
+            unread.append((member, str(error)[:120]))
+            continue
+        for spec in dict.fromkeys(specs):
+            resolved = resolve_require(part, names, member, spec)
+            line = _line_of(text, f"'{spec}'") or _line_of(text, f'"{spec}"') or _line_of(text, f"`{spec}`")
+            links.append((member, spec, line, resolved))
+            if resolved[0] == "member" and resolved[1] not in seen:
+                seen.add(resolved[1])
+                queue.append(resolved[1])
+    if queue:
+        unread.append((queue[0], f"member limit ({limit}) reached; {len(queue)} more not read"))
+    return visited, links, unread

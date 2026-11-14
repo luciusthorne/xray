@@ -238,3 +238,58 @@ def test_evidence_graph_follows_the_launcher_into_the_app(tmp_path):
     assert graph.nodes[addon].kind == "elf"
     messages = " ".join(entry["message"] for entry in graph.to_dict()["blind_spots"])
     assert "packed/inside.node is packed inside the archive" in messages
+
+
+def test_resolve_require_like_node(tmp_path):
+    archive = make_asar(tmp_path / "app.asar", {
+        "package.json": b'{"main": "src/main"}',
+        "src/main.js": b"",
+        "src/util/index.js": b"",
+        "src/data.json": b"{}",
+        "node_modules/lib/package.json": b'{"main": "./lib/entry"}',
+        "node_modules/lib/lib/entry.js": b"",
+        "node_modules/lib/node_modules/inner/index.js": b"",
+        "node_modules/@scope/pkg/index.js": b"",
+    })
+    part = electron.find_app(archive).main
+    names = {name for name, _, _ in part.files}
+
+    def resolve(member, spec):
+        return electron.resolve_require(part, names, member, spec)
+
+    assert part.entry() == "src/main.js"
+    assert resolve("src/main.js", "./util") == ("member", "src/util/index.js")
+    assert resolve("src/main.js", "./data") == ("member", "src/data.json")
+    assert resolve("src/main.js", "lib") == ("member", "node_modules/lib/lib/entry.js")
+    assert resolve("node_modules/lib/lib/entry.js", "inner") == ("member", "node_modules/lib/node_modules/inner/index.js")
+    assert resolve("src/main.js", "inner") == ("unresolved", "inner")
+    assert resolve("src/main.js", "@scope/pkg") == ("member", "node_modules/@scope/pkg/index.js")
+    assert resolve("src/main.js", "fs/promises") == ("builtin", "fs")
+    assert resolve("src/main.js", "node:child_process") == ("builtin", "child_process")
+    assert resolve("src/main.js", "electron") == ("builtin", "electron")
+    assert resolve("src/main.js", "../../../etc/passwd") == ("unresolved", "../../../etc/passwd")
+
+
+@needs_node
+def test_require_graph_in_the_evidence_graph(tmp_path):
+    from xray.evidence import build_evidence_graph
+
+    archive = make_asar(tmp_path / "app.asar", {
+        "package.json": b'{"main": "main.js"}',
+        "main.js": b"const cp = require('child_process');\nconst h = require('./helper');\n",
+        "helper.js": b"const { spawn } = require('child_process');\nspawn('xdg-open', [url]);\nrequire(name);\n",
+    })
+
+    graph = build_evidence_graph(archive, packages=False)
+
+    root = str(archive.resolve())
+    links = {(link.source, link.target): link for link in graph.links.values()}
+    assert links[(root, f"{root}!main.js")].basis == "declared"
+    assert (f"{root}!main.js", f"{root}!helper.js") in links
+    builtin = links[(f"{root}!helper.js", "module:child_process")]
+    assert builtin.kind == "imports" and builtin.evidence[0].line == 1
+    assert graph.nodes[f"{root}!helper.js"].kind == "asar-member"
+    assert any(link.kind == "runs" and link.source == f"{root}!helper.js" and "xdg-open" in link.target
+               for link in graph.links.values())
+    messages = " ".join(entry["message"] for entry in graph.to_dict()["blind_spots"])
+    assert "2 JavaScript file(s) inside the archive" in messages
