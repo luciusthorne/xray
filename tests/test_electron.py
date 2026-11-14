@@ -194,3 +194,47 @@ def test_minified_function_is_cut_by_offsets(tmp_path):
 
     assert "Bundled or minified file" in shown[1]
     assert shown[-1] == "function picked(n){return n*2}"
+
+
+def _small_elf():
+    for candidate in ("/usr/bin/true", "/bin/true"):
+        try:
+            with open(candidate, "rb") as handle:
+                data = handle.read()
+        except OSError:
+            continue
+        if data.startswith(b"\x7fELF"):
+            return data
+    return None
+
+
+def test_evidence_graph_follows_the_launcher_into_the_app(tmp_path):
+    from xray.evidence import build_evidence_graph
+
+    elf = _small_elf()
+    if elf is None:
+        pytest.skip("no ELF program to use as a native addon")
+    make_asar(tmp_path / "app.asar", {
+        "package.json": b'{"main": "main.js"}',
+        "main.js": b"require('./node_modules/addon/binding.node'); load('real.asar');\n",
+        "node_modules/addon/binding.node": elf,
+        "node_modules/packed/inside.node": elf,
+    }, unpacked={"node_modules/addon/binding.node"})
+    make_asar(tmp_path / "real.asar", {"package.json": b"{}", "main.js": MAIN})
+    launcher = tmp_path / "demo"
+    launcher.write_text(f"#!/bin/sh\nexec electron {tmp_path / 'app.asar'}\n")
+    launcher.chmod(0o755)
+
+    graph = build_evidence_graph(launcher, packages=False)
+
+    archive = str((tmp_path / "app.asar").resolve())
+    addon = str((tmp_path / "app.asar.unpacked" / "node_modules" / "addon" / "binding.node").resolve())
+    assert graph.nodes[archive].kind == "asar"
+    links = {(link.source, link.target): link for link in graph.links.values()}
+    first = links[(str(launcher.resolve()), archive)]
+    assert first.kind == "imports" and first.basis == "declared"
+    assert links[(archive, addon)].kind == "imports"
+    assert links[(archive, str((tmp_path / "real.asar").resolve()))].basis == "inferred"
+    assert graph.nodes[addon].kind == "elf"
+    messages = " ".join(entry["message"] for entry in graph.to_dict()["blind_spots"])
+    assert "packed/inside.node is packed inside the archive" in messages
